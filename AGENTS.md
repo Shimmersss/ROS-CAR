@@ -47,3 +47,8 @@
 - 本轮继续联调确认：Jetson bridge 持续监听 127.0.0.1:8765，并已广播 `/perception/target_state`、`/perception/target_marker`、`/bodylist`；Mac 8766 隧道可达。Foxglove 当前界面曾回到“没有数据源”，需通过“打开连接”重新选择 `ws://localhost:8766`，再验收面板消息。
 - 用户指出需要 SSH ROS 小车数据源；新增 `foxglove/ssh-ros-datasource.json` 与 `scripts/connect_foxglove_roscar.sh`，明确 `roscar-wifi`、ROS 域 182、远端 bridge 8765 和本地 WebSocket 8766。该配置已写入仓库，但尚未发布到外部服务或远端仓库。
 - 用户要求迁入示范中的语音模块：已将 `wheeltec_mic`（含 `wheeltec_mic_msg`、`wheeltec_mic_ros2`）、`wheeltec_mic_aiui` 和 `tts_make_ros2` 原样复制到 `ros2_ws/src/`，保留讯飞/AIUI 原生库、ASR/TTS 资源和反馈音频，排除 Git/Python 缓存。三个顶层包新增 `COLCON_IGNORE`，默认不参与主动工作区构建，未接入 `perception_bringup`，未启动麦克风、声卡、语音节点或底盘控制。迁入包尚未编译或实机验证；依赖实际麦克风串口、ALSA 声卡、厂商动态库和讯飞配置。
+
+- 2026-09-14 20:12 修复 Foxglove 断连：Mac 8766 无监听，重建 SSH 隧道后客户端自动恢复。修正掩码适配器尺寸：厂商将 640×480 下采样为 320×240，Maskdata 固定 76800 项；旧 640×480 检查丢弃所有帧。Jetson 编译成功，6 秒收到 164 帧 mono8 图像，Foxglove 已显示；当前人数 0、黑色掩码、SEARCHING，真人轮廓/锁定仍待验收。链路以 RGB_STREAM=false 手动运行，无底盘；SDK 旧进程未响应 TERM，经核对 PID 后 KILL 清理才重启。
+- 用户随后要求用小车 Wi-Fi 地址替代 localhost。Bridge 已改为默认监听 `0.0.0.0:8765`，Mac 直连 `ws://192.168.1.240:8765`；TCP 与 foxglove.sdk.v1 WebSocket 101 握手实测通过。`connect_foxglove_roscar.sh` 现检查直连，SSH 隧道脚本仅作离开当前 Wi-Fi 后的备用。该端口可被同一局域网设备访问；仍为手动启动、未设自启动、未启动底盘。
+- 20 秒真人锁定验收中，Bodylist 521/521 帧检测到人体，掩码 528/528 帧有前景，出现人体 ID 135、237；但未触发叉腰，适配器仍锁定旧 ID 96，554 条 TargetState 全为 LOST，无有效位置或 Marker ADD。链路和人体分割正常，本次目标锁定未通过；需要再次保持标准叉腰姿势并采集关节条件，另需关注单人 ID 在窗口内变化的问题。
+- 随后 15 秒复测通过真人锁定验收：人体 ID 41 有 404 帧，33 帧满足全部叉腰条件；约 1.93 秒进入 TRACKING，363 条 TargetState 均位置有效，距离约 0.865–1.264 m、偏角约 -0.140–0.007 rad，目标球和检测体积框各 363 条 ADD。Foxglove 客户端同步显示 status=2、target_id=41、position_valid=true、人体掩码和 3D 面板。当前 Foxglove 标签仍显示旧 localhost 数据源，用户表示自行改为已验证的 `ws://192.168.1.240:8765`。

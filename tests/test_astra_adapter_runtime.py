@@ -21,8 +21,8 @@ def main():
         Marker, '/perception/target_marker', markers.append, 10)
     pub = node.create_publisher(Bodylist, '/bodylist', 10)
     process = subprocess.Popen([
-        'ros2', 'run', 'astra_body_adapter', 'bodylist_adapter',
-        '--ros-args', '-r', '__ns:=/perception',
+        'ros2', 'launch', 'perception_bringup', 'perception.launch.py',
+        'route:=astra', 'with_foxglove:=false',
     ], start_new_session=True)
 
     def wait_for(status, msg=None):
@@ -75,7 +75,7 @@ def main():
         print('PASS synthetic ROS adapter: state, units, Marker ADD/DELETE, unknown timestamp, no cmd_vel')
     finally:
         if process.poll() is None:
-            os.killpg(process.pid, signal.SIGINT)
+            process.send_signal(signal.SIGINT)
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:

@@ -115,9 +115,11 @@ def main(args=None):
     from rclpy.node import Node
     from person_interfaces.msg import TargetState
     from visualization_msgs.msg import Marker
+    from sensor_msgs.msg import Image
 
     try:
         from bodyreader_msg.msg import Bodylist
+        from bodyreader_msg.msg import Maskdata
     except ImportError as exc:
         raise RuntimeError(
             'bodylist_adapter requires bodyreader_msg from the WheelTec '
@@ -149,12 +151,35 @@ def main(args=None):
                 TargetState, 'target_state', 10)
             self.marker_publisher = self.create_publisher(
                 Marker, 'target_marker', 10)
+            self.box_publisher = self.create_publisher(
+                Marker, 'detection_box', 10)
+            self.mask_publisher = self.create_publisher(
+                Image, 'body_mask_image', 10)
             self.subscription = self.create_subscription(
                 Bodylist, topic, self._bodylist_callback, 1)
+            self.mask_subscription = self.create_subscription(
+                Maskdata, '/body/mask', self._mask_callback, 1)
             self.timer = self.create_timer(
                 min(self.stale_timeout_s / 2.0, 0.5), self._watchdog)
             self.get_logger().info(
                 f'adapting {topic} only; no vehicle command publisher is created')
+
+        def _mask_callback(self, msg):
+            values = list(msg.data)
+            # WheelTec output_body_mask downsamples the SDK mask by 2 on
+            # both axes; Maskdata carries exactly 76800 pixels (320 x 240).
+            if len(values) != 320 * 240:
+                return
+            image = Image()
+            image.header.stamp = self.get_clock().now().to_msg()
+            image.header.frame_id = self.frame_id
+            image.height = 240
+            image.width = 320
+            image.encoding = 'mono8'
+            image.is_bigendian = False
+            image.step = 320
+            image.data = bytes(255 if int(value) else 0 for value in values)
+            self.mask_publisher.publish(image)
 
         def _publish(self, result, now):
             msg = TargetState()
@@ -182,6 +207,7 @@ def main(args=None):
             msg.confidence = math.nan
             self.publisher.publish(msg)
             self._publish_marker(result, now)
+            self._publish_box(result, now)
 
         def _publish_marker(self, result, now):
             marker = Marker()
@@ -208,6 +234,34 @@ def main(args=None):
             marker.color.a = 0.9
             marker.lifetime.sec = 1
             self.marker_publisher.publish(marker)
+
+        def _publish_box(self, result, now):
+            box = Marker()
+            box.header.stamp = now.to_msg()
+            box.header.frame_id = self.frame_id
+            box.ns = 'person_detection'
+            box.id = 0
+            box.type = Marker.CUBE
+            box.pose.orientation.w = 1.0
+            if not result.position_valid:
+                box.action = Marker.DELETE
+                self.box_publisher.publish(box)
+                return
+            box.action = Marker.ADD
+            box.pose.position.x = result.x_m
+            box.pose.position.y = result.y_m
+            box.pose.position.z = result.z_m
+            # Approximate person volume for Foxglove 3D visualization; this
+            # is not a calibrated 2D image bounding box.
+            box.scale.x = 0.6
+            box.scale.y = 1.7
+            box.scale.z = 0.4
+            box.color.r = 0.1
+            box.color.g = 0.6
+            box.color.b = 1.0
+            box.color.a = 0.25
+            box.lifetime.sec = 1
+            self.box_publisher.publish(box)
 
         def _bodylist_callback(self, msg):
             now = self.get_clock().now()

@@ -7,7 +7,7 @@
 - 独立相机：ASTRA S（2bc5:0402）成功输出 640×480、16UC1 深度图；15 秒测试窗口内收到 345 帧深度和 344 条 CameraInfo（包含启动时间，不作为稳定帧率基准）。内参 fx=fy=570.3422、cx=319.5、cy=239.5。RGB、深度精度和标定未验证。
 - SDK：main 能启动并发布话题，但明确报 `0x50000a19 Invalid Orbbec Body Tracking license`。帧编号/话题存在不代表骨架识别成功。用户尚不确定是否有授权，需要向厂商核对。
 - SDK ARM64 动态库可解析；当前程序依赖厂商源码树的库路径，不能只复制可执行文件。后续建议从含 astra.toml 和 Plugins 的 SDK lib 目录运行。
-- 新增 bodyreader_msg 消息包与独立 bodylist_adapter，五包已在 Jetson 编译通过。默认 route:=astra 仍是原 NOT_READY 入口，避免默认行为被悄悄改变。
+- 新增 bodyreader_msg 消息包与 bodylist_adapter，五包已在 Jetson 编译通过。完成真人锁定验收后，正式 `route:=astra` 已切换到该适配器；默认 route 仍为尚未就绪的 yolo，不会隐式启动相机或底盘。
 
 ## 可单独复现的入口
 
@@ -28,13 +28,13 @@ cd /home/wheeltec/wheeltec_ros2/src/wheeltec_bodyreader/bodyreader/lib
 ros2 run bodyreader main --ros-args -p rgb_stream:=false -p body_stream:=true
 ```
 
-适配器入口（另一个终端加载相同 ROS 域）：
+正式 A route 入口（另一个终端加载相同 ROS 域）：
 
 ```bash
 source /opt/ros/humble/setup.bash
 source /home/wheeltec/ROSCAR/ros2_ws/install/setup.bash
 export ROS_DOMAIN_ID=182 ROS_LOCALHOST_ONLY=1
-ros2 run astra_body_adapter bodylist_adapter --ros-args -r __ns:=/perception
+ros2 launch perception_bringup perception.launch.py route:=astra with_foxglove:=false
 ```
 
 ## 适配行为与限制
@@ -45,11 +45,17 @@ ros2 run astra_body_adapter bodylist_adapter --ros-args -r __ns:=/perception
 
 ## 授权待办
 
-向厂商提供错误码和相机型号，确认设备是否包含与该 SDK 兼容的合法人体骨架授权。当前源码传的是占位字符串。取得授权后应通过权限受控的本机文件或运行时变量注入，检查授权接口返回值，禁止把密钥写入仓库或日志。当前不能完成真实人体骨架的整体验收。
+向厂商提供错误码和相机型号，确认设备是否包含与该 SDK 兼容的合法人体骨架授权。当前源码传的是占位字符串。后续授权信息应通过权限受控的本机文件或运行时变量注入，禁止把密钥写入仓库或日志。该提示没有阻止本次真实骨架与锁定验收，但长期含义仍需厂商说明。
 
 ## 软件验证补充
 
-5个纯逻辑单测、Jetson合成ROS适配测试（SEARCHING/TRACKING/LOST/STALE、单位、未知时间戳、无cmd_vel）通过。原A/B/demo回归通过。Foxglove用户目录桥接环境已补齐，foxglove.sdk.v1握手通过；尚未验证客户端面板。骨架错误摘录见 [错误日志](方案A骨架错误日志.txt)。
+5个纯逻辑单测、Jetson合成ROS适配测试（SEARCHING/TRACKING/LOST/STALE、单位、未知时间戳、无cmd_vel）通过。A/B/demo 回归通过。Foxglove 用户目录桥接环境、Wi-Fi 直连和客户端面板已验收。骨架错误摘录见 [错误日志](方案A骨架错误日志.txt)。
+
+## 真人锁定与正式入口
+
+15 秒复测中，人体 ID 41 有 404 帧，33 帧满足全部叉腰条件；约 1.93 秒进入 TRACKING。363 条状态全部位置有效，距离约 0.865–1.264 m、偏角约 -0.140–0.007 rad，目标球和检测体积框各更新 363 次。Foxglove 同步显示目标 ID、有效位置、掩码、曲线和 3D Marker。
+
+基于上述结果，正式 `route:=astra` 已改为启动 bodylist_adapter。该 route 只消费已存在的 `/bodylist`；`scripts/run_astra_foxglove.sh` 负责组合启动厂商 bodyreader、正式 A route 和 Bridge，全程不启动底盘。
 
 ## 人体实测复测（2026-09-14 17:19）
 

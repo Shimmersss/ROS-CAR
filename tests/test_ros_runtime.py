@@ -36,7 +36,9 @@ def check_route(route):
             assert all(m.header.stamp.sec > 0 for m in received)
             assert '/cmd_vel' not in dict(probe.get_topic_names_and_types())
             if route != 'demo':
-                assert all(m.status == TargetState.NOT_READY for m in received)
+                expected = (TargetState.STALE if route == 'astra'
+                            else TargetState.NOT_READY)
+                assert all(m.status == expected for m in received)
                 assert all(not m.position_valid and not m.is_simulated for m in received)
                 assert all(math.isnan(m.horizontal_distance_m) for m in received)
                 assert all(m.observation_stamp.sec == 0 for m in received)
@@ -62,7 +64,7 @@ def check_route(route):
             raise
         finally:
             if process.poll() is None:
-                os.killpg(process.pid, signal.SIGINT)
+                process.send_signal(signal.SIGINT)
                 try:
                     process.wait(timeout=6)
                 except subprocess.TimeoutExpired:

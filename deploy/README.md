@@ -23,6 +23,6 @@ Jetson 的实际 CUDA、TensorRT、相机依赖应根据 JetPack 版本安装。
 
 ## Foxglove 用户目录运行环境
 
-已在 Jetson tools/foxglove-root 解包 ROS 仓库 ARM64 foxglove_bridge 3.4.3 和 rosx_introspection 2.3.0；无 sudo，未改系统安装。下载文件 SHA-256 与 apt 元数据一致。手动入口 `bash /home/wheeltec/ROSCAR/scripts/run_foxglove.sh`，只监听127.0.0.1:8765；Mac 使用 `ssh -N -L 127.0.0.1:8766:127.0.0.1:8765 roscar-wifi`，客户端连接 ws://localhost:8766。需要与感知节点使用相同 ROS_DOMAIN_ID。当前桥使用 foxglove.sdk.v1 协议，WebSocket 101握手实测通过，旧 foxglove.websocket.v1 探针返回400；测试已停止，未自启动。tools运行库不在日常源码同步白名单内。
+已在 Jetson tools/foxglove-root 解包 ROS 仓库 ARM64 foxglove_bridge 3.4.3 和 rosx_introspection 2.3.0；无 sudo，未改系统安装。下载文件 SHA-256 与 apt 元数据一致。手动入口 `bash /home/wheeltec/ROSCAR/scripts/run_foxglove.sh`，默认监听 `0.0.0.0:8765`；同一 Wi-Fi 上的 Mac 连接 `ws://192.168.1.240:8765`。需要与感知节点使用相同 ROS_DOMAIN_ID。当前桥使用 foxglove.sdk.v1 协议，局域网 WebSocket 101 握手实测通过；未自启动。tools 运行库不在日常源码同步白名单内。离开该 Wi-Fi 时可用 `scripts/open_foxglove_tunnel.sh` 临时建立 SSH 隧道。
 
-方案 A 可视化的手动启动入口为 `scripts/run_astra_foxglove.sh`，Mac 隧道为 `scripts/open_foxglove_tunnel.sh`。前者只启动 `bodyreader/main`、bodylist_adapter 和 Bridge；其子进程全部由前台脚本的 Ctrl-C 清理。详见 `foxglove/README.md`。
+方案 A 可视化的手动启动入口为 `scripts/run_astra_foxglove.sh`，Wi-Fi 直连检查入口为 `scripts/connect_foxglove_roscar.sh`。前者只启动 `bodyreader/main`、bodylist_adapter 和 Bridge；其子进程全部由前台脚本的 Ctrl-C 清理。详见 `foxglove/README.md`。

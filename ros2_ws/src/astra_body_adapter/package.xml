@@ -1,13 +1,14 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>astra_body_adapter</name><version>0.1.0</version>
-  <description>Astra body adapter entry point; SDK integration pending.</description>
+  <description>Adapter from WheelTec Astra body messages to ROSCAR target state.</description>
   <maintainer email="maintainer@example.invalid">ROSCAR maintainers</maintainer>
   <license>Proprietary</license>
   <buildtool_depend>ament_python</buildtool_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>person_interfaces</exec_depend>
   <exec_depend>bodyreader_msg</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>
   <export><build_type>ament_python</build_type></export>
 </package>

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Manual, localhost-only bridge; does not launch camera or chassis nodes.
+# Manual LAN bridge; does not launch camera or chassis nodes.
 set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source /opt/ros/humble/setup.bash
@@ -13,5 +13,6 @@ if [[ ! -x "$BRIDGE_PREFIX/lib/foxglove_bridge/foxglove_bridge" ]]; then
 fi
 export AMENT_PREFIX_PATH="$BRIDGE_PREFIX:${AMENT_PREFIX_PATH:-}"
 export LD_LIBRARY_PATH="$BRIDGE_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+BRIDGE_ADDRESS="${FOXGLOVE_BIND_ADDRESS:-0.0.0.0}"
 exec "$BRIDGE_PREFIX/lib/foxglove_bridge/foxglove_bridge" --ros-args \
-  -p address:=127.0.0.1 -p port:=8765 "$@"
+  -p "address:=$BRIDGE_ADDRESS" -p port:=8765 "$@"

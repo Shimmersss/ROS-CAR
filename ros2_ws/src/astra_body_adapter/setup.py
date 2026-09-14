@@ -16,7 +16,7 @@ setup(
     zip_safe=True,
     maintainer='ROSCAR maintainers',
     maintainer_email='maintainer@example.invalid',
-    description='Astra body adapter entry point; SDK integration pending.',
+    description='Adapter from WheelTec Astra body messages to ROSCAR target state.',
     license='Proprietary',
     entry_points={'console_scripts': [
         'adapter = astra_body_adapter.node:main',

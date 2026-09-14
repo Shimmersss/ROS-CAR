@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENDOR_WS="/home/wheeltec/wheeltec_ros2"
 SDK_RUNTIME="$VENDOR_WS/src/wheeltec_bodyreader/bodyreader/lib"
 LOG_DIR="$ROOT/artifacts/astra-foxglove"
-RGB_STREAM=false
+RGB_STREAM="${RGB_STREAM:-true}"
 
 if [[ ! -d "$SDK_RUNTIME" ]]; then
   echo "缺少 Astra SDK 运行目录：$SDK_RUNTIME" >&2
@@ -36,13 +36,14 @@ trap cleanup EXIT INT TERM
 ( cd "$SDK_RUNTIME" && exec setsid ros2 run bodyreader main --ros-args \
     -p "rgb_stream:=$RGB_STREAM" -p body_stream:=true ) >"$LOG_DIR/bodyreader.log" 2>&1 &
 BODY_PID=$!
-setsid ros2 run astra_body_adapter bodylist_adapter --ros-args -r __ns:=/perception \
+setsid ros2 launch perception_bringup perception.launch.py route:=astra with_foxglove:=false \
   >"$LOG_DIR/adapter.log" 2>&1 &
 ADAPTER_PID=$!
 setsid bash "$ROOT/scripts/run_foxglove.sh" >"$LOG_DIR/foxglove-bridge.log" 2>&1 &
 BRIDGE_PID=$!
 
 echo '方案 A 可视化已启动：/bodylist、/perception/target_state、/perception/target_marker'
-echo "RGB 流：$RGB_STREAM（当前关闭；另行排查后再接入）"
-echo 'Foxglove Bridge 仅监听 Jetson 127.0.0.1:8765；Ctrl-C 会停止全部感知进程。'
+echo "RGB 流：$RGB_STREAM（需由 bodyreader 实际发布图像话题后 Foxglove 才能显示）"
+echo 'Foxglove Bridge 监听 Jetson 0.0.0.0:8765；Mac 可连接 ws://192.168.1.240:8765。'
+echo 'Ctrl-C 会停止全部感知进程。'
 wait "$BODY_PID"

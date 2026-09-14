@@ -7,12 +7,12 @@
 | 内容 | 状态 |
 |---|---|
 | 公共 TargetState 消息、四个 ROS 2 包、A/B/demo 启动选择 | 已建立 |
-| A / B 节点 | 仅输出 NOT_READY 的入口，尚未接算法或相机 |
+| A / B 节点 | A 已接真实骨架适配器；B 仍为 NOT_READY |
 | demo | 显式模拟数据：9 秒目标可见、3 秒丢失，用于验证消息与展示 |
 | Mac → Jetson 同步脚本、模型清单、测试脚本 | 已建立 |
-| 相机驱动、SDK 授权、YOLO/CUDA 推理、跟踪与测距 | 待 Jetson 实机接入 |
+| 相机、骨架与测距 | A 已在 Jetson 真人验收；YOLO 路线待实现，SDK 授权提示待厂商解释 |
 | 下位机串口驱动及两个依赖包 | 已迁入 chassis_vendor，默认跳过构建，未启动、未实机验证 |
-| Foxglove | 已有连接说明和面板计划，尚未在客户端验收布局 |
+| Foxglove | A 路线布局已验收，Wi-Fi 直连 `ws://192.168.1.240:8765` |
 
 具体测试结果见 [工作记录](WORKLOG.md)。容器编译通过不等于 Jetson 相机或 GPU 已验证。
 
@@ -21,7 +21,7 @@
 ```text
 ros2_ws/src/
   person_interfaces/     公共目标观测消息
-  astra_body_adapter/    A 路线入口（NOT_READY）
+  astra_body_adapter/    A 路线真实 /bodylist 适配器
   yolo_person_tracker/   B 路线入口（NOT_READY）
   perception_bringup/    单路线启动与显式 demo
   chassis_vendor/       原厂串口驱动与依赖，COLCON_IGNORE 暂不编译
@@ -48,7 +48,8 @@ source ros2_ws/install/setup.bash
 
 # 默认 B 入口，当前只报告 NOT_READY
 ros2 launch perception_bringup perception.launch.py route:=yolo
-# 或 A 入口：route:=astra
+# A 入口：需另行运行厂商 bodyreader/main
+ros2 launch perception_bringup perception.launch.py route:=astra
 # 显式启用模拟数据：route:=demo
 ```
 
@@ -58,7 +59,7 @@ ros2 launch perception_bringup perception.launch.py route:=yolo
 ros2 topic echo /perception/target_state
 ```
 
-如需 Foxglove，先安装 ros-humble-foxglove-bridge，再在启动命令追加 `with_foxglove:=true`。桥接连接与 SSH 隧道见 [Foxglove 说明](foxglove/README.md)。
+如需 Foxglove，先安装 ros-humble-foxglove-bridge，再在启动命令追加 `with_foxglove:=true`。当前 Wi-Fi 直连地址与 SSH 隧道备用方案见 [Foxglove 说明](foxglove/README.md)。
 
 ## Mac 上的检查
 
@@ -93,4 +94,4 @@ python3 scripts/sync_to_jetson.py --host 用户名@IP --dest /home/用户名/ROS
 
 ## 方案 A 最新联调（2026-09-14）
 
-独立 ASTRA S 深度流实测通过；骨架 SDK 报授权无效，真实人体骨架尚未跑通。新增 opt-in bodylist_adapter 和 bodyreader_msg，五包已在 Nano 编译，合成 ROS 消息测试通过；默认 A 入口仍报告 NOT_READY。详细入口、限制和授权待办见 [方案 A 联调记录](docs/方案A联调记录.md)。
+ASTRA S 深度流、真实人体骨架、叉腰锁定、质心测距、掩码和 Foxglove 展示均已实机跑通。`route:=astra` 现启动已验证的 `/bodylist` 适配器；厂商 bodyreader 仍由安全组合脚本单独启动，不包含底盘节点。SDK 授权提示没有阻止本次输出，但仍待厂商解释。详细入口与限制见 [方案 A 联调记录](docs/方案A联调记录.md)。

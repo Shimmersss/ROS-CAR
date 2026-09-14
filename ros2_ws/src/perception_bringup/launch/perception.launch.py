@@ -1,4 +1,4 @@
-"""Select exactly one route. Defaults to an unready scaffold, never synthetic data."""
+"""Select exactly one perception route; synthetic data remains opt-in."""
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -12,7 +12,7 @@ from launch_ros.actions import Node
 def launch_route(context):
     route = LaunchConfiguration('route').perform(context)
     routes = {
-        'astra': ('astra_body_adapter', 'adapter'),
+        'astra': ('astra_body_adapter', 'bodylist_adapter'),
         'yolo': ('yolo_person_tracker', 'tracker'),
         'demo': ('perception_bringup', 'demo'),
     }

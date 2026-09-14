@@ -5,7 +5,7 @@
 ```text
 ASTRA S → bodyreader/main → /bodylist
        → bodylist_adapter → /perception/target_state、/perception/target_marker
-       → foxglove_bridge → SSH 隧道 → Mac Foxglove
+       → foxglove_bridge → Wi-Fi 局域网 → Mac Foxglove
 ```
 
 `bodyreader/main` 直接占用 Astra 设备，因此不要和 `astra_camera` 同时运行。现有厂商 `bodyfollow`、`bodyinteraction`、`final` launch 会包含底盘或控制节点，不能用于这里。
@@ -19,18 +19,26 @@ cd /home/wheeltec/ROSCAR
 bash scripts/run_astra_foxglove.sh
 ```
 
-Mac 上另开一个终端保持隧道：
+Mac 与小车连接同一 Wi-Fi 后，可检查直连地址：
 
 ```bash
 cd /Users/shimmer/Documents/ChatGPT/ROSCAR
-bash scripts/open_foxglove_tunnel.sh
+bash scripts/connect_foxglove_roscar.sh
 ```
 
-在 Mac Foxglove 新建 **Foxglove WebSocket** 连接，地址填写 `ws://localhost:8766`。小车端 Bridge 仍只监听自身的 8765；Mac 使用 8766 是为了避开本机已占用的 8765。停止小车端启动终端即可同时停止骨架、适配器和桥接。
+在 Mac Foxglove 新建 **Foxglove WebSocket** 连接，地址填写 `ws://192.168.1.240:8765`。Bridge 监听小车所有网络接口的 8765 端口；停止小车端启动终端即可同时停止骨架、适配器和桥接。
 
-如果 Foxglove 显示“没有数据源”，重新通过“打开连接”选择 Foxglove WebSocket 并填写上述地址。检查命令：`nc -vz 127.0.0.1 8766`，以及 `ssh roscar-wifi 'ss -ltn | grep 8765'`。
+如果 Foxglove 显示“没有数据源”，重新通过“打开连接”选择 Foxglove WebSocket 并填写上述地址。检查命令：`nc -vz 192.168.1.240 8765`，以及 `ssh roscar-wifi 'ss -ltn | grep 8765'`。离开这一路由器网络后该地址不可达，可按需使用 `scripts/open_foxglove_tunnel.sh` 作为 SSH 隧道备用方案。
 
 仓库中的 [ssh-ros-datasource.json](ssh-ros-datasource.json) 是小车 SSH ROS 数据源清单，布局使用 [astra-layout.json](astra-layout.json)。可运行 `bash scripts/connect_foxglove_roscar.sh` 建立隧道并打印连接地址。
+
+图像需要在 Jetson 另一个终端单独启动厂商 `astra_camera` 节点：
+
+```bash
+bash scripts/run_astra_camera.sh
+```
+
+该节点与 `bodyreader` 可能争用同一个 USB 相机；若启动后 `/camera/color/image_raw` 没有帧，应停止其中一个节点并按厂商驱动支持方式选择单一相机入口。
 
 ## 建议面板
 

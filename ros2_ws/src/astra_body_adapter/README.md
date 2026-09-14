@@ -1,13 +1,7 @@
 # A：Astra 骨架适配入口
 
-当前节点只发布 NOT_READY，不读取 SDK，也不处理 /body_posture。
+正式 `route:=astra` 启动 `bodylist_adapter`，订阅厂商 `/bodylist`，通过叉腰手势选择或切换目标，输出统一 TargetState、人体掩码和 Foxglove Marker。节点不发布 `/cmd_vel`。
 
-后续接入步骤：
-1. 在 Jetson 单独验证厂商 bodyreader 的 SDK 授权与数据输出。
-2. 在隔离的厂商工作区编译所需包，保留原有许可证；不要复制整套厂商源码进本项目 src。
-3. 适配 Bodyposture：lock_status==2 才接受目标，坐标从毫米转米，核对坐标轴。
-4. 原消息没有 header，必须补源采集时间或明确标记其不可得；接收时刻不能冒充采集时刻。
-5. 加入消息超时、异常坐标剔除及显式目标恢复策略。
-6. 输出统一 TargetState；整个节点不发布 cmd_vel。
+厂商 `bodyreader/main` 必须另行启动，并从包含 SDK 配置和动态库的原厂目录运行。项目的 `scripts/run_astra_foxglove.sh` 已按此方式组合启动 bodyreader、正式 A route 和 Bridge，不包含厂商 `bodydata_process`、follower 或底盘 launch。
 
-参考原目录：wheeltec_bodyreader/bodyreader/src/{main,bodydata_process,follower}.cpp。
+Bodylist 没有源时间戳或置信度，因此 `observation_stamp` 为零，`measurement_age_s` 和 `confidence` 为 NaN。质心从毫米转换为米；Y 轴转换和 SDK 授权提示仍需后续长期验证。

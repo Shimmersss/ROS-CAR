@@ -29,7 +29,7 @@ A/B/demo 使用同一接口。输出描述观测状态，不是控制命令。
 - STALE：相机/上游消息过期，位置无效。由后续真实适配器负责超时检测。
 - 整个节点退出时，它无法继续发布 STALE；Foxglove 或后续消费者还必须监测话题断流。
 
-当前 A/B 仅固定 NOT_READY；demo 周期性展示 TRACKING/LOST。SEARCHING/STALE 和真实锁定状态机仍待实现。
+当前 A route 已接入真实 `/bodylist` 适配器并实现 SEARCHING/TRACKING/LOST/STALE；B route 仍固定 NOT_READY。demo 周期性展示模拟 TRACKING/LOST。
 
 Astra 原 Bodyposture 没有 header，不得直接把回调接收时间称为传感器采集时间。真实适配时补源时间，或明确暴露时间未知。不同 optical/SDK 轴约定必须先确认后转换。
 
