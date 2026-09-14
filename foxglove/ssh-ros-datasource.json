@@ -1,0 +1,9 @@
+{
+  "name": "ROSCAR 小车 SSH ROS",
+  "type": "Foxglove WebSocket",
+  "url": "ws://localhost:8766",
+  "sshHost": "roscar-wifi",
+  "remoteBridge": "127.0.0.1:8765",
+  "layout": "astra-layout.json",
+  "rosDomainId": 182
+}

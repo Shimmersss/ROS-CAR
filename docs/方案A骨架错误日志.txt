@@ -1,0 +1,9 @@
+设备：Jetson Orin Nano Super；USB ORBBEC ASTRA S 2bc5:0402
+测试：仅运行 bodyreader/main，rgb_stream=false，body_stream=true
+
+2026-09-14 16:58:05,306 ERROR [astra] Body Tracking Error: 0x50000a19 Invalid Orbbec Body Tracking license. Please purchase Orbbec Body Tracking License.
+
+说明：独立深度流已验证成功，人体骨架未成功。请厂商确认设备授权与配套SDK版本。
+
+用户在场复测：40秒收到1005条/bodylist，count始终0，没有人体ID。
+2026-09-14 17:17:26,942 ERROR [astra] Body Tracking Error: 0x50000739 Invalid Orbbec Body Tracking license. Please purchase Orbbec Body Tracking License.

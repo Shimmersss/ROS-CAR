@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1620" viewBox="0 0 1400 1620" role="img" aria-labelledby="title desc">
+<title id="title">方案 A｜Astra SDK 人体骨架路线</title><desc id="desc">原厂示例：骨架识别 → 姿势锁定 → 质心定位；核心识别封装在 SDK 中。。绿色表示源码或库已提供，橙色表示待开发接入，蓝色表示待实机验证，灰色表示后续阶段。所有方案均未在本机完成实机验证。</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#8190A7"/></marker>
+<style>text{font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif}.body{fill:#46556B;font-size:19px}.small{fill:#68788F;font-size:16px}.nodeTitle{fill:#15263D;font-size:24px;font-weight:600}.section{fill:#617189;font-size:17px;font-weight:600;letter-spacing:1px}.edge{fill:none;stroke:#8190A7;stroke-width:2.4;marker-end:url(#arrow)}</style></defs>
+<rect width="1400" height="1620" fill="#F5F7FB"/><rect x="0" y="0" width="1400" height="12" fill="#1C3556"/>
+
+<text x="60" y="65" font-size="17" fill="#617189" font-weight="600">ROSCAR  /  感知方案 01</text>
+<text x="60" y="118" font-size="38" fill="#15263D" font-weight="650">方案 A｜Astra SDK 人体骨架路线</text>
+<text x="60" y="157" font-size="20" fill="#52647C" font-weight="400">原厂示例：骨架识别 → 姿势锁定 → 质心定位；核心识别封装在 SDK 中。</text>
+<rect x="60" y="184" width="1280" height="86" rx="16" fill="white" stroke="#DEE5EF"/>
+<circle cx="91" cy="211" r="6" fill="#239365"/>
+<text x="108" y="218" font-size="18" fill="#374960" font-weight="550">源码 / 库已有</text>
+<circle cx="372" cy="211" r="6" fill="#BD741C"/>
+<text x="389" y="218" font-size="18" fill="#374960" font-weight="550">待开发 / 接入</text>
+<circle cx="673" cy="211" r="6" fill="#4E70BC"/>
+<text x="690" y="218" font-size="18" fill="#374960" font-weight="550">待实机验证</text>
+<circle cx="987" cy="211" r="6" fill="#737E90"/>
+<text x="1004" y="218" font-size="18" fill="#374960" font-weight="550">后续阶段</text>
+<text x="84" y="250" font-size="17" fill="#68788F" font-weight="400">“已有”仅指厂商包含实现；尚未在 Jetson 编译、加载模型或连接相机验证。</text>
+<text x="60" y="310" font-size="17" fill="#617189" font-weight="600">原厂感知主链</text>
+<text x="910" y="310" font-size="17" fill="#617189" font-weight="600">边界、恢复与待办</text>
+<rect x="60" y="333" width="780" height="125" rx="16" fill="white" stroke="#DCE4EE"/><rect x="60" y="349" width="5" height="93" rx="2.5" fill="#4E70BC"/>
+<text x="84" y="370" font-size="24" fill="#15263D" font-weight="600">01  相机与运行环境</text>
+<rect x="650" y="350" width="170" height="29" rx="14" fill="#EDF3FF"/>
+<text x="663" y="370" font-size="16" fill="#4E70BC" font-weight="550">待实机验证</text>
+<text x="84" y="405" font-size="19" fill="#46556B" font-weight="400">Astra 系列相机 + Orin Nano Super 8GB</text>
+<text x="84" y="434" font-size="19" fill="#46556B" font-weight="400">确认实物型号、USB 标识、JetPack / ROS 和数据流。</text>
+<path d="M450 458 V488" class="edge"/>
+<rect x="60" y="490" width="780" height="150" rx="16" fill="white" stroke="#DCE4EE"/><rect x="60" y="506" width="5" height="118" rx="2.5" fill="#239365"/>
+<text x="84" y="527" font-size="24" fill="#15263D" font-weight="600">02  Astra SDK / Body Tracking</text>
+<rect x="650" y="507" width="170" height="29" rx="14" fill="#EAF7F0"/>
+<text x="663" y="527" font-size="16" fill="#239365" font-weight="550">源码 / 库已有</text>
+<text x="84" y="562" font-size="19" fill="#46556B" font-weight="400">调用 libastra.so 与 libOrbbecBodyTracking.so。</text>
+<text x="84" y="591" font-size="19" fill="#46556B" font-weight="400">输出人体 ID、关节三维坐标、跟踪状态和质心。</text>
+<text x="84" y="623" font-size="16" fill="#78869A" font-weight="400">对应源码：bodyreader/src/main.cpp → /bodylist</text>
+<rect x="910" y="333" width="430" height="181" rx="16" fill="#EAF0F8"/>
+<text x="934" y="371" font-size="22" fill="#1C3556" font-weight="600">核心算法封装，输出可读</text>
+<text x="934" y="408" font-size="18" fill="#52647C" font-weight="400">核心识别算法未提供源码。</text>
+<text x="934" y="437" font-size="18" fill="#52647C" font-weight="400">关节、质心等结果可读取和处理。</text>
+<text x="934" y="466" font-size="18" fill="#52647C" font-weight="400">SDK 内部是否用卡尔曼：未知。</text>
+<rect x="910" y="539" width="430" height="169" rx="16" fill="white" stroke="#DCE4EE"/><rect x="910" y="555" width="5" height="137" rx="2.5" fill="#4E70BC"/>
+<text x="934" y="576" font-size="24" fill="#15263D" font-weight="600">SDK 可用性</text>
+<rect x="1150" y="556" width="170" height="29" rx="14" fill="#EDF3FF"/>
+<text x="1163" y="576" font-size="16" fill="#4E70BC" font-weight="550">待实机验证</text>
+<text x="934" y="611" font-size="19" fill="#46556B" font-weight="400">授权字符串仍是占位符。</text>
+<text x="934" y="640" font-size="19" fill="#46556B" font-weight="400">附带 ARM64 库 ≠ 已运行成功。</text>
+<text x="934" y="669" font-size="19" fill="#46556B" font-weight="400">待验证授权、依赖和稳定性。</text>
+<path d="M450 640 V670" class="edge"/>
+<rect x="60" y="672" width="780" height="150" rx="16" fill="white" stroke="#DCE4EE"/><rect x="60" y="688" width="5" height="118" rx="2.5" fill="#239365"/>
+<text x="84" y="709" font-size="24" fill="#15263D" font-weight="600">03  姿势判断与目标 ID 锁定</text>
+<rect x="650" y="689" width="170" height="29" rx="14" fill="#EAF7F0"/>
+<text x="663" y="709" font-size="16" fill="#239365" font-weight="550">源码 / 库已有</text>
+<text x="84" y="744" font-size="19" fill="#46556B" font-weight="400">根据肩、手、脊柱等关节判断动作。</text>
+<text x="84" y="773" font-size="19" fill="#46556B" font-weight="400">双手叉腰 → 保存 lock_body_id → 按 ID 选择目标。</text>
+<text x="84" y="805" font-size="16" fill="#78869A" font-weight="400">对应源码：bodyreader/src/bodydata_process.cpp</text>
+<rect x="910" y="739" width="430" height="170" rx="16" fill="white" stroke="#DCE4EE"/><rect x="910" y="755" width="5" height="138" rx="2.5" fill="#239365"/>
+<text x="934" y="776" font-size="24" fill="#15263D" font-weight="600">丢失后的恢复</text>
+<rect x="1150" y="756" width="170" height="29" rx="14" fill="#EAF7F0"/>
+<text x="1163" y="776" font-size="16" fill="#239365" font-weight="550">源码 / 库已有</text>
+<text x="934" y="811" font-size="19" fill="#46556B" font-weight="400">记录躯干区域平均 RGB。</text>
+<text x="934" y="840" font-size="19" fill="#46556B" font-weight="400">颜色匹配后通过 /recoveryid</text>
+<text x="934" y="869" font-size="19" fill="#46556B" font-weight="400">更新锁定 ID；同色衣服易混淆。</text>
+<text x="934" y="892" font-size="16" fill="#78869A" font-weight="400">对应源码：bodyreader/scripts/display.py</text>
+<path d="M910 785 H864 V747 H843" class="edge" stroke-dasharray="7 6"/>
+<path d="M450 822 V852" class="edge"/>
+<rect x="60" y="854" width="780" height="150" rx="16" fill="white" stroke="#DCE4EE"/><rect x="60" y="870" width="5" height="118" rx="2.5" fill="#239365"/>
+<text x="84" y="891" font-size="24" fill="#15263D" font-weight="600">04  目标质心与状态输出</text>
+<rect x="650" y="871" width="170" height="29" rx="14" fill="#EAF7F0"/>
+<text x="663" y="891" font-size="16" fill="#239365" font-weight="550">源码 / 库已有</text>
+<text x="84" y="926" font-size="19" fill="#46556B" font-weight="400">从被锁定人体取 centerofmass：X、Y、Z。</text>
+<text x="84" y="955" font-size="19" fill="#46556B" font-weight="400">发布目标姿势、质心和锁定状态 /body_posture。</text>
+<text x="84" y="987" font-size="16" fill="#78869A" font-weight="400">跟随位置主要来自质心，不需要逐个关节参与控制。</text>
+<rect x="910" y="938" width="430" height="195" rx="16" fill="#EAF0F8"/>
+<text x="934" y="976" font-size="22" fill="#1C3556" font-weight="600">已有控制，仅作为参考</text>
+<text x="934" y="1013" font-size="18" fill="#52647C" font-weight="400">follower.cpp：简化 PD + 死区</text>
+<text x="934" y="1042" font-size="18" fill="#52647C" font-weight="400">+ 限幅；无显式人体卡尔曼。</text>
+<text x="934" y="1071" font-size="18" fill="#52647C" font-weight="400">目标距离固定 2 m；参数启动读取。</text>
+<text x="934" y="1100" font-size="18" fill="#52647C" font-weight="400">下位机与实际运动本阶段不接入。</text>
+<path d="M450 1004 V1034" class="edge"/>
+<rect x="60" y="1036" width="780" height="151" rx="16" fill="white" stroke="#DCE4EE"/><rect x="60" y="1052" width="5" height="119" rx="2.5" fill="#BD741C"/>
+<text x="84" y="1073" font-size="24" fill="#15263D" font-weight="600">05  感知有效性与调试接口补全</text>
+<rect x="650" y="1053" width="170" height="29" rx="14" fill="#FFF3E5"/>
+<text x="663" y="1073" font-size="16" fill="#BD741C" font-weight="550">待开发 / 接入</text>
+<text x="84" y="1108" font-size="19" fill="#46556B" font-weight="400">补消息时间戳、数据年龄、距离 / 偏角及有效状态。</text>
+<text x="84" y="1137" font-size="19" fill="#46556B" font-weight="400">评估位置滤波、断流处理与恢复防串人策略。</text>
+<text x="84" y="1170" font-size="16" fill="#78869A" font-weight="400">当前应用层未实现明确的卡尔曼位置估计。</text>
+<path d="M450 1187 V1217" class="edge"/>
+<rect x="60" y="1219" width="780" height="145" rx="16" fill="white" stroke="#DCE4EE"/><rect x="60" y="1235" width="5" height="113" rx="2.5" fill="#BD741C"/>
+<text x="84" y="1256" font-size="24" fill="#15263D" font-weight="600">06  Foxglove + SSH</text>
+<rect x="650" y="1236" width="170" height="29" rx="14" fill="#FFF3E5"/>
+<text x="663" y="1256" font-size="16" fill="#BD741C" font-weight="550">待开发 / 接入</text>
+<text x="84" y="1291" font-size="19" fill="#46556B" font-weight="400">已有骨架绘制与图像发布，可作为数据源。</text>
+<text x="84" y="1320" font-size="19" fill="#46556B" font-weight="400">桥接、SSH 连接、面板布局与状态曲线仍需配置。</text>
+<text x="84" y="1347" font-size="16" fill="#78869A" font-weight="400">Jetson 运行感知；Mac 查看骨架、目标位置和诊断数据。</text>
+<rect x="910" y="1161" width="430" height="203" rx="16" fill="white" stroke="#DCE4EE"/><rect x="910" y="1177" width="5" height="171" rx="2.5" fill="#4E70BC"/>
+<text x="934" y="1198" font-size="24" fill="#15263D" font-weight="600">方案验收</text>
+<rect x="1150" y="1178" width="170" height="29" rx="14" fill="#EDF3FF"/>
+<text x="1163" y="1198" font-size="16" fill="#4E70BC" font-weight="550">待实机验证</text>
+<text x="934" y="1233" font-size="19" fill="#46556B" font-weight="400">检查正面、背面与部分遮挡。</text>
+<text x="934" y="1262" font-size="19" fill="#46556B" font-weight="400">检查叉腰锁定、同色衣服恢复。</text>
+<text x="934" y="1291" font-size="19" fill="#46556B" font-weight="400">核对质心坐标、单位与抖动。</text>
+<text x="934" y="1320" font-size="19" fill="#46556B" font-weight="400">记录丢失、断流和端到端延迟。</text>
+<rect x="60" y="1390" width="1280" height="110" rx="16" fill="#EAF0F8"/>
+<text x="84" y="1428" font-size="22" fill="#1C3556" font-weight="600">当前结论</text>
+<text x="84" y="1465" font-size="18" fill="#52647C" font-weight="400">骨架主链已有示例实现；先验证 SDK 能否正常运行，再补感知状态与 Foxglove。无需先接底盘。</text>
+<line x1="60" y1="1530" x2="1340" y2="1530" stroke="#D7E0EC"/>
+<text x="60" y="1563" font-size="18" fill="#425770" font-weight="550">已有：SDK 调用、骨架、锁定、质心、颜色恢复  /  待做：可用性验证、感知完善、远程展示</text>
+<text x="60" y="1593" font-size="16" fill="#78869A" font-weight="400">依据：本地厂商源码静态检查与方案文档  ·  2026-09-14  ·  当前范围：感知与可视化</text>
+</svg>

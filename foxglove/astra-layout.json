@@ -1,0 +1,26 @@
+{
+  "configById": {
+    "RawMessages!target": {"topicPath": "/perception/target_state", "diffEnabled": false, "defaultExpanded": true, "foxglovePanelTitle": "目标状态"},
+    "RawMessages!bodies": {"topicPath": "/bodylist", "diffEnabled": false, "foxglovePanelTitle": "人体骨架原始消息"},
+    "Plot!distance": {
+      "paths": [{"value": "/perception/target_state.horizontal_distance_m", "enabled": true, "timestampMethod": "receiveTime"}],
+      "xAxisVal": "timestamp", "isSynced": true, "foxglovePanelTitle": "距离 m"
+    },
+    "Plot!bearing": {
+      "paths": [{"value": "/perception/target_state.bearing_rad", "enabled": true, "timestampMethod": "receiveTime"}],
+      "xAxisVal": "timestamp", "isSynced": true, "foxglovePanelTitle": "偏角 rad"
+    },
+    "3D Panel!target": {
+      "fixedFrame": "astra_depth_optical_frame", "followTf": "astra_depth_optical_frame",
+      "topics": {"/perception/target_marker": {"visible": true}},
+      "foxglovePanelTitle": "锁定目标质心"
+    }
+  },
+  "globalVariables": {}, "userNodes": {}, "linkedGlobalVariables": [],
+  "playbackConfig": {"speed": 1, "messageOrder": "receiveTime"},
+  "layout": {
+    "direction": "row", "splitPercentage": 35,
+    "first": {"direction": "column", "first": "RawMessages!target", "second": "RawMessages!bodies"},
+    "second": {"direction": "column", "first": "3D Panel!target", "second": {"direction": "row", "first": "Plot!distance", "second": "Plot!bearing"}}
+  }
+}

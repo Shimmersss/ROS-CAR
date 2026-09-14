@@ -1,0 +1,4 @@
+/perception/perception_demo:
+  ros__parameters:
+    publish_rate_hz: 10.0
+    frame_id: demo_camera_optical_frame

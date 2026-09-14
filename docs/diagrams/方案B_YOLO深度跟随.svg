@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1840" viewBox="0 0 1400 1840" role="img" aria-labelledby="title desc">
+<title id="title">方案 B｜YOLO11 + 跟踪 + 深度路线</title><desc id="desc">推荐起点：复用相机数据和检测节点，逐步接通目标跟踪、空间测距与 Foxglove。。绿色表示源码或库已提供，橙色表示待开发接入，蓝色表示待实机验证，灰色表示后续阶段。所有方案均未在本机完成实机验证。</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#8190A7"/></marker>
+<style>text{font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif}.body{fill:#46556B;font-size:19px}.small{fill:#68788F;font-size:16px}.nodeTitle{fill:#15263D;font-size:24px;font-weight:600}.section{fill:#617189;font-size:17px;font-weight:600;letter-spacing:1px}.edge{fill:none;stroke:#8190A7;stroke-width:2.4;marker-end:url(#arrow)}</style></defs>
+<rect width="1400" height="1840" fill="#F5F7FB"/><rect x="0" y="0" width="1400" height="12" fill="#1C3556"/>
+
+<text x="60" y="65" font-size="17" fill="#617189" font-weight="600">ROSCAR  /  感知方案 02</text>
+<text x="60" y="118" font-size="38" fill="#15263D" font-weight="650">方案 B｜YOLO11 + 跟踪 + 深度路线</text>
+<text x="60" y="157" font-size="20" fill="#52647C" font-weight="400">推荐起点：复用相机数据和检测节点，逐步接通目标跟踪、空间测距与 Foxglove。</text>
+<rect x="60" y="184" width="1280" height="86" rx="16" fill="white" stroke="#DEE5EF"/>
+<circle cx="91" cy="211" r="6" fill="#239365"/>
+<text x="108" y="218" font-size="18" fill="#374960" font-weight="550">源码 / 库已有</text>
+<circle cx="372" cy="211" r="6" fill="#BD741C"/>
+<text x="389" y="218" font-size="18" fill="#374960" font-weight="550">待开发 / 接入</text>
+<circle cx="673" cy="211" r="6" fill="#4E70BC"/>
+<text x="690" y="218" font-size="18" fill="#374960" font-weight="550">待实机验证</text>
+<circle cx="987" cy="211" r="6" fill="#737E90"/>
+<text x="1004" y="218" font-size="18" fill="#374960" font-weight="550">后续阶段</text>
+<text x="84" y="250" font-size="17" fill="#68788F" font-weight="400">“已有”仅指厂商包含实现；尚未在 Jetson 编译、加载模型或连接相机验证。</text>
+<text x="60" y="308" font-size="17" fill="#617189" font-weight="600">共享数据源</text>
+<rect x="60" y="328" width="1280" height="124" rx="16" fill="white" stroke="#DCE4EE"/><rect x="60" y="344" width="5" height="92" rx="2.5" fill="#239365"/>
+<text x="84" y="365" font-size="24" fill="#15263D" font-weight="600">01  Astra ROS 2 相机驱动</text>
+<rect x="1150" y="345" width="170" height="29" rx="14" fill="#EAF7F0"/>
+<text x="1163" y="365" font-size="16" fill="#239365" font-weight="550">源码 / 库已有</text>
+<text x="84" y="400" font-size="19" fill="#46556B" font-weight="400">已有驱动、ARM64 库、RGB / 深度 / 点云及压缩配置；实机数据与配置尚未验证。</text>
+<text x="84" y="429" font-size="19" fill="#46556B" font-weight="400">RGB 用于人体检测；相机结构光系统提供深度，不用单目 AI 猜距离。</text>
+<path d="M380 452 V497" class="edge"/>
+<path d="M1020 452 V497" class="edge"/>
+<text x="60" y="486" font-size="17" fill="#617189" font-weight="600">RGB：找到并锁定同一个人</text>
+<text x="720" y="486" font-size="17" fill="#617189" font-weight="600">深度：确定该目标的空间位置</text>
+<rect x="60" y="499" width="620" height="152" rx="16" fill="white" stroke="#DCE4EE"/><rect x="60" y="515" width="5" height="120" rx="2.5" fill="#239365"/>
+<text x="84" y="536" font-size="24" fill="#15263D" font-weight="600">02  YOLO11n 检测基础</text>
+<rect x="490" y="516" width="170" height="29" rx="14" fill="#EAF7F0"/>
+<text x="503" y="536" font-size="16" fill="#239365" font-weight="550">源码 / 库已有</text>
+<text x="84" y="571" font-size="19" fill="#46556B" font-weight="400">已有 detection_node.py 与 yolo11n.pt。</text>
+<text x="84" y="600" font-size="19" fill="#46556B" font-weight="400">可发布检测框和带框结果图。</text>
+<text x="84" y="634" font-size="16" fill="#78869A" font-weight="400">目前只有 predict()，没有跟踪或深度融合。</text>
+<rect x="720" y="499" width="620" height="152" rx="16" fill="white" stroke="#DCE4EE"/><rect x="720" y="515" width="5" height="120" rx="2.5" fill="#4E70BC"/>
+<text x="744" y="536" font-size="24" fill="#15263D" font-weight="600">02  配准、时间与单位</text>
+<rect x="1150" y="516" width="170" height="29" rx="14" fill="#EDF3FF"/>
+<text x="1163" y="536" font-size="16" fill="#4E70BC" font-weight="550">待实机验证</text>
+<text x="744" y="571" font-size="19" fill="#46556B" font-weight="400">驱动有配准配置入口，默认未开启。</text>
+<text x="744" y="600" font-size="19" fill="#46556B" font-weight="400">需核对 RGB / 深度对应、内参和深度单位。</text>
+<text x="744" y="634" font-size="16" fill="#78869A" font-weight="400">分辨率相同 ≠ 同一像素对应同一空间点。</text>
+<path d="M370 651 V681" class="edge"/>
+<path d="M1030 651 V865" class="edge"/>
+<rect x="60" y="683" width="620" height="151" rx="16" fill="white" stroke="#DCE4EE"/><rect x="60" y="699" width="5" height="119" rx="2.5" fill="#BD741C"/>
+<text x="84" y="720" font-size="24" fill="#15263D" font-weight="600">03  人体检测配置接通</text>
+<rect x="490" y="700" width="170" height="29" rx="14" fill="#FFF3E5"/>
+<text x="503" y="720" font-size="16" fill="#BD741C" font-weight="550">待开发 / 接入</text>
+<text x="84" y="755" font-size="19" fill="#46556B" font-weight="400">默认交通标志模型 → 人体检测权重。</text>
+<text x="84" y="784" font-size="19" fill="#46556B" font-weight="400">接正确相机话题，保留 person 和图像 header。</text>
+<text x="84" y="817" font-size="16" fill="#78869A" font-weight="400">整理模型路径与安装方式，验证 CUDA 推理。</text>
+<path d="M370 834 V864" class="edge"/>
+<rect x="60" y="866" width="620" height="164" rx="16" fill="white" stroke="#DCE4EE"/><rect x="60" y="882" width="5" height="132" rx="2.5" fill="#BD741C"/>
+<text x="84" y="903" font-size="24" fill="#15263D" font-weight="600">04  ByteTrack + 目标锁定</text>
+<rect x="490" y="883" width="170" height="29" rx="14" fill="#FFF3E5"/>
+<text x="503" y="903" font-size="16" fill="#BD741C" font-weight="550">待开发 / 接入</text>
+<text x="84" y="938" font-size="19" fill="#46556B" font-weight="400">现成跟踪器可用，但项目尚未集成。</text>
+<text x="84" y="967" font-size="19" fill="#46556B" font-weight="400">补选人、锁定、丢失状态与重确认。</text>
+<text x="84" y="996" font-size="19" fill="#46556B" font-weight="400">检测框卡尔曼内置，不等于身份识别。</text>
+<rect x="720" y="866" width="620" height="164" rx="16" fill="white" stroke="#DCE4EE"/><rect x="720" y="882" width="5" height="132" rx="2.5" fill="#BD741C"/>
+<text x="744" y="903" font-size="24" fill="#15263D" font-weight="600">03  人体区域深度提取</text>
+<rect x="1150" y="883" width="170" height="29" rx="14" fill="#FFF3E5"/>
+<text x="1163" y="903" font-size="16" fill="#BD741C" font-weight="550">待开发 / 接入</text>
+<text x="744" y="938" font-size="19" fill="#46556B" font-weight="400">现有颜色目标测距示例不能直接照搬。</text>
+<text x="744" y="967" font-size="19" fill="#46556B" font-weight="400">取目标躯干区域，剔除零值与异常背景。</text>
+<text x="744" y="996" font-size="19" fill="#46556B" font-weight="400">检查有效比例，做中位数或深度聚类。</text>
+<path d="M680 956 H717" class="edge"/>
+<text x="684" y="934" font-size="16" fill="#68788F" font-weight="400">框</text>
+<path d="M370 1030 V1063 H700 V1097" class="edge"/>
+<path d="M1030 1030 V1063 H700" class="edge"/>
+<rect x="60" y="1100" width="1280" height="150" rx="16" fill="white" stroke="#DCE4EE"/><rect x="60" y="1116" width="5" height="118" rx="2.5" fill="#BD741C"/>
+<text x="84" y="1137" font-size="24" fill="#15263D" font-weight="600">05  目标空间位置与有效性</text>
+<rect x="1150" y="1117" width="170" height="29" rx="14" fill="#FFF3E5"/>
+<text x="1163" y="1137" font-size="16" fill="#BD741C" font-weight="550">待开发 / 接入</text>
+<text x="84" y="1172" font-size="19" fill="#46556B" font-weight="400">结合相机内参反投影得到 X / Y / Z，明确距离定义和方位角。</text>
+<text x="84" y="1201" font-size="19" fill="#46556B" font-weight="400">补异常跳变处理、消息年龄、实测 / 预测区分；位置卡尔曼另行评估，不由 ByteTrack 自动完成。</text>
+<text x="84" y="1233" font-size="16" fill="#78869A" font-weight="400">先用稳健测距 + 简单平滑；相机移动时需考虑自运动。</text>
+<path d="M700 1250 V1280" class="edge"/>
+<rect x="60" y="1282" width="1280" height="143" rx="16" fill="white" stroke="#DCE4EE"/><rect x="60" y="1298" width="5" height="111" rx="2.5" fill="#BD741C"/>
+<text x="84" y="1319" font-size="24" fill="#15263D" font-weight="600">06  ROS 调试输出 → Foxglove + SSH</text>
+<rect x="1150" y="1299" width="170" height="29" rx="14" fill="#FFF3E5"/>
+<text x="1163" y="1319" font-size="16" fill="#BD741C" font-weight="550">待开发 / 接入</text>
+<text x="84" y="1354" font-size="19" fill="#46556B" font-weight="400">已有基础图像和 detections；补目标 ID、距离、偏角、深度有效率、丢失状态与延迟。</text>
+<text x="84" y="1383" font-size="19" fill="#46556B" font-weight="400">安装桥接，配置连接和布局；参数实时修改需要节点实际应用。</text>
+<text x="84" y="1408" font-size="16" fill="#78869A" font-weight="400">本阶段只观察感知输出，不配置 Teleop 或车辆运动。</text>
+<path d="M700 1425 V1455" class="edge"/>
+<rect x="60" y="1457" width="780" height="151" rx="16" fill="white" stroke="#DCE4EE"/><rect x="60" y="1473" width="5" height="119" rx="2.5" fill="#4E70BC"/>
+<text x="84" y="1494" font-size="24" fill="#15263D" font-weight="600">07  场景与性能验收</text>
+<rect x="650" y="1474" width="170" height="29" rx="14" fill="#EDF3FF"/>
+<text x="663" y="1494" font-size="16" fill="#4E70BC" font-weight="550">待实机验证</text>
+<text x="84" y="1529" font-size="19" fill="#46556B" font-weight="400">正面 / 背面、多人交叉、遮挡与图像断流。</text>
+<text x="84" y="1558" font-size="19" fill="#46556B" font-weight="400">测漏检、ID 切换、距离误差、抖动及延迟。</text>
+<text x="84" y="1591" font-size="16" fill="#78869A" font-weight="400">目前无 Jetson 实测帧率，不承诺性能。</text>
+<rect x="880" y="1457" width="460" height="151" rx="16" fill="white" stroke="#DCE4EE"/><rect x="880" y="1473" width="5" height="119" rx="2.5" fill="#BD741C"/>
+<text x="904" y="1494" font-size="24" fill="#15263D" font-weight="600">按实测需要增强</text>
+<rect x="1150" y="1474" width="170" height="29" rx="14" fill="#FFF3E5"/>
+<text x="1163" y="1494" font-size="16" fill="#BD741C" font-weight="550">待开发 / 接入</text>
+<text x="904" y="1529" font-size="19" fill="#46556B" font-weight="400">TensorRT FP16、s 版、Pose、</text>
+<text x="904" y="1558" font-size="19" fill="#46556B" font-weight="400">分割或 ReID；不必一次全上。</text>
+<text x="904" y="1591" font-size="16" fill="#78869A" font-weight="400">Pose 输出二维关键点，三维仍需深度。</text>
+<rect x="60" y="1635" width="1280" height="91" rx="16" fill="#EAF0F8"/>
+<text x="84" y="1673" font-size="22" fill="#1C3556" font-weight="600">当前结论</text>
+<text x="84" y="1710" font-size="18" fill="#52647C" font-weight="400">已有相机驱动与检测基础；目标跟踪、锁定、深度融合和可视化仍需组成完整感知链。</text>
+<line x1="60" y1="1750" x2="1340" y2="1750" stroke="#D7E0EC"/>
+<text x="60" y="1783" font-size="18" fill="#425770" font-weight="550">已有：相机驱动、检测节点、模型权重  /  待做：人体配置、跟踪锁定、测距融合、展示与验证</text>
+<text x="60" y="1813" font-size="16" fill="#78869A" font-weight="400">依据：本地厂商源码静态检查与方案文档  ·  2026-09-14  ·  当前范围：感知与可视化</text>
+</svg>

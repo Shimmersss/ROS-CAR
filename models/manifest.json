@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "name": "yolo11n.pt",
+      "origin": "Vendor archive: JP6.2_wheeltec_ros2_src_20260903/ultralytics_ros2/model/yolo11n.pt",
+      "size_bytes": 5613764,
+      "sha256": "0ebbc80d4a7680d14987a577cd21342b65ecfd94632bd9a8da63ae6417644ee1",
+      "local_path": "weights/yolo11n.pt",
+      "status": "present_in_vendor_archive_not_loaded",
+      "license_note": "Verify upstream model/software license for intended use; this manifest grants no rights."
+    }
+  ]
+}

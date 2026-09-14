@@ -1,0 +1,49 @@
+# 项目协作约定
+
+1. 每次完成项目更新后，及时更新 AGENTS.md 和 WORKLOG.md，并做一轮最小程度的审查。
+2. 缺少必要环境时主动补齐；不得将静态检查描述为编译通过或实机验证。
+
+## 当前上下文（2026-09-14）
+
+- 目标：室内人体跟随小车，计划使用 Orin Nano Super 8GB，通过 Mac 上的 Foxglove 和 SSH 调试。
+- 用户最初称相机为 Astra Pro；保存的商品资料涉及 Astra Pro Plus 和 Gemini Pro。实际到手型号及 USB 标识仍需核对。
+- 厂商代码位于 `JP6.2_wheeltec_ros2_src_20260903/`，来自 Humble 源码目录，文件夹标注 JP6.2。
+- 底盘具体型号、实物下位机协议兼容性尚未确认；不要将源码默认 `mini_mec` 当作用户车型。已 SSH 确认小车为 Ubuntu 22.04.5 LTS、aarch64，JetPack 6.2 / CUDA 12.6 已通过 SSH 核对。
+- SSH 地址已由用户确认：Wi-Fi 为 `wheeltec@192.168.1.240`，网线为 `wheeltec@192.168.100.2`，端口均为 22。本机 `~/.ssh/config` 已添加 `roscar-wifi`、`roscar-ethernet` 别名；两地址均曾登录成功，安装期间网线连接中断，后续使用 Wi-Fi。密码不写入项目文档或 SSH 配置。此前 Codex 应用内新增连接受界面工具安全限制，未由本任务完成。
+- 小车已安装 Codex CLI 0.154.0、Clash Verge Rev 2.5.2 与必要桌面依赖。Codex 已确认 ChatGPT 登录；启动器自动使用 `127.0.0.1:7897` 代理。Clash 已导入用户订阅、使用规则模式和新加坡节点，关闭 TUN/局域网代理访问，配置桌面登录自启动。配置位置及验证范围见 `deploy/README.md`；订阅 URL、节点凭据和登录凭据禁止写入项目文件。
+- 已完成源码静态初查，具体证据与待办见 WORKLOG.md；尚未在 Jetson 编译或连接硬件。
+- 当前任务边界：用户要求先不考虑下位机；先研究和验证人体感知、目标跟踪、深度测距及 Foxglove 展示，暂不接车辆运动。
+- 当前路线建议：相机驱动 + YOLO11n + ByteTrack + 配准后的深度测距，按需求再评估 Pose、分割或 ReID。此路线尚未实施。
+- 方案主文档为 `人体跟随感知方案.md`，包含硬件区别、骨架 SDK 路线、源码现状、YOLO/深度流程、Foxglove/SSH 配置和感知验收顺序。更新方案时同步维护此文档。
+- 已补充骨架与滤波逻辑：可见人体应用代码为姿势锁定、平均 RGB 恢复和简化 PD，没有显式人体卡尔曼；SDK 内部未知。ByteTrack 自带检测框卡尔曼，空间深度滤波需独立设计；整车 EKF 不等于人体滤波。
+- 两条路线的 SVG 图位于 `docs/diagrams/`，主文档已链接。图中必须区分“已有源码/库”“待开发/接入”“待实机验证”，避免将库已附带表述为已部署成功。
+- 两图并排合并的 PNG 为 `docs/diagrams/人体跟随两方案对比.png`（5780×3800）；修改 SVG 后如需分享合并图，应同步重新导出。
+- 主动开发工作区为 `ros2_ws/src/`，包含 person_interfaces、astra_body_adapter、yolo_person_tracker、perception_bringup。厂商目录保持原样并排除普通 Git；构建仅扫描主动工作区。
+- 当前 A/B 节点是 NOT_READY 入口，尚未接通真实算法；只有显式 route:=demo 才输出带 is_simulated=true 的演示数据。禁止把演示数据或容器验证描述为实机人体识别。
+- 四个包已在本机 Docker 的 Linux ARM64 ROS 2 Humble 环境编译通过；A/B、demo 与非法 route 运行检查通过。尚未在 Jetson 连接相机、验证 SDK 或 CUDA。
+- 项目入口见 README.md，接口见 docs/interfaces.md，任务顺序见 docs/roadmap.md。Mac 同步脚本默认 dry-run，不传厂商原包、权重、录像或构建产物，不执行远端删除。
+
+- 用户已授权迁入串口相关代码但暂不启动：ros2_ws/src/chassis_vendor/ 包含原样复制的 turn_on_wheeltec_robot、wheeltec_robot_msg、serial，42 个源文件由 SOURCE_MANIFEST.json 记录哈希。COLCON_IGNORE 默认跳过这三个包，未接入 perception_bringup；仅原四包有既往编译验证，迁入串口包尚未编译或实机验证。
+
+- 新增约 4000 字课程设计报告 `docs/室内人体跟随小车课程设计.md`，汇总识别、锁定、深度、滤波、控制与实验设计；该文档为方案及阶段总结，不能视为算法或实车已完成。
+
+- 用户澄清需要选题框架而非完整课设论文。新增 `docs/智能车方向大作业选题.md`，按示例 PDF 的场景、技术栈、完成要求、评分与交付物结构提供 8 个独立选题；先前课设报告保留，仅作背景资料。
+- 新增 `deploy/clash-hk-vps.yaml`：仅使用香港 VPS `8.217.15.181` 的 VMess/Hysteria2 节点，供 Clash Verge 导入；未修改服务器现有业务服务。
+
+- 2026-09-14 环境检查见 docs/小车环境检查.md：GPU 张量运算及 torchvision CUDA NMS 成功；系统 Python 缺 ultralytics，未发现 Foxglove bridge，torchvision 图像扩展缺 libnvjpeg.so.12。USB 实测 ORBBEC ASTRA S（2bc5:0402），与先前型号描述不一致，RGB 来源及实物标签待核对。厂商工作区已有安装包但未启动验证；本次未更改远端配置。
+
+- 2026-09-14 已首次部署项目到 Jetson `/home/wheeltec/ROSCAR`，原生 Humble 四包编译通过（16.5s）；原厂工作区未改，串口继续 COLCON_IGNORE，未设置自启动。同步脚本 deploy 改为明确文件白名单，排除代理节点配置。真实感知算法仍未接入。
+- 首次部署后 Jetson 本机隔离 ROS 域的 A/B/demo 与非法 route 运行检查全部通过，测试已退出；不是相机或人体识别实测。
+
+- 2026-09-14 方案A联调：用户授权3个Sol子代理协助。ASTRA S深度流实测640×480/16UC1，15秒窗口收到345帧；SDK main报0x50000a19授权无效，用户需找厂商确认。禁止把SDK帧编号当骨架成功。
+- 新增bodyreader_msg和独立bodylist_adapter（默认A占位入口不变），5包Jetson编译成功，5个纯逻辑单测与Jetson合成ROS状态测试通过。毫米转米，Y轴取反是待实机验证的约定；无传感器时间戳。测试不启动底盘，厂商bodydata_process也发布cmd_vel，因此不使用。见docs/方案A联调记录.md。
+
+- Foxglove bridge 3.4.3 与 rosx_introspection 2.3.0 已解包到 Jetson tools/foxglove-root，脚本 scripts/run_foxglove.sh 手动启动、仅监听本机。foxglove.sdk.v1握手通过，旧协议探针失败，客户端展示待验收；未设置自启动。骨架错误摘录 docs/方案A骨架错误日志.txt 可转厂商，完整日志保存在 artifacts。
+
+- 用户在场复测：40秒窗口1005条Bodylist全部count=0，无ID/关节识别结果；授权错误文字仍出现，代码本轮0x50000739。未跑通但原因未定，需继续核对视野/配置/厂商程序，不能仅根据日志认定授权必然阻塞。测试已停止。
+- 随后人体实测复测成功：40秒 1004 条 Bodylist，707 条检测到 1 人（ID 93）、707 条有效质心、706 条有效关节、最大19关节，叉腰判定1帧，Z约0.99–1.18m。Invalid Orbbec Body Tracking license 仍出现（0x50000719），但未阻止实际骨架输出；记录为待厂商解释的SDK异常/授权提示，不再作为当前功能硬阻塞。未启底盘或任何控制节点。
+- 方案 A Foxglove 链路已补齐：bodyreader/main → bodylist_adapter → TargetState + visualization Marker → 用户目录 foxglove_bridge。启动脚本 `scripts/run_astra_foxglove.sh` 使用 ROS 域182、ROS_LOCALHOST_ONLY=0、独立进程组；无底盘、cmd_vel或自启动。Mac 隧道使用本地8766（8765被其他本地服务占用），实际 WebSocket握手通过。骨架和RGB并开时本机实测Bodylist不出数据，当前启动默认骨架流；Image面板待单独排查。当前会话已手动启动该链路，Foxglove客户端布局仍需人在画面中叉腰后验收 TRACKING/Marker。
+- Foxglove Desktop 自动深链接没有产生 Bridge 客户端连接记录；改为在应用内手动选择 Foxglove WebSocket、填写 ws://localhost:8766。在线链路当前无人时验证为 SEARCHING + Marker DELETE，实际人体 TRACKING/Marker 待用户配合叉腰。
+- 本轮继续联调确认：Jetson bridge 持续监听 127.0.0.1:8765，并已广播 `/perception/target_state`、`/perception/target_marker`、`/bodylist`；Mac 8766 隧道可达。Foxglove 当前界面曾回到“没有数据源”，需通过“打开连接”重新选择 `ws://localhost:8766`，再验收面板消息。
+- 用户指出需要 SSH ROS 小车数据源；新增 `foxglove/ssh-ros-datasource.json` 与 `scripts/connect_foxglove_roscar.sh`，明确 `roscar-wifi`、ROS 域 182、远端 bridge 8765 和本地 WebSocket 8766。该配置已写入仓库，但尚未发布到外部服务或远端仓库。
+- 用户要求迁入示范中的语音模块：已将 `wheeltec_mic`（含 `wheeltec_mic_msg`、`wheeltec_mic_ros2`）、`wheeltec_mic_aiui` 和 `tts_make_ros2` 原样复制到 `ros2_ws/src/`，保留讯飞/AIUI 原生库、ASR/TTS 资源和反馈音频，排除 Git/Python 缓存。三个顶层包新增 `COLCON_IGNORE`，默认不参与主动工作区构建，未接入 `perception_bringup`，未启动麦克风、声卡、语音节点或底盘控制。迁入包尚未编译或实机验证；依赖实际麦克风串口、ALSA 声卡、厂商动态库和讯飞配置。

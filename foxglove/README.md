@@ -1,0 +1,49 @@
+# Foxglove 可视化：方案 A
+
+这套可视化仅展示人体感知数据，不启动底盘、不发布 `/cmd_vel`，也不设置自启动。
+
+```text
+ASTRA S → bodyreader/main → /bodylist
+       → bodylist_adapter → /perception/target_state、/perception/target_marker
+       → foxglove_bridge → SSH 隧道 → Mac Foxglove
+```
+
+`bodyreader/main` 直接占用 Astra 设备，因此不要和 `astra_camera` 同时运行。现有厂商 `bodyfollow`、`bodyinteraction`、`final` launch 会包含底盘或控制节点，不能用于这里。
+
+## 启动与连接
+
+小车上手动启动，前台保持该终端运行：
+
+```bash
+cd /home/wheeltec/ROSCAR
+bash scripts/run_astra_foxglove.sh
+```
+
+Mac 上另开一个终端保持隧道：
+
+```bash
+cd /Users/shimmer/Documents/ChatGPT/ROSCAR
+bash scripts/open_foxglove_tunnel.sh
+```
+
+在 Mac Foxglove 新建 **Foxglove WebSocket** 连接，地址填写 `ws://localhost:8766`。小车端 Bridge 仍只监听自身的 8765；Mac 使用 8766 是为了避开本机已占用的 8765。停止小车端启动终端即可同时停止骨架、适配器和桥接。
+
+如果 Foxglove 显示“没有数据源”，重新通过“打开连接”选择 Foxglove WebSocket 并填写上述地址。检查命令：`nc -vz 127.0.0.1 8766`，以及 `ssh roscar-wifi 'ss -ltn | grep 8765'`。
+
+仓库中的 [ssh-ros-datasource.json](ssh-ros-datasource.json) 是小车 SSH ROS 数据源清单，布局使用 [astra-layout.json](astra-layout.json)。可运行 `bash scripts/connect_foxglove_roscar.sh` 建立隧道并打印连接地址。
+
+## 建议面板
+
+| 面板 | 话题 / 设置 | 用途 |
+|---|---|---|
+| Raw Messages | `/perception/target_state` | 查看 `status`、`target_id`、`position_valid`、`detail`，确认当前不是模拟数据 |
+| Plot | `/perception/target_state.horizontal_distance_m`、`bearing_rad` | 看人与车的距离和左右偏角；无效阶段应为 NaN，不是零 |
+| 3D | Fixed frame=`astra_depth_optical_frame`；添加 `/perception/target_marker` | 绿色球表示锁定的人体质心；球删除表示非 TRACKING 状态 |
+
+开始时，先让人全身进入相机画面；未叉腰时状态应为 `SEARCHING`。双手叉腰会锁定人体 ID，状态变为 `TRACKING`，距离、偏角和绿色球开始更新。人离开画面会变为 `LOST` 或 `STALE`。
+
+默认只启骨架流，因为当前实测 RGB 与骨架流同时开启时 `/bodylist` 没有数据。RGB 需要单独排查，不是当前可视化验收的前置条件。无论哪种模式，都不应并行启动 `astra_camera`。
+
+`Bodylist` 没有原始时间戳和置信度，因此 `TargetState.observation_stamp` 为零，`measurement_age_s`、`confidence` 为 NaN。质心使用米；坐标为光学系 X 向右、Y 向下、Z 向前。Y 方向是根据厂商 SDK 行为推断，仍需在实际画面中确认。
+
+当前已经实测骨架可输出人体 ID、质心和关节，但 SDK 仍打印授权提示；该提示未阻止本次输出，具体含义待厂商说明。Foxglove Bridge 只以 `foxglove.sdk.v1` 协议握手，已完成本机 WebSocket 握手测试；下面面板的客户端展示需要本轮实际连接验收。

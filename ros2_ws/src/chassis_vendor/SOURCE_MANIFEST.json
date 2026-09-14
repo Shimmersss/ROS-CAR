@@ -1,0 +1,215 @@
+{
+  "description": "原厂源码原样迁入；仅排除 .git、系统缓存和 Python 缓存。",
+  "files": [
+    {
+      "path": "turn_on_wheeltec_robot/CMakeLists.txt",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/CMakeLists.txt",
+      "sha256": "8782c74b307b21557b3549657e4e1faf0b709a197fe3d6d9808c7451a3f53656"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/config/camera_info.yaml",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/config/camera_info.yaml",
+      "sha256": "c142cd2f6305b369d365dabbeadf4b1ab14c8749f228e1666340212d3f3c1cb1"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/config/ekf.yaml",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/config/ekf.yaml",
+      "sha256": "bd07d02442dc31860934d9b85759554b32a241e1efba57d433dba81b09a89aa5"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/config/ekf_carto.yaml",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/config/ekf_carto.yaml",
+      "sha256": "486ce54761d56f22c6d816d673a05bc3cf94e8a8afedad85e4191b701188d44d"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/config/ekf_nav.yaml",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/config/ekf_nav.yaml",
+      "sha256": "bb6710ddd46c505b6d7cda14eb1e08459ad619d6e8ca2e66c368ae44a88458ba"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/config/imu.yaml",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/config/imu.yaml",
+      "sha256": "81c0aa390b15db17a3e9cd49e7eca161a87b0c27792ea82f8dcca2d6f7065cb6"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/config/robot_model.yaml",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/config/robot_model.yaml",
+      "sha256": "d6af59928e008e1701ac9b82f0e29c21ec165f03965582079ad7d647cc26c1a2"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/config/wheeltec_param.yaml",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/config/wheeltec_param.yaml",
+      "sha256": "85c40c9504a324a0bbe21bde388c2098da5b052d174134dc7f26cb1dbb10607f"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/config/wheeltec_param_back.yaml",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/config/wheeltec_param_back.yaml",
+      "sha256": "0404dd66fb6805d6dc816a0a751a4ff943655aad8088d00879dffe2bca507508"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/include/turn_on_wheeltec_robot/Quaternion_Solution.h",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/include/turn_on_wheeltec_robot/Quaternion_Solution.h",
+      "sha256": "06c510b279ad4589b8498c577ad5561b06fef45dc74eb662160685a1e8630496"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/include/turn_on_wheeltec_robot/wheeltec_robot.h",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/include/turn_on_wheeltec_robot/wheeltec_robot.h",
+      "sha256": "82c9c92b7832bfe23a26952cbb6b5ebabbfb7c0d20abe6bdbf0c1377d5f940ae"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/launch/base_serial.launch.py",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/launch/base_serial.launch.py",
+      "sha256": "1728c5cad17fd957ccf565c1331f4cc1f7c62235c233d73e68e0d0698a21c89a"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/launch/imu_processor.launch.py",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/launch/imu_processor.launch.py",
+      "sha256": "6593aa7d7244800810020eb17dbc7cc2a117ab49064e9bbfdbb95ec99cf46eaf"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/launch/robot_mode_description.launch.py",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/launch/robot_mode_description.launch.py",
+      "sha256": "14bd4a36c9c1d125e621bdba04739419082febe438b2c7a7a448629af773ffb7"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/launch/turn_on_wheeltec_robot.launch.py",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/launch/turn_on_wheeltec_robot.launch.py",
+      "sha256": "24162aa3c2bb285c929746805d0ff8671833f7fa775d6b88e2737b6b4e2a79a5"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/launch/wheeltec_camera.launch.py",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/launch/wheeltec_camera.launch.py",
+      "sha256": "f921d4cb23409d6418dbf8e7c667f52a0f99e468e3e3c4efc3c6d96cbbb590ac"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/launch/wheeltec_ekf.launch.py",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/launch/wheeltec_ekf.launch.py",
+      "sha256": "f779f108cb64d5284039e4b166f8480615540ca63125a8db37aafb4506e8285c"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/launch/wheeltec_lidar.launch.py",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/launch/wheeltec_lidar.launch.py",
+      "sha256": "4759004aea726cfd6cf5f0422a70846faa3205837d3ddf31ad9e65d0489a2b16"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/launch/wheeltec_sensors.launch.py",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/launch/wheeltec_sensors.launch.py",
+      "sha256": "e8f7d2ffea7b6f88d00cdb535f26f2ae77525d967dde2942a275a47cf4bb5b26"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/msg/Position.msg",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/msg/Position.msg",
+      "sha256": "efb7be732555e791a4506665776d39b4216c4d99d6869f7001c0cc1e7cec7e3d"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/package.xml",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/package.xml",
+      "sha256": "ddc974e19a89e62b55369e86d3d7c3c688dbb488f16763b28c35222088692e46"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/src/ImuProcessor.cpp",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/src/ImuProcessor.cpp",
+      "sha256": "aeea380f2d63c57e16569ecf25829d990931836d434dc4ddc9a3341a3d023512"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/src/Quaternion_Solution.cpp",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/src/Quaternion_Solution.cpp",
+      "sha256": "21857d55cde9698af983167a6ca3ba7134064ca4a6dbdc59688550fa9a5ff7fd"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/src/wheeltec_robot.cpp",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/src/wheeltec_robot.cpp",
+      "sha256": "c96da6f956f3568f0ba2fe3de2c151c41127fe5a0b3f386f1213c5b3609ee55d"
+    },
+    {
+      "path": "turn_on_wheeltec_robot/wheeltec_udev.sh",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/turn_on_wheeltec_robot/wheeltec_udev.sh",
+      "sha256": "55ebc01ec6d0951470c72ecfc176b564296f4f91ac2643e3255c48066ddb3c43"
+    },
+    {
+      "path": "wheeltec_robot_msg/CMakeLists.txt",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/wheeltec_robot_msg/CMakeLists.txt",
+      "sha256": "2a710fbe1e6e155d50fc2b9383977087141b3d8195a2b8ade82991a5a5bd7abf"
+    },
+    {
+      "path": "wheeltec_robot_msg/msg/Data.msg",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/wheeltec_robot_msg/msg/Data.msg",
+      "sha256": "56a0e0da8274dc8cd2ead5bdd7f3596ef913a26cf358968d50f5531f0dc246d6"
+    },
+    {
+      "path": "wheeltec_robot_msg/msg/Supersonic.msg",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/wheeltec_robot_msg/msg/Supersonic.msg",
+      "sha256": "fa81d75b190aca3b31377f69872ef75e6bacb2d279c6c068882b468164aef79e"
+    },
+    {
+      "path": "wheeltec_robot_msg/package.xml",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/wheeltec_robot_msg/package.xml",
+      "sha256": "68ae56ab75f84e6eb1cd87e38227b1017cdd3c2970bb7a355bd7fd7745987eb9"
+    },
+    {
+      "path": "serial/CMakeLists.txt",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/depend/serial_ros2/CMakeLists.txt",
+      "sha256": "3880ad16cf227af29595f3815ecf43c645c41a7cccd0ed12b6a404139720cc4b"
+    },
+    {
+      "path": "serial/README.md",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/depend/serial_ros2/README.md",
+      "sha256": "6bbde4ded95c12ed6a778aee5d1fdc09fc5869e37728e605cd708fad1ca482f4"
+    },
+    {
+      "path": "serial/include/serial/impl/unix.h",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/depend/serial_ros2/include/serial/impl/unix.h",
+      "sha256": "b5fb6fe5dc66aa262c4fcd602c677938bf9a65ddc2010c7b022c7aade1f36bc6"
+    },
+    {
+      "path": "serial/include/serial/impl/win.h",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/depend/serial_ros2/include/serial/impl/win.h",
+      "sha256": "416e11faeaae7df28f47e801a58cb1d9ac78d7413a43cb70830a2d1271a889fc"
+    },
+    {
+      "path": "serial/include/serial/serial.h",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/depend/serial_ros2/include/serial/serial.h",
+      "sha256": "f4dcb008056f41fbb80357da817959e8cf5e2f6d04fb79a416b4fedd68a8a0d7"
+    },
+    {
+      "path": "serial/include/serial/v8stdint.h",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/depend/serial_ros2/include/serial/v8stdint.h",
+      "sha256": "d1155ad61ee6583c90ce3abb174239fbb677627e8220fb8518c8d5e4d3d16e5d"
+    },
+    {
+      "path": "serial/package.xml",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/depend/serial_ros2/package.xml",
+      "sha256": "aadb544cccda9705cee5b9e4eccde74a645a34a1f7de4c432253540bc891b7fe"
+    },
+    {
+      "path": "serial/src/impl/list_ports/list_ports_linux.cc",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/depend/serial_ros2/src/impl/list_ports/list_ports_linux.cc",
+      "sha256": "f67417b8ba5fd2718f9a14d705f4f939132700f0a43ae647e9c58559681b4694"
+    },
+    {
+      "path": "serial/src/impl/list_ports/list_ports_osx.cc",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/depend/serial_ros2/src/impl/list_ports/list_ports_osx.cc",
+      "sha256": "19665d16a5bba094206f746f91811632abacad4f5bbe41232c9bcfe30731af79"
+    },
+    {
+      "path": "serial/src/impl/list_ports/list_ports_win.cc",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/depend/serial_ros2/src/impl/list_ports/list_ports_win.cc",
+      "sha256": "ddf2bda16022f97b64fa5170545a22a48da5c675f8e09e5863ec3897cd80e4bc"
+    },
+    {
+      "path": "serial/src/impl/unix.cc",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/depend/serial_ros2/src/impl/unix.cc",
+      "sha256": "afdc2b157831400116c45ed879f0eaaad450925ee0a15a2f033e362baecf11d2"
+    },
+    {
+      "path": "serial/src/impl/win.cc",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/depend/serial_ros2/src/impl/win.cc",
+      "sha256": "c2a1e36c1f25aa82e9c5242c0263941a93de664f60d48dbbec12c3ce7d1d9704"
+    },
+    {
+      "path": "serial/src/serial.cc",
+      "source": "JP6.2_wheeltec_ros2_src_20260903/depend/serial_ros2/src/serial.cc",
+      "sha256": "7702b646a57e8257db057272773f6a8e54b396a7d09b3d98a01040aa1cee805c"
+    }
+  ]
+}
