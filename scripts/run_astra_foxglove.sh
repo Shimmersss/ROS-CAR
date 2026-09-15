@@ -26,8 +26,22 @@ mkdir -p "$LOG_DIR"
 
 cleanup() {
   trap - EXIT INT TERM
+  local process_id
   for process_id in "${BRIDGE_PID:-}" "${ADAPTER_PID:-}" "${BODY_PID:-}"; do
     [[ -n "$process_id" ]] && kill -TERM -- "-$process_id" 2>/dev/null || true
+  done
+  for _ in {1..30}; do
+    local running=false
+    for process_id in "${BRIDGE_PID:-}" "${ADAPTER_PID:-}" "${BODY_PID:-}"; do
+      if [[ -n "$process_id" ]] && kill -0 -- "-$process_id" 2>/dev/null; then
+        running=true
+      fi
+    done
+    [[ "$running" == false ]] && break
+    sleep 0.1
+  done
+  for process_id in "${BRIDGE_PID:-}" "${ADAPTER_PID:-}" "${BODY_PID:-}"; do
+    [[ -n "$process_id" ]] && kill -KILL -- "-$process_id" 2>/dev/null || true
   done
   wait 2>/dev/null || true
 }

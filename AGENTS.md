@@ -19,7 +19,7 @@
 - 两条路线的 SVG 图位于 `docs/diagrams/`，主文档已链接。图中必须区分“已有源码/库”“待开发/接入”“待实机验证”，避免将库已附带表述为已部署成功。
 - 两图并排合并的 PNG 为 `docs/diagrams/人体跟随两方案对比.png`（5780×3800）；修改 SVG 后如需分享合并图，应同步重新导出。
 - 主动开发工作区为 `ros2_ws/src/`，包含 person_interfaces、astra_body_adapter、yolo_person_tracker、perception_bringup。厂商目录保持原样并排除普通 Git；构建仅扫描主动工作区。
-- 当前 A/B 节点是 NOT_READY 入口，尚未接通真实算法；只有显式 route:=demo 才输出带 is_simulated=true 的演示数据。禁止把演示数据或容器验证描述为实机人体识别。
+- 正式 `route:=astra` 已接入实测 bodylist_adapter；`route:=yolo` 仍为 NOT_READY。只有显式 `route:=demo` 才输出 `is_simulated=true` 的演示数据，禁止将 demo 或容器验证描述为实机人体识别。
 - 四个包已在本机 Docker 的 Linux ARM64 ROS 2 Humble 环境编译通过；A/B、demo 与非法 route 运行检查通过。尚未在 Jetson 连接相机、验证 SDK 或 CUDA。
 - 项目入口见 README.md，接口见 docs/interfaces.md，任务顺序见 docs/roadmap.md。Mac 同步脚本默认 dry-run，不传厂商原包、权重、录像或构建产物，不执行远端删除。
 
@@ -52,6 +52,10 @@
 - 用户随后要求用小车 Wi-Fi 地址替代 localhost。Bridge 已改为默认监听 `0.0.0.0:8765`，Mac 直连 `ws://192.168.1.240:8765`；TCP 与 foxglove.sdk.v1 WebSocket 101 握手实测通过。`connect_foxglove_roscar.sh` 现检查直连，SSH 隧道脚本仅作离开当前 Wi-Fi 后的备用。该端口可被同一局域网设备访问；仍为手动启动、未设自启动、未启动底盘。
 - 20 秒真人锁定验收中，Bodylist 521/521 帧检测到人体，掩码 528/528 帧有前景，出现人体 ID 135、237；但未触发叉腰，适配器仍锁定旧 ID 96，554 条 TargetState 全为 LOST，无有效位置或 Marker ADD。链路和人体分割正常，本次目标锁定未通过；需要再次保持标准叉腰姿势并采集关节条件，另需关注单人 ID 在窗口内变化的问题。
 - 随后 15 秒复测通过真人锁定验收：人体 ID 41 有 404 帧，33 帧满足全部叉腰条件；约 1.93 秒进入 TRACKING，363 条 TargetState 均位置有效，距离约 0.865–1.264 m、偏角约 -0.140–0.007 rad，目标球和检测体积框各 363 条 ADD。Foxglove 客户端同步显示 status=2、target_id=41、position_valid=true、人体掩码和 3D 面板。当前 Foxglove 标签仍显示旧 localhost 数据源，用户表示自行改为已验证的 `ws://192.168.1.240:8765`。
+- 正式 A route 接入完成：perception_bringup 的 `route:=astra` 改为 bodylist_adapter，方案 A 组合脚本也通过该 route 启动。Jetson 两包编译成功；合成 A 状态机测试、A/B/demo 与非法 route 回归均通过。当前在线进程已是正式 route，6 秒收到 108 条 Bodylist 和 147 条 SEARCHING，`/cmd_vel` 不存在；当时画面无人。启动脚本清理增加 3 秒后进程组 KILL 兜底，处理厂商 SDK 不响应 TERM 的情况。
+- 用户要求叉腰锁定更宽松：默认阈值由厂商等价 50/100/50 mm 调整为手高于脊柱 20 mm、手肩横差小于 160 mm、肩高于手 20 mm；单帧触发改为最近 10 帧中 3 帧投票。五项参数由正式 astra launch 暴露。Jetson 两包编译、7 个逻辑测试和正式 route 合成测试通过；本机 Linux ARM64 Humble 容器五包编译、7 个逻辑测试、正式 A 合成测试、A/B/demo 与非法 route 回归也全部通过。小车因没电离线，在线进程尚未重启加载新值。
+- 已整理 `docs/物理串口协议说明.md` 并生成可交付 ZIP，包含底盘串口字节表、ROS 映射、厂商源码、消息定义和配置。当前串口包仍未编译或实机验证，方案 A 没有打开串口或发布 `/cmd_vel`。静态审查发现厂商安全新协议帧尾赋值被注释、机械臂路径构造 10 字节却发送 11 字节，启用前必须修复并核对固件协议。
+- 已核对用户提供的 `R550_C30D(2.0)_Mini小车STM32源码_GMR编码器_2026.08.21.zip`：这是 STM32F407ZG + FreeRTOS 的 R550/C30D 2.0/GMR 下位机工程，115200、11 字节控制帧、24 字节基础回传、`0x7B/0x7D` 和异或 BCC 均与迁入的 ROS 2 驱动匹配，可视为当前底盘的对应固件候选。固件通过电位器选择 Mec/4WD/MecV/4WDV 等模式，仍须上电核对 OLED/实物档位。安全 `0xB0/0xB1` 和机械臂 `0xAA/0xBB` 扩展未在该固件中检出对应解析，不计入基础协议匹配结论。
 
 - 2026-09-14 语音方案 B 已新增 `xfyun_speech`、`deepseek_ros2`、`voice_command_router` 三个主动包：讯飞流式 IAT、DeepSeek 文本桥和受限工具路由。Orin 实测 XFM-DP-V0.0.18 可用 `plughw:CARD=XFMDPV0018,DEV=0` 采集 16 kHz/16-bit/单声道音频，三包原生 Humble 编译成功，真人语音 → 讯飞 IAT → `/voice/asr_text` → DeepSeek 中文回答已跑通。静音底噪峰值约 2441，阈值由 500 调至 2800，并增加连续 160 ms 起音判定；本地 VAD 未确认语音时丢弃云端误识别文本。TTS 与蜂鸣器启动参数默认 false；蜂鸣器属于下位机，本轮延后，不使用 Jetson GPIO，不启动底盘。凭据只存于板子权限 0600 的私有文件，不得写入仓库或日志。
 
