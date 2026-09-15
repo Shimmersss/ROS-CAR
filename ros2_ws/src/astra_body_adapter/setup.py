@@ -21,5 +21,6 @@ setup(
     entry_points={'console_scripts': [
         'adapter = astra_body_adapter.node:main',
         'bodylist_adapter = astra_body_adapter.bodylist_node:main',
+        'person_follower = astra_body_adapter.person_follower_node:main',
     ]},
 )

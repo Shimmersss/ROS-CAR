@@ -299,3 +299,13 @@
 - 用户随后要求直接执行。小车 `192.168.1.240:22` 恢复可达；首次同步发现白名单未包含 `deploy/systemd/`，补充后再次同步成功，并将服务安装到 `/etc/systemd/system/roscar-route-a.service`。
 - 在线验收：`UnitFileState=enabled`、`ActiveState=active`、`SubState=running`、`NRestarts=0`；bodyreader、正式 astra adapter、foxglove_bridge 均在服务 cgroup 内，8765 在 Jetson 监听且 Mac TCP 检查成功。
 - ROS 域 182 中发现 `/bodylist` 和五个预期感知话题；抽样 `TargetState` 为 `source=astra`、`is_simulated=false`、SEARCHING（等待叉腰），并确认 `/cmd_vel` 不存在。没有为了验收重启或断电小车，开机自动拉起仅由 systemd enabled 状态确认，待自然重启时再观察一次。
+
+## 2026-09-15：接入低速 Astra 人体跟随
+
+- 用户明确暂不增加避障，先实现朝被锁定人体运动。复用厂商 `wheeltec_robot_node` 的 `/cmd_vel` -> 11 字节 UART3 链路，不修改 STM32 固件或复制串口协议。
+- `astra_body_adapter` 新增 `person_follower`：订阅 `/perception/target_state`，以20 Hz发布 `/cmd_vel`。默认 `enabled=false`；只在 TRACKING、`position_valid=true`、距离/偏角有限且消息年龄不超过 0.5 秒时运动。
+- 控制默认保持 2.0 m，距离死区 0.15 m，偏角死区 0.08 rad；最高前进 0.15 m/s，最高转向 0.5 rad/s，偏角超过 0.6 rad 时原地转向，人过近时停车而不倒车。目标无效、丢失、超时、非有限或非正距离均持续发零速度。
+- 按 TDD 先观察缺少实现、参数校验和非正距离测试失败，再实现最小修正。Jetson 上 `astra_body_adapter` 构建成功，原7项锁定测试加新14项控制测试，共21项全部通过。
+- 在 Jetson 以临时用户服务启动底盘与跟随节点；验证 `/cmd_vel` 为1个发布者到1个订阅者、禁用/SEARCHING 时输出全零。用户确认安全后发10 Hz、1秒、0.15 m/s 直行指令10次，随后发零速度并恢复跟随服务；远程仅能确认指令链，未观测实际位移。
+- 当前跟随参数为 `enabled=true`，感知为 SEARCHING，等待叉腰锁定，`/cmd_vel` 实测为零。两个用户服务均非开机持久化；本功能不含避障，且未完成真人跟随验收。
+- 最小审查：确认光学 X 向右与 ROS 正角速度方向相反；限速、只前进、大偏角原地转向、动态启用、断流停车和非正距离停车均有直接测试或运行证据。
