@@ -1,0 +1,21 @@
+[Unit]
+Description=ROSCAR Route A Astra person perception and Foxglove
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=wheeltec
+Group=wheeltec
+WorkingDirectory=/home/wheeltec/ROSCAR
+Environment=HOME=/home/wheeltec
+Environment=ROS_DOMAIN_ID=182
+Environment=RGB_STREAM=false
+ExecStart=/bin/bash /home/wheeltec/ROSCAR/scripts/run_astra_foxglove.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

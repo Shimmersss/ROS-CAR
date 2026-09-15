@@ -54,4 +54,8 @@ bash scripts/run_astra_camera.sh
 
 `Bodylist` 没有原始时间戳和置信度，因此 `TargetState.observation_stamp` 为零，`measurement_age_s`、`confidence` 为 NaN。质心使用米；坐标为光学系 X 向右、Y 向下、Z 向前。Y 方向是根据厂商 SDK 行为推断，仍需在实际画面中确认。
 
+## 开机自启
+
+代码同步到 Jetson 后执行 `bash scripts/install_route_a_autostart.sh install`，会安装并立即启用 `roscar-route-a.service`。状态和日志分别使用 `bash scripts/install_route_a_autostart.sh status`、`bash scripts/install_route_a_autostart.sh logs`；移除使用 `bash scripts/install_route_a_autostart.sh remove`。服务固定以 `wheeltec` 用户从 `/home/wheeltec/ROSCAR` 启动，默认 `ROS_DOMAIN_ID=182`、`RGB_STREAM=false`，不启动底盘或 `/cmd_vel`。
+
 当前已经实测骨架可输出人体 ID、质心和关节，但 SDK 仍打印授权提示；该提示未阻止本次输出，具体含义待厂商说明。Foxglove Bridge 只以 `foxglove.sdk.v1` 协议握手，已完成本机 WebSocket 握手测试；下面面板的客户端展示需要本轮实际连接验收。

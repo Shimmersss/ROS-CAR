@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Manual, perception-only A-route launcher. No chassis, cmd_vel, or autostart.
+# Foreground, perception-only A-route launcher used manually or by systemd.
+# It never starts the chassis or publishes cmd_vel.
 set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENDOR_WS="/home/wheeltec/wheeltec_ros2"
 SDK_RUNTIME="$VENDOR_WS/src/wheeltec_bodyreader/bodyreader/lib"
 LOG_DIR="$ROOT/artifacts/astra-foxglove"
-RGB_STREAM="${RGB_STREAM:-true}"
+# The vendor SDK currently stops publishing Bodylist when RGB and body streams
+# are enabled together on the ASTRA S, so Route A defaults to body stream only.
+RGB_STREAM="${RGB_STREAM:-false}"
 
 if [[ ! -d "$SDK_RUNTIME" ]]; then
   echo "缺少 Astra SDK 运行目录：$SDK_RUNTIME" >&2
@@ -24,6 +27,7 @@ export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-182}"
 export ROS_LOCALHOST_ONLY=0
 mkdir -p "$LOG_DIR"
 
+# shellcheck disable=SC2329  # Invoked by the EXIT/INT/TERM trap below.
 cleanup() {
   trap - EXIT INT TERM
   local process_id
@@ -56,8 +60,13 @@ ADAPTER_PID=$!
 setsid bash "$ROOT/scripts/run_foxglove.sh" >"$LOG_DIR/foxglove-bridge.log" 2>&1 &
 BRIDGE_PID=$!
 
-echo '方案 A 可视化已启动：/bodylist、/perception/target_state、/perception/target_marker'
+echo '方案 A 可视化已启动：/bodylist、/perception/target_state、/perception/target_marker、/perception/detection_box、/perception/body_mask_image'
 echo "RGB 流：$RGB_STREAM（需由 bodyreader 实际发布图像话题后 Foxglove 才能显示）"
 echo 'Foxglove Bridge 监听 Jetson 0.0.0.0:8765；Mac 可连接 ws://192.168.1.240:8765。'
 echo 'Ctrl-C 会停止全部感知进程。'
-wait "$BODY_PID"
+set +e
+wait -n "$BODY_PID" "$ADAPTER_PID" "$BRIDGE_PID"
+EXITED_STATUS=$?
+set -e
+echo "方案 A 子进程退出，状态=$EXITED_STATUS；正在清理整组进程。" >&2
+exit 1

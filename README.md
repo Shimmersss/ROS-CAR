@@ -58,6 +58,34 @@ ros2 launch perception_bringup perception.launch.py route:=astra
 # 显式启用模拟数据：route:=demo
 ```
 
+方案 A 推荐使用一键入口。它会后台启动厂商骨架 SDK、正式 Astra 适配器和 Foxglove Bridge，不启动底盘或 `/cmd_vel`：
+
+```bash
+# 在 Jetson 仓库根目录
+bash scripts/route_a.sh start
+bash scripts/route_a.sh status
+bash scripts/route_a.sh logs
+bash scripts/route_a.sh stop
+
+# 在 Mac 仓库根目录，通过 SSH 一键远程拉起
+bash scripts/route_a_remote.sh start
+```
+
+Mac 也可直接双击仓库根目录的 `启动方案A.command`。启动成功后 Foxglove 连接 `ws://192.168.1.240:8765`。
+
+需要 Jetson 开机自动启动方案 A 时，在代码同步到 `/home/wheeltec/ROSCAR` 后执行一次：
+
+```bash
+bash scripts/install_route_a_autostart.sh install
+
+# 后续管理
+bash scripts/install_route_a_autostart.sh status
+bash scripts/install_route_a_autostart.sh logs
+bash scripts/install_route_a_autostart.sh remove
+```
+
+该 systemd 服务以 `wheeltec` 用户运行，开机启动并在异常退出后等待 5 秒重启。它仍只运行人体感知和 Foxglove，不启动底盘或 `/cmd_vel`。
+
 另一个终端加载相同环境后检查：
 
 ```bash
