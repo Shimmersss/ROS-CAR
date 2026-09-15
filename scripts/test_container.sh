@@ -13,5 +13,9 @@ docker run --rm --platform linux/arm64 -e ROS_DOMAIN_ID=182 \
     source /opt/ros/humble/setup.bash
     colcon build --base-paths src --event-handlers console_direct+
     source install/setup.bash
+    PYTHONPATH=/workspace/ros2_ws/src/astra_body_adapter \
+      python3 -m unittest discover \
+      -s /workspace/ros2_ws/src/astra_body_adapter/test -v
+    ROS_DOMAIN_ID=181 python3 /workspace/tests/test_astra_adapter_runtime.py
     python3 /workspace/tests/test_ros_runtime.py
   ' 2>&1 | tee "$ROOT/artifacts/humble-test.log"

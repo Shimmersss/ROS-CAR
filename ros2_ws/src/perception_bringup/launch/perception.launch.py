@@ -18,10 +18,26 @@ def launch_route(context):
     }
     package, executable = routes[route]
     config = os.path.join(get_package_share_directory('perception_bringup'), 'config', 'demo.yaml')
+    parameters = []
+    if route == 'demo':
+        parameters = [config]
+    elif route == 'astra':
+        parameters = [{
+            'akimbo_hand_above_base_min_mm': float(LaunchConfiguration(
+                'akimbo_hand_above_base_min_mm').perform(context)),
+            'akimbo_hand_shoulder_max_dx_mm': float(LaunchConfiguration(
+                'akimbo_hand_shoulder_max_dx_mm').perform(context)),
+            'akimbo_shoulder_above_hand_min_mm': float(LaunchConfiguration(
+                'akimbo_shoulder_above_hand_min_mm').perform(context)),
+            'akimbo_window_frames': int(LaunchConfiguration(
+                'akimbo_window_frames').perform(context)),
+            'akimbo_min_votes': int(LaunchConfiguration(
+                'akimbo_min_votes').perform(context)),
+        }]
     return [Node(
         package=package, executable=executable,
         namespace='perception', output='screen',
-        parameters=[config] if route == 'demo' else [],
+        parameters=parameters,
     )]
 
 
@@ -38,6 +54,11 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('route', default_value='yolo', choices=['astra', 'yolo', 'demo']),
         DeclareLaunchArgument('with_foxglove', default_value='false', choices=['true', 'false']),
+        DeclareLaunchArgument('akimbo_hand_above_base_min_mm', default_value='20.0'),
+        DeclareLaunchArgument('akimbo_hand_shoulder_max_dx_mm', default_value='160.0'),
+        DeclareLaunchArgument('akimbo_shoulder_above_hand_min_mm', default_value='20.0'),
+        DeclareLaunchArgument('akimbo_window_frames', default_value='10'),
+        DeclareLaunchArgument('akimbo_min_votes', default_value='3'),
         OpaqueFunction(function=launch_route),
         OpaqueFunction(function=launch_bridge),
     ])

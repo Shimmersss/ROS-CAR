@@ -5,9 +5,10 @@ therefore leaves ``observation_stamp`` at zero and reports confidence and
 measurement age as NaN instead of inventing sensor metadata.
 """
 
+from collections import deque
 from dataclasses import dataclass
 import math
-from typing import Optional, Sequence
+from typing import Dict, Optional, Sequence
 
 
 LEFT_SHOULDER = 2
@@ -15,6 +16,13 @@ LEFT_HAND = 4
 RIGHT_SHOULDER = 5
 RIGHT_HAND = 7
 BASE_SPINE = 9
+
+
+@dataclass(frozen=True)
+class AkimboConfig:
+    hand_above_base_min_mm: float = 20.0
+    hand_shoulder_max_dx_mm: float = 160.0
+    shoulder_above_hand_min_mm: float = 20.0
 
 
 @dataclass(frozen=True)
@@ -28,7 +36,7 @@ class TrackingResult:
     z_m: float = math.nan
 
 
-def is_akimbo(body) -> bool:
+def is_akimbo(body, config: AkimboConfig = AkimboConfig()) -> bool:
     """Match the vendor's lock gesture using its millimetre world positions."""
     joints = body.joints
     if len(joints) <= BASE_SPINE:
@@ -46,26 +54,51 @@ def is_akimbo(body) -> bool:
     if not all(math.isfinite(value) for value in values):
         return False
     return (
-        left_hand.y - base.y > 50.0
-        and right_hand.y - base.y > 50.0
-        and abs(left_shoulder.x - left_hand.x) < 100.0
-        and abs(right_shoulder.x - right_hand.x) < 100.0
-        and right_shoulder.y - right_hand.y > 50.0
-        and left_shoulder.y - left_hand.y > 50.0
+        left_hand.y - base.y > config.hand_above_base_min_mm
+        and right_hand.y - base.y > config.hand_above_base_min_mm
+        and abs(left_shoulder.x - left_hand.x)
+        < config.hand_shoulder_max_dx_mm
+        and abs(right_shoulder.x - right_hand.x)
+        < config.hand_shoulder_max_dx_mm
+        and right_shoulder.y - right_hand.y
+        > config.shoulder_above_hand_min_mm
+        and left_shoulder.y - left_hand.y
+        > config.shoulder_above_hand_min_mm
     )
 
 
 class BodylistTracker:
     """Small state machine that acquires or changes target only by gesture."""
 
-    def __init__(self, invert_y: bool = True):
+    def __init__(
+            self, invert_y: bool = True,
+            akimbo_config: AkimboConfig = AkimboConfig(),
+            gesture_window_frames: int = 10,
+            gesture_min_votes: int = 3):
         self.invert_y = invert_y
+        self.akimbo_config = akimbo_config
+        self.gesture_window_frames = gesture_window_frames
+        self.gesture_min_votes = gesture_min_votes
+        self.gesture_history: Dict[int, deque] = {}
         self.locked_id: Optional[int] = None
 
     def process(self, bodies: Sequence) -> TrackingResult:
-        # Preserve the vendor behavior that an explicit akimbo gesture selects a
-        # person, including switching away from a previously locked/lost ID.
-        gesture_body = next((body for body in bodies if is_akimbo(body)), None)
+        # A short voting window tolerates noisy SDK joints without allowing one
+        # isolated frame to select or switch the target.
+        current_ids = {int(body.bodyid) for body in bodies}
+        for body_id in tuple(self.gesture_history):
+            if body_id not in current_ids:
+                del self.gesture_history[body_id]
+        gesture_body = None
+        for body in bodies:
+            body_id = int(body.bodyid)
+            history = self.gesture_history.setdefault(
+                body_id, deque(maxlen=self.gesture_window_frames))
+            history.append(is_akimbo(body, self.akimbo_config))
+            if sum(history) >= self.gesture_min_votes:
+                gesture_body = body
+                history.clear()
+                break
         if gesture_body is not None:
             self.locked_id = int(gesture_body.bodyid)
 
@@ -133,6 +166,11 @@ def main(args=None):
             self.declare_parameter('frame_id', 'astra_depth_optical_frame')
             self.declare_parameter('stale_timeout_s', 0.5)
             self.declare_parameter('invert_sdk_y', True)
+            self.declare_parameter('akimbo_hand_above_base_min_mm', 20.0)
+            self.declare_parameter('akimbo_hand_shoulder_max_dx_mm', 160.0)
+            self.declare_parameter('akimbo_shoulder_above_hand_min_mm', 20.0)
+            self.declare_parameter('akimbo_window_frames', 10)
+            self.declare_parameter('akimbo_min_votes', 3)
 
             topic = self.get_parameter('bodylist_topic').value
             self.frame_id = self.get_parameter('frame_id').value
@@ -143,8 +181,34 @@ def main(args=None):
             if not math.isfinite(self.stale_timeout_s) or self.stale_timeout_s <= 0.0:
                 raise ValueError('stale_timeout_s must be positive')
 
+            akimbo_config = AkimboConfig(
+                hand_above_base_min_mm=float(self.get_parameter(
+                    'akimbo_hand_above_base_min_mm').value),
+                hand_shoulder_max_dx_mm=float(self.get_parameter(
+                    'akimbo_hand_shoulder_max_dx_mm').value),
+                shoulder_above_hand_min_mm=float(self.get_parameter(
+                    'akimbo_shoulder_above_hand_min_mm').value),
+            )
+            window_frames = int(
+                self.get_parameter('akimbo_window_frames').value)
+            min_votes = int(self.get_parameter('akimbo_min_votes').value)
+            thresholds = (
+                akimbo_config.hand_above_base_min_mm,
+                akimbo_config.hand_shoulder_max_dx_mm,
+                akimbo_config.shoulder_above_hand_min_mm,
+            )
+            if not all(math.isfinite(value) and value >= 0.0
+                       for value in thresholds):
+                raise ValueError('akimbo thresholds must be finite and non-negative')
+            if window_frames <= 0 or not 1 <= min_votes <= window_frames:
+                raise ValueError(
+                    'akimbo_min_votes must be between 1 and akimbo_window_frames')
             self.tracker = BodylistTracker(
-                invert_y=bool(self.get_parameter('invert_sdk_y').value))
+                invert_y=bool(self.get_parameter('invert_sdk_y').value),
+                akimbo_config=akimbo_config,
+                gesture_window_frames=window_frames,
+                gesture_min_votes=min_votes,
+            )
             self.start_ns = self.get_clock().now().nanoseconds
             self.last_input_ns = None
             self.publisher = self.create_publisher(
@@ -162,7 +226,8 @@ def main(args=None):
             self.timer = self.create_timer(
                 min(self.stale_timeout_s / 2.0, 0.5), self._watchdog)
             self.get_logger().info(
-                f'adapting {topic} only; no vehicle command publisher is created')
+                f'adapting {topic}; akimbo requires {min_votes}/{window_frames} '
+                'matching frames; no vehicle command publisher is created')
 
         def _mask_callback(self, msg):
             values = list(msg.data)

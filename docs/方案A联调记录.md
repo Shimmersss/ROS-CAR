@@ -21,7 +21,7 @@ export ROS_DOMAIN_ID=182 ROS_LOCALHOST_ONLY=1
 ros2 launch astra_camera astra.launch.xml product_id:=0x0402 enable_color:=false enable_ir:=false enable_point_cloud:=false enable_colored_point_cloud:=false depth_registration:=false
 ```
 
-SDK 入口（当前仍被授权阻塞，先停止上面的相机节点）：
+SDK 入口（授权提示未阻止本次输出；运行前先停止上面的独立相机节点）：
 
 ```bash
 cd /home/wheeltec/wheeltec_ros2/src/wheeltec_bodyreader/bodyreader/lib
@@ -56,6 +56,12 @@ ros2 launch perception_bringup perception.launch.py route:=astra with_foxglove:=
 15 秒复测中，人体 ID 41 有 404 帧，33 帧满足全部叉腰条件；约 1.93 秒进入 TRACKING。363 条状态全部位置有效，距离约 0.865–1.264 m、偏角约 -0.140–0.007 rad，目标球和检测体积框各更新 363 次。Foxglove 同步显示目标 ID、有效位置、掩码、曲线和 3D Marker。
 
 基于上述结果，正式 `route:=astra` 已改为启动 bodylist_adapter。该 route 只消费已存在的 `/bodylist`；`scripts/run_astra_foxglove.sh` 负责组合启动厂商 bodyreader、正式 A route 和 Bridge，全程不启动底盘。
+
+## 宽松叉腰参数
+
+首次 404 帧中仅 33 帧满足全部姿势条件，因此将默认空间阈值从厂商等价的 50/100/50 mm 放宽为 20/160/20 mm：双手分别高于脊柱基点至少 20 mm、手与对应肩膀横向差小于 160 mm、肩分别高于手至少 20 mm。锁定由单帧命中改为最近 10 帧中至少 3 帧命中，允许短时关节抖动且避免孤立单帧误选。
+
+正式 launch 暴露五个 `akimbo_*` 参数，可继续调整空间阈值、窗口帧数和最低票数。参数非法时节点直接拒绝启动；目标 ID 离开当前人体列表后，其未完成的投票历史会清除。
 
 ## 人体实测复测（2026-09-14 17:19）
 
