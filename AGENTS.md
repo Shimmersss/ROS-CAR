@@ -52,3 +52,7 @@
 - 用户随后要求用小车 Wi-Fi 地址替代 localhost。Bridge 已改为默认监听 `0.0.0.0:8765`，Mac 直连 `ws://192.168.1.240:8765`；TCP 与 foxglove.sdk.v1 WebSocket 101 握手实测通过。`connect_foxglove_roscar.sh` 现检查直连，SSH 隧道脚本仅作离开当前 Wi-Fi 后的备用。该端口可被同一局域网设备访问；仍为手动启动、未设自启动、未启动底盘。
 - 20 秒真人锁定验收中，Bodylist 521/521 帧检测到人体，掩码 528/528 帧有前景，出现人体 ID 135、237；但未触发叉腰，适配器仍锁定旧 ID 96，554 条 TargetState 全为 LOST，无有效位置或 Marker ADD。链路和人体分割正常，本次目标锁定未通过；需要再次保持标准叉腰姿势并采集关节条件，另需关注单人 ID 在窗口内变化的问题。
 - 随后 15 秒复测通过真人锁定验收：人体 ID 41 有 404 帧，33 帧满足全部叉腰条件；约 1.93 秒进入 TRACKING，363 条 TargetState 均位置有效，距离约 0.865–1.264 m、偏角约 -0.140–0.007 rad，目标球和检测体积框各 363 条 ADD。Foxglove 客户端同步显示 status=2、target_id=41、position_valid=true、人体掩码和 3D 面板。当前 Foxglove 标签仍显示旧 localhost 数据源，用户表示自行改为已验证的 `ws://192.168.1.240:8765`。
+
+- 2026-09-14 语音方案 B 已新增 `xfyun_speech`、`deepseek_ros2`、`voice_command_router` 三个主动包：讯飞流式 IAT、DeepSeek 文本桥和受限工具路由。Orin 实测 XFM-DP-V0.0.18 可用 `plughw:CARD=XFMDPV0018,DEV=0` 采集 16 kHz/16-bit/单声道音频，三包原生 Humble 编译成功，真人语音 → 讯飞 IAT → `/voice/asr_text` → DeepSeek 中文回答已跑通。静音底噪峰值约 2441，阈值由 500 调至 2800，并增加连续 160 ms 起音判定；本地 VAD 未确认语音时丢弃云端误识别文本。TTS 与蜂鸣器启动参数默认 false；蜂鸣器属于下位机，本轮延后，不使用 Jetson GPIO，不启动底盘。凭据只存于板子权限 0600 的私有文件，不得写入仓库或日志。
+
+- 嘈杂车内环境改用精确 `/voice_words = 小车唤醒` 事件授权一轮识别，不直接信任厂商会对多种 AIUI 事件发布的 `/awake_flag`；交互为“小微小微”后停约 1 秒再提问。手动服务触发仍要求本地 VAD，纯噪声云端文本不会进入 DeepSeek。启动脚本仅附带厂商串口唤醒节点，不启动其离线识别、反馈音频、运动控制或灯光控制。DeepSeek 最终回答同时发布 `/voice/assistant_text` 并追加到 `/home/wheeltec/ROSCAR/logs/deepseek_responses.jsonl`，只存 UTC 时间和回答正文。

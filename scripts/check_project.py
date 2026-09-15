@@ -17,14 +17,18 @@ def main():
         name = tree.findtext('name')
         assert name == xml.parent.name and name not in names, xml
         names.add(name)
-    assert names == {'person_interfaces', 'astra_body_adapter', 'yolo_person_tracker', 'perception_bringup', 'bodyreader_msg'}
+    assert names == {
+        'person_interfaces', 'astra_body_adapter', 'yolo_person_tracker',
+        'perception_bringup', 'bodyreader_msg', 'xfyun_speech',
+        'deepseek_ros2', 'voice_command_router',
+    }
     python_files = list(packages.rglob('*.py')) + list((root / 'scripts').glob('*.py')) + list((root / 'tests').glob('*.py'))
     for path in python_files:
-        ast.parse(path.read_text(), filename=str(path))
+        ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
     for path in (root / 'models').glob('*.json'):
-        json.loads(path.read_text())
+        json.loads(path.read_text(encoding='utf-8'))
     for path in (root / 'data/catalog').glob('*.json'):
-        json.loads(path.read_text())
+        json.loads(path.read_text(encoding='utf-8'))
     for path in (root / 'docs/diagrams').glob('*.svg'):
         ET.parse(path)
     for package in packages.iterdir():
