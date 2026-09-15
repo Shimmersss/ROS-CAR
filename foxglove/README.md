@@ -52,6 +52,8 @@ bash scripts/run_astra_camera.sh
 
 默认只启骨架流，因为当前实测 RGB 与骨架流同时开启时 `/bodylist` 没有数据。RGB 需要单独排查，不是当前可视化验收的前置条件。无论哪种模式，都不应并行启动 `astra_camera`。
 
+人体掩码面板的主题必须为 `/perception/body_mask_image`。若面板显示“正在等待图像消息”且设置中的“主题”为空，重新选择该话题；纯黑画面表示消息正常但当前 `Bodylist.count=0`、没有人体前景。仓库布局同时保留旧 `topic` 字段和当前 Foxglove 使用的 `imageMode.imageTopic`，以兼容导入。
+
 `Bodylist` 没有原始时间戳和置信度，因此 `TargetState.observation_stamp` 为零，`measurement_age_s`、`confidence` 为 NaN。质心使用米；坐标为光学系 X 向右、Y 向下、Z 向前。Y 方向是根据厂商 SDK 行为推断，仍需在实际画面中确认。
 
 ## 开机自启

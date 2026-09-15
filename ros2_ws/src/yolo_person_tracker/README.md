@@ -1,13 +1,7 @@
-# B：YOLO 人体跟踪入口
+# B：YOLO 人体跟踪
 
-当前节点只发布 NOT_READY，尚未加载模型、相机或 ByteTrack。
+已实现 YOLO11n + ByteTrack、显式锁定/释放、配准深度筛选、TargetState 和 Foxglove 检测框/目标球输出。默认模型路径为空且 depth_registered=false，保持 NOT_READY；配置有效模型与经过验证的相机输入后运行真实推理。
 
-后续接入步骤：
-1. 配置 Astra RGB、对齐后的深度和内参话题，验证时间与单位。
-2. 加载 models/weights/yolo11n.pt，限制 person 类，保留输入 header。
-3. 接入 ByteTrack，增加显式目标选择、锁定与丢失状态。
-4. 躯干有效深度筛选和稳健统计，反投影到 optical 坐标。
-5. 输出 TargetState，评估位置平滑、深度异常与端到端延迟。
-6. 实测后再决定 TensorRT、Pose、分割或 ReID。
+完整输入契约、依赖、启动命令、测试范围和待实机验收项见 [方案 B 实现与验收](../../../docs/方案B实现与验收.md)。
 
-现有 ultralytics_ros2 节点仅作参考；不要直接使用其交通标志启动配置。
+当前为本地软件实现，不代表 Jetson 真人验收通过。默认 CPU；Jetson CUDA 需要独立验证。没有运动控制输出。

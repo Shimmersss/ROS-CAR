@@ -73,25 +73,24 @@ class BodylistTrackerTest(unittest.TestCase):
         self.assertFalse(result.position_valid)
         self.assertTrue(math.isnan(result.z_m))
 
-    def test_relaxed_thresholds_accept_a_looser_waist_pose(self):
+    def test_original_thresholds_reject_a_looser_waist_pose(self):
         target = body(7)
         target.joints[9].worldposition = vector(0.0, 0.0, 0.0)
         target.joints[4].worldposition = vector(-430.0, 30.0, 2000.0)
         target.joints[2].worldposition = vector(-300.0, 55.0, 2000.0)
         target.joints[7].worldposition = vector(430.0, 30.0, 2000.0)
         target.joints[5].worldposition = vector(300.0, 55.0, 2000.0)
-        self.assertTrue(is_akimbo(target))
-        self.assertFalse(is_akimbo(target, AkimboConfig(
-            hand_above_base_min_mm=50.0,
-            hand_shoulder_max_dx_mm=100.0,
-            shoulder_above_hand_min_mm=50.0)))
+        self.assertFalse(is_akimbo(target))
+        self.assertTrue(is_akimbo(target, AkimboConfig(
+            hand_above_base_min_mm=20.0,
+            hand_shoulder_max_dx_mm=160.0,
+            shoulder_above_hand_min_mm=20.0)))
 
-    def test_one_matching_frame_does_not_lock(self):
+    def test_one_matching_frame_locks_with_original_behavior(self):
         tracker = BodylistTracker()
         result = tracker.process([body(7, akimbo=True)])
-        self.assertEqual('SEARCHING', result.status)
-        result = tracker.process([body(7)])
-        self.assertEqual('SEARCHING', result.status)
+        self.assertEqual('TRACKING', result.status)
+        self.assertEqual('7', result.target_id)
 
 
 if __name__ == '__main__':

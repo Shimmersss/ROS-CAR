@@ -1,11 +1,18 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>yolo_person_tracker</name><version>0.1.0</version>
-  <description>YOLO person tracking entry point; inference integration pending.</description>
+  <description>YOLO11 person tracking with registered depth and explicit selection.</description>
   <maintainer email="maintainer@example.invalid">ROSCAR maintainers</maintainer>
   <license>Proprietary</license>
   <buildtool_depend>ament_python</buildtool_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>person_interfaces</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>message_filters</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
   <export><build_type>ament_python</build_type></export>
 </package>

@@ -29,8 +29,8 @@ A/B/demo 使用同一接口。输出描述观测状态，不是控制命令。
 - STALE：相机/上游消息过期，位置无效。由后续真实适配器负责超时检测。
 - 整个节点退出时，它无法继续发布 STALE；Foxglove 或后续消费者还必须监测话题断流。
 
-当前 A route 已接入真实 `/bodylist` 适配器并实现 SEARCHING/TRACKING/LOST/STALE；B route 仍固定 NOT_READY。demo 周期性展示模拟 TRACKING/LOST。
+当前 A route 已接入真实 `/bodylist` 适配器并实现 SEARCHING/TRACKING/LOST/STALE；B route 已实现真实 RGB-D 节点，未配置模型/配准时 NOT_READY，有效输入时支持 SEARCHING/TRACKING/LOST/STALE（本地验证，待实机验收）。demo 周期性展示模拟 TRACKING/LOST。
 
 Astra 原 Bodyposture 没有 header，不得直接把回调接收时间称为传感器采集时间。真实适配时补源时间，或明确暴露时间未知。不同 optical/SDK 轴约定必须先确认后转换。
 
-不提供通用 SetTarget 服务占位：选人方式、候选人体消息与 ID 生命周期确定后再实现，避免声明无法履约的接口。
+B 提供 `/perception/lock_target` 与 `/perception/release_target`（std_srvs/Trigger），锁定最新画面水平中央轨迹。ID 为 epoch:track_id，流重置需显式重锁；不提供任意 ID 的 SetTarget 服务。详见 [B 实现](方案B实现与验收.md)。

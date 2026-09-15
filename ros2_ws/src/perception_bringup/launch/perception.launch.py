@@ -7,6 +7,7 @@ from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, Opaq
 from launch.launch_description_sources import AnyLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def launch_route(context):
@@ -21,6 +22,15 @@ def launch_route(context):
     parameters = []
     if route == 'demo':
         parameters = [config]
+    elif route == 'yolo':
+        parameters = [{name: ParameterValue(LaunchConfiguration(name).perform(context), value_type=str) for name in
+                       ('model_path', 'device', 'color_topic', 'depth_topic', 'camera_info_topic')}]
+        parameters[0].update({
+            'depth_registered': LaunchConfiguration('depth_registered').perform(context) == 'true',
+            'image_size': int(LaunchConfiguration('image_size').perform(context)),
+            'sync_slop_s': float(LaunchConfiguration('sync_slop_s').perform(context)),
+            'max_age_s': float(LaunchConfiguration('max_age_s').perform(context)),
+        })
     elif route == 'astra':
         parameters = [{
             'akimbo_hand_above_base_min_mm': float(LaunchConfiguration(
@@ -34,8 +44,15 @@ def launch_route(context):
             'akimbo_min_votes': int(LaunchConfiguration(
                 'akimbo_min_votes').perform(context)),
         }]
+    node_options = {}
+    if route == 'yolo':
+        python = LaunchConfiguration('yolo_python').perform(context)
+        if python:
+            # The installed console script may have a system-Python shebang.
+            import shlex
+            node_options['prefix'] = [shlex.quote(python)]
     return [Node(
-        package=package, executable=executable,
+        **node_options, package=package, executable=executable,
         namespace='perception', output='screen',
         parameters=parameters,
     )]
@@ -54,11 +71,21 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('route', default_value='yolo', choices=['astra', 'yolo', 'demo']),
         DeclareLaunchArgument('with_foxglove', default_value='false', choices=['true', 'false']),
-        DeclareLaunchArgument('akimbo_hand_above_base_min_mm', default_value='20.0'),
-        DeclareLaunchArgument('akimbo_hand_shoulder_max_dx_mm', default_value='160.0'),
-        DeclareLaunchArgument('akimbo_shoulder_above_hand_min_mm', default_value='20.0'),
-        DeclareLaunchArgument('akimbo_window_frames', default_value='10'),
-        DeclareLaunchArgument('akimbo_min_votes', default_value='3'),
+        DeclareLaunchArgument('akimbo_hand_above_base_min_mm', default_value='50.0'),
+        DeclareLaunchArgument('akimbo_hand_shoulder_max_dx_mm', default_value='100.0'),
+        DeclareLaunchArgument('akimbo_shoulder_above_hand_min_mm', default_value='50.0'),
+        DeclareLaunchArgument('akimbo_window_frames', default_value='1'),
+        DeclareLaunchArgument('akimbo_min_votes', default_value='1'),
+        DeclareLaunchArgument('yolo_python', default_value=''),
+        DeclareLaunchArgument('model_path', default_value=''),
+        DeclareLaunchArgument('device', default_value='cpu'),
+        DeclareLaunchArgument('image_size', default_value='640'),
+        DeclareLaunchArgument('depth_registered', default_value='false', choices=['true', 'false']),
+        DeclareLaunchArgument('color_topic', default_value='/camera/color/image_rect'),
+        DeclareLaunchArgument('depth_topic', default_value='/camera/aligned_depth_to_color/image_raw'),
+        DeclareLaunchArgument('camera_info_topic', default_value='/camera/color/camera_info'),
+        DeclareLaunchArgument('sync_slop_s', default_value='0.06'),
+        DeclareLaunchArgument('max_age_s', default_value='0.5'),
         OpaqueFunction(function=launch_route),
         OpaqueFunction(function=launch_bridge),
     ])

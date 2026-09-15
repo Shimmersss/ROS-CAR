@@ -13,13 +13,13 @@
 - 小车已安装 Codex CLI 0.154.0、Clash Verge Rev 2.5.2 与必要桌面依赖。Codex 已确认 ChatGPT 登录；启动器自动使用 `127.0.0.1:7897` 代理。Clash 已导入用户订阅、使用规则模式和新加坡节点，关闭 TUN/局域网代理访问，配置桌面登录自启动。配置位置及验证范围见 `deploy/README.md`；订阅 URL、节点凭据和登录凭据禁止写入项目文件。
 - 已完成源码静态初查，具体证据与待办见 WORKLOG.md；尚未在 Jetson 编译或连接硬件。
 - 当前任务边界：用户要求先不考虑下位机；先研究和验证人体感知、目标跟踪、深度测距及 Foxglove 展示，暂不接车辆运动。
-- 当前路线建议：相机驱动 + YOLO11n + ByteTrack + 配准后的深度测距，按需求再评估 Pose、分割或 ReID。此路线尚未实施。
+- 当前路线建议：相机驱动 + YOLO11n + ByteTrack + 配准后的深度测距，按需求再评估 Pose、分割或 ReID。此路线已在 codex/route-b 分支补齐本地软件实现，尚未实机验收。
 - 方案主文档为 `人体跟随感知方案.md`，包含硬件区别、骨架 SDK 路线、源码现状、YOLO/深度流程、Foxglove/SSH 配置和感知验收顺序。更新方案时同步维护此文档。
 - 已补充骨架与滤波逻辑：可见人体应用代码为姿势锁定、平均 RGB 恢复和简化 PD，没有显式人体卡尔曼；SDK 内部未知。ByteTrack 自带检测框卡尔曼，空间深度滤波需独立设计；整车 EKF 不等于人体滤波。
 - 两条路线的 SVG 图位于 `docs/diagrams/`，主文档已链接。图中必须区分“已有源码/库”“待开发/接入”“待实机验证”，避免将库已附带表述为已部署成功。
 - 两图并排合并的 PNG 为 `docs/diagrams/人体跟随两方案对比.png`（5780×3800）；修改 SVG 后如需分享合并图，应同步重新导出。
 - 主动开发工作区为 `ros2_ws/src/`，包含 person_interfaces、astra_body_adapter、yolo_person_tracker、perception_bringup。厂商目录保持原样并排除普通 Git；构建仅扫描主动工作区。
-- 正式 `route:=astra` 已接入实测 bodylist_adapter；`route:=yolo` 仍为 NOT_READY。只有显式 `route:=demo` 才输出 `is_simulated=true` 的演示数据，禁止将 demo 或容器验证描述为实机人体识别。
+- 正式 `route:=astra` 已接入实测 bodylist_adapter；`route:=yolo` 已接入真实 RGB-D 节点，默认缺少模型/配准配置时为 NOT_READY。只有显式 `route:=demo` 才输出 `is_simulated=true` 的演示数据，禁止将 demo 或容器验证描述为实机人体识别。
 - 四个包已在本机 Docker 的 Linux ARM64 ROS 2 Humble 环境编译通过；A/B、demo 与非法 route 运行检查通过。尚未在 Jetson 连接相机、验证 SDK 或 CUDA。
 - 项目入口见 README.md，接口见 docs/interfaces.md，任务顺序见 docs/roadmap.md。Mac 同步脚本默认 dry-run，不传厂商原包、权重、录像或构建产物，不执行远端删除。
 
@@ -63,3 +63,13 @@
 - 新增并已安装 `roscar-route-a.service` 与 `scripts/install_route_a_autostart.sh`，用于 Jetson 开机自动启动方案 A，并在前台进程异常退出后延迟 5 秒重启。服务固定使用 `wheeltec` 和 `/home/wheeltec/ROSCAR`，保持 `ROS_DOMAIN_ID=182`、`RGB_STREAM=false`；手动入口会识别 systemd 服务，避免重复启动。
 - 2026-09-15 实际部署结果：同步白名单已加入 `deploy/systemd/`；Jetson 服务为 `enabled/active/running`、`NRestarts=0`，骨架、正式 astra 适配器和 Foxglove Bridge 均在其 cgroup 内。8765 从 Mac 可达，五个感知话题存在，`TargetState` 为真实 Astra 的 SEARCHING，`/cmd_vel` 不存在。尚未为验收而重启整车，因此“重启后自动拉起”目前依据 systemd enabled 状态，未做断电重启验证。
 - 2026-09-15 用户将范围扩展到无避障人体跟随。`astra_body_adapter` 新增默认禁用的 `person_follower`，将已验证 `TargetState` 转换为 `/cmd_vel`；仅 TRACKING+有效+未超时时动作，2.0 m 目标距离、0.15 m/s 前进上限、0.5 rad/s 转向上限、不倒车。Jetson 已构建并运行21项逻辑测试；底盘与跟随以临时用户服务运行，并执行过1秒 0.15 m/s 的受限直行指令及后续零速度。未由远程日志证明实际位移，不得描述为完整实车跟随验收；当前无避障，且 STM32 指令丢失保护仍需独立验证。
+- Foxglove 掩码“无消息”诊断：在线 `/bodylist` 约 29.6 Hz、`/perception/body_mask_image` 约 27.1 Hz，服务和链路完整；当前客户端 Image 面板主题为空，手动选为 `/perception/body_mask_image` 后立即显示并由 foxglove_bridge 建立订阅。此刻 `Bodylist.count=0`，所以画面为黑色。`astra-layout.json` 已补当前面板字段 `imageMode.imageTopic`，保留旧 `topic` 兼容字段。
+- 叉腰未识别在线诊断：正式 adapter 已加载放宽参数 20/160/20 mm、10 帧 3 票，功能处于开启状态；采样 `Bodylist.count=0`，所以本次失败发生在 SDK 人体/关节检测之前，无法进入叉腰条件判断。检查时另发现独立手动进程 `person_follower(enabled=true)` 和厂商 `wheeltec_robot` 使 `/cmd_vel` 出现，已停止两组进程并刷新 ROS 发现；复核仅余方案 A 三节点，`/cmd_vel` 为 Unknown topic，A 服务保持 active。不得再次把控制节点混入感知验收。
+- 用户随后要求恢复最初叉腰条件。默认值已回退为厂商等价 50/100/50 mm、1 帧 1 票；本机 7 个逻辑测试通过，Jetson 两包原生 Humble 编译成功，直接 unittest 共 21 项通过（其中叉腰状态机 7 项）。A 服务已重启并实查参数生效，`/cmd_vel` 不存在。重启后 15 秒 388 帧 Bodylist 全部 count=0；USB 仍识别 ASTRA S，只有 bodyreader 占用，SDK 报 0x500007c9 Invalid license。该提示过去与成功骨架输出并存，当前不能单独认定为根因；锁定阈值不参与 SDK 骨架生成。
+- 用户现场叉腰时连续监视两轮各 60 秒：第一轮 1785 帧中 365 帧有人，第二轮 1757 帧中 641 帧有人，最大均 1 人；人体 ID 由已锁定的 210 丢失后变为 161、3、171，未重新 TRACKING。有关节的帧主要不满足原始条件中的肩高手 50 mm，手肩横差也偶尔超过 100 mm。结论是人体骨架间歇输出和 ID 跳变为首要问题，严格原始条件进一步降低重新锁定机会；不是叉腰功能未开启。
+
+- 2026-09-15 B 方案按用户要求先仅本机推进：实现 YOLO11n/ByteTrack 后端、显式中央目标锁定/释放、轨迹 epoch 防重置误接、配准深度躯干统计及 Foxglove 图像/目标球。相机配准必须人工确认，默认 depth_registered=false。详细输入与验收边界见 docs/方案B实现与验收.md；不部署或切换小车 A 服务。用户收窄范围前远端创建过 .venv-yolo，pip 下载超时退出，未完成应用依赖安装，未停止 A。
+
+- 2026-09-15 B 本机验证完成：Linux ARM64 Humble 8 包编译（8.58s），A/B 逻辑、合成 RGB-D 与 A 适配器、14 项语音逻辑、A/B/demo/非法路由回归通过；本机 Python 3.12 的真实 yolo11n 权重哈希、CPU 两帧空图推理、ByteTrack 调用与 reset 通过。不是 Jetson GPU、真实相机配准或真人 B 验收。支持 yolo_python 指定 ABI 匹配的 ROS 虚拟环境解释器，默认仍要求显式模型和配准确认。
+
+- 2026-09-16 本地已同步远端 main 合并提交 `cb0b87a`（#2，Astra 跟随控制）；`main` 与当前 `codex/route-b` 均指向该提交，本地未提交的 B 实现和 A 调整完整保留。三处文档冲突已合并，叉腰默认继续 50/100/50 mm、1 帧 1 票；21 项 A 锁定/跟随逻辑测试通过。本轮仅同步本地 Git，未部署或启动车辆节点；同步前 stash 保留作备份。

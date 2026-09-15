@@ -1,0 +1,5 @@
+# Application dependencies. On Jetson preserve vendor CUDA torch/torchvision.
+# Install these with --no-deps in a --system-site-packages venv after prerequisites.
+ultralytics==8.3.203
+lap==0.5.12
+ultralytics-thop==2.0.17

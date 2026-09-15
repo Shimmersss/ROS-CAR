@@ -17,12 +17,12 @@ ros2 param set /person_follower enabled true
 
 底盘驱动需单独启动并订阅 `/cmd_vel`。该节点不提供避障；无雷达、Nav2 或超声波保护时只能在受控空旷区域使用。
 
-叉腰判定使用较宽松的默认阈值，并以最近 10 帧中满足 3 帧作为锁定条件：手高于脊柱基点 20 mm、手与对应肩膀横向差小于 160 mm、肩高于手 20 mm。可通过正式 launch 参数调整：
+叉腰判定默认恢复为厂商等价条件并单帧锁定：手高于脊柱基点 50 mm、手与对应肩膀横向差小于 100 mm、肩高于手 50 mm。可通过正式 launch 参数调整：
 
 ```bash
 ros2 launch perception_bringup perception.launch.py route:=astra \
-  akimbo_hand_above_base_min_mm:=20.0 \
-  akimbo_hand_shoulder_max_dx_mm:=160.0 \
-  akimbo_shoulder_above_hand_min_mm:=20.0 \
-  akimbo_window_frames:=10 akimbo_min_votes:=3
+  akimbo_hand_above_base_min_mm:=50.0 \
+  akimbo_hand_shoulder_max_dx_mm:=100.0 \
+  akimbo_shoulder_above_hand_min_mm:=50.0 \
+  akimbo_window_frames:=1 akimbo_min_votes:=1
 ```

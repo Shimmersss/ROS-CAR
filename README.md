@@ -7,7 +7,7 @@
 | 内容 | 状态 |
 |---|---|
 | 公共 TargetState 消息、四个 ROS 2 包、A/B/demo 启动选择 | 已建立 |
-| A / B 节点 | A 已接真实骨架适配器；B 仍为 NOT_READY |
+| A / B 节点 | A 已接真实骨架适配器；B 已有本地真实算法实现，待实机验收 |
 | demo | 显式模拟数据：9 秒目标可见、3 秒丢失，用于验证消息与展示 |
 | Mac → Jetson 同步脚本、模型清单、测试脚本 | 已建立 |
 | 讯飞流式 ASR/TTS → DeepSeek 语音助手 | Orin 真人语音 → 讯飞 IAT → DeepSeek 回答已跑通；TTS 暂停 |
@@ -24,7 +24,7 @@
 ros2_ws/src/
   person_interfaces/     公共目标观测消息
   astra_body_adapter/    A 路线真实 /bodylist 适配器
-  yolo_person_tracker/   B 路线入口（NOT_READY）
+  yolo_person_tracker/   B 路线（YOLO/ByteTrack/配准深度）
   perception_bringup/    单路线启动与显式 demo
   xfyun_speech/          讯飞 WebSocket 流式 ASR/TTS
   deepseek_ros2/         DeepSeek 文本对话桥
@@ -51,7 +51,7 @@ rosdep install --from-paths ros2_ws/src --ignore-src -r -y
 bash scripts/build_ros.sh
 source ros2_ws/install/setup.bash
 
-# 默认 B 入口，当前只报告 NOT_READY
+# 默认 B 入口未配置模型/配准时报告 NOT_READY
 ros2 launch perception_bringup perception.launch.py route:=yolo
 # A 入口：需另行运行厂商 bodyreader/main
 ros2 launch perception_bringup perception.launch.py route:=astra
@@ -128,3 +128,5 @@ python3 scripts/sync_to_jetson.py --host 用户名@IP --dest /home/用户名/ROS
 ## 方案 A 最新联调（2026-09-14）
 
 ASTRA S 深度流、真实人体骨架、叉腰锁定、质心测距、掩码和 Foxglove 展示均已实机跑通。`route:=astra` 现启动已验证的 `/bodylist` 适配器；厂商 bodyreader 仍由安全组合脚本单独启动，不包含底盘节点。SDK 授权提示没有阻止本次输出，但仍待厂商解释。详细入口与限制见 [方案 A 联调记录](docs/方案A联调记录.md)。
+
+B 方案的输入契约、依赖、锁定服务与验证范围见 [方案 B 实现与验收](docs/方案B实现与验收.md)。
