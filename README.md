@@ -10,6 +10,8 @@
 | A / B 节点 | A 已接真实骨架适配器；B 仍为 NOT_READY |
 | demo | 显式模拟数据：9 秒目标可见、3 秒丢失，用于验证消息与展示 |
 | Mac → Jetson 同步脚本、模型清单、测试脚本 | 已建立 |
+| 讯飞流式 ASR/TTS → DeepSeek 语音助手 | Orin 真人语音 → 讯飞 IAT → DeepSeek 回答已跑通；TTS 暂停 |
+| DeepSeek 蜂鸣器工具链 | 白名单路由已建立；蜂鸣器属于下位机，协议适配延后 |
 | 相机、骨架与测距 | A 已在 Jetson 真人验收；YOLO 路线待实现，SDK 授权提示待厂商解释 |
 | 下位机串口驱动及两个依赖包 | 已迁入 chassis_vendor，默认跳过构建，未启动、未实机验证 |
 | Foxglove | A 路线布局已验收，Wi-Fi 直连 `ws://192.168.1.240:8765` |
@@ -24,6 +26,9 @@ ros2_ws/src/
   astra_body_adapter/    A 路线真实 /bodylist 适配器
   yolo_person_tracker/   B 路线入口（NOT_READY）
   perception_bringup/    单路线启动与显式 demo
+  xfyun_speech/          讯飞 WebSocket 流式 ASR/TTS
+  deepseek_ros2/         DeepSeek 文本对话桥
+  voice_command_router/  模型工具白名单与蜂鸣器适配
   chassis_vendor/       原厂串口驱动与依赖，COLCON_IGNORE 暂不编译
 scripts/                 构建、检查、同步与模型准备
 foxglove/                连接说明和面板计划

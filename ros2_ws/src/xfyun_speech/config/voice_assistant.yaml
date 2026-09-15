@@ -1,0 +1,59 @@
+xfyun_asr:
+  ros__parameters:
+    endpoint: wss://iat-api.xfyun.cn/v2/iat
+    capture_device: plughw:CARD=XFMDPV0018,DEV=0
+    sample_rate: 16000
+    frame_ms: 40
+    language: zh_cn
+    accent: mandarin
+    energy_threshold: 2800.0
+    speech_onset_ms: 160
+    silence_ms: 1200
+    speech_timeout_sec: 5.0
+    max_utterance_sec: 15.0
+    response_timeout_sec: 5.0
+    wake_topic: ''
+    wake_text_topic: /voice_words
+    trusted_wake_text: 小车唤醒
+    speaking_topic: /voice/speaking
+    output_topic: /voice/asr_text
+
+deepseek_chat:
+  ros__parameters:
+    base_url: https://api.deepseek.com
+    model: deepseek-v4-flash
+    thinking_enabled: false
+    timeout_sec: 30.0
+    max_tokens: 300
+    history_turns: 6
+    input_topic: /voice/asr_text
+    answer_topic: /voice/assistant_text
+    tts_topic: /voice/tts_text
+    tool_call_topic: /voice/tool_call
+    response_log_path: /home/wheeltec/ROSCAR/logs/deepseek_responses.jsonl
+    enable_tools: true
+
+voice_command_router:
+  ros__parameters:
+    input_topic: /voice/tool_call
+    buzzer_topic: /hardware/buzzer_duration_ms
+
+buzzer_gpio:
+  ros__parameters:
+    enabled: false
+    pin_numbering: BOARD
+    pin: -1
+    active_high: true
+    input_topic: /hardware/buzzer_duration_ms
+
+xfyun_tts:
+  ros__parameters:
+    endpoint: wss://tts-api.xfyun.cn/v2/tts
+    input_topic: /voice/tts_text
+    playback_device: default
+    sample_rate: 16000
+    voice_name: xiaoyan
+    speed: 50
+    volume: 50
+    pitch: 50
+    max_text_chars: 500
