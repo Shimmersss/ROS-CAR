@@ -19,9 +19,10 @@ case "$COMMAND" in
     ;;
 esac
 
+# Fail explicitly on an old deployment instead of reporting skeleton startup as red.
 printf -v RUN_COMMAND \
-  'if [ ! -x %q ]; then printf "远端缺少一键脚本：%%s\\n" %q >&2; exit 1; fi; cd %q && bash scripts/route_a.sh %q' \
-  "$REMOTE_ROOT/scripts/route_a.sh" "$REMOTE_ROOT/scripts/route_a.sh" "$REMOTE_ROOT" "$COMMAND"
+  'if [ ! -x %q ] || ! grep -q run_red_foxglove.sh %q; then printf "远端尚未部署新版红色方案 A，请先同步并构建。\\n" >&2; exit 1; fi; cd %q && bash scripts/route_a.sh %q' \
+  "$REMOTE_ROOT/scripts/run_red_foxglove.sh" "$REMOTE_ROOT/scripts/route_a.sh" "$REMOTE_ROOT" "$COMMAND"
 
 # Values expanded here are constrained above; one SSH call also means one password prompt.
 # shellcheck disable=SC2029

@@ -7,12 +7,19 @@ docker build --platform linux/arm64 --build-arg "ROS_IMAGE=$IMAGE" \
   -f "$ROOT/deploy/humble-test.Dockerfile" -t roscar-humble-test "$ROOT/deploy"
 docker run --rm --platform linux/arm64 -e ROS_DOMAIN_ID=182 \
   -v "$ROOT/ros2_ws/src:/workspace/ros2_ws/src:ro" \
+  -v "$ROOT/scripts:/workspace/scripts:ro" \
   -v "$ROOT/tests:/workspace/tests:ro" \
   roscar-humble-test bash -c '
     set -eo pipefail
     source /opt/ros/humble/setup.bash
     colcon build --base-paths src --event-handlers console_direct+
     source install/setup.bash
+    bash /workspace/scripts/build_chassis.sh
+    source chassis_install/setup.bash
+    python3 -m unittest discover -s src/red_object_tracker/test -v
+    ROS_DOMAIN_ID=177 python3 /workspace/tests/test_red_video_runtime.py
+    ROS_DOMAIN_ID=178 python3 /workspace/tests/test_route_a_launch.py
+    ROS_DOMAIN_ID=179 python3 /workspace/tests/test_red_serial_runtime.py
     PYTHONPATH=/workspace/ros2_ws/src/astra_body_adapter \
       python3 -m unittest discover \
       -s /workspace/ros2_ws/src/astra_body_adapter/test -v

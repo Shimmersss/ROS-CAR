@@ -77,3 +77,22 @@ def target_is_usable(
         and math.isfinite(age_s)
         and 0.0 <= age_s <= timeout_s
     )
+
+
+def observation_is_fresh(now_s, published_s, observed_s, measurement_age_s,
+                         timeout_s, source, expected_source):
+    """Fresh publication cannot hide an old RGB-D observation.
+
+    Legacy Astra has no sensor stamp; only its explicitly selected source may
+    use publication age. Timestamped sources require both observation and age.
+    """
+    if source != expected_source or not math.isfinite(now_s):
+        return False
+    publication_age = now_s-published_s
+    if published_s <= 0 or not 0 <= publication_age <= timeout_s:
+        return False
+    if source == 'astra' and observed_s == 0 and math.isnan(measurement_age_s):
+        return True
+    return (observed_s > 0 and 0 <= now_s-observed_s <= timeout_s
+            and math.isfinite(measurement_age_s)
+            and 0 <= measurement_age_s+publication_age <= timeout_s)

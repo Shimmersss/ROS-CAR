@@ -8,6 +8,8 @@ Bodylist 没有源时间戳或置信度，因此 `observation_stamp` 为零，`m
 
 ## 人体跟随控制（可选）
 
+`person_follower` 默认 `expected_source=astra`，新 A 组合入口设置为 `red_object`。拒绝模拟目标，并校验发布/观测时间和测量年龄；原 Astra 缺传感器时间戳时，仅在明确选择该来源后使用接收和发布时间。
+
 `person_follower` 订阅 `/perception/target_state` 并以20 Hz发布 `/cmd_vel`。它默认禁用，且只在目标处于 `TRACKING`、位置有效且最近 0.5 秒内有消息时输出非零速度。默认保持2米、最高前进 0.15 m/s、最高转向 0.5 rad/s，不自动倒车。
 
 ```bash

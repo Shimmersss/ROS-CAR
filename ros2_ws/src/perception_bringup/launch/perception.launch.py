@@ -14,6 +14,7 @@ def launch_route(context):
     route = LaunchConfiguration('route').perform(context)
     routes = {
         'astra': ('astra_body_adapter', 'bodylist_adapter'),
+        'red': ('red_object_tracker', 'tracker'),
         'yolo': ('yolo_person_tracker', 'tracker'),
         'demo': ('perception_bringup', 'demo'),
     }
@@ -22,7 +23,7 @@ def launch_route(context):
     parameters = []
     if route == 'demo':
         parameters = [config]
-    elif route == 'yolo':
+    elif route in ('yolo', 'red'):
         parameters = [{name: ParameterValue(LaunchConfiguration(name).perform(context), value_type=str) for name in
                        ('model_path', 'device', 'color_topic', 'depth_topic', 'camera_info_topic')}]
         parameters[0].update({
@@ -31,6 +32,13 @@ def launch_route(context):
             'sync_slop_s': float(LaunchConfiguration('sync_slop_s').perform(context)),
             'max_age_s': float(LaunchConfiguration('max_age_s').perform(context)),
         })
+        if route == 'red':
+            for name in ('model_path', 'device', 'image_size'):
+                parameters[0].pop(name)
+            for name in ('hue_low_max', 'hue_high_min', 'saturation_min', 'value_min', 'confirm_frames'):
+                parameters[0][name] = int(LaunchConfiguration(name).perform(context))
+            for name in ('min_area_fraction', 'lost_timeout_s'):
+                parameters[0][name] = float(LaunchConfiguration(name).perform(context))
     elif route == 'astra':
         parameters = [{
             'akimbo_hand_above_base_min_mm': float(LaunchConfiguration(
@@ -69,7 +77,7 @@ def launch_bridge(context):
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('route', default_value='yolo', choices=['astra', 'yolo', 'demo']),
+        DeclareLaunchArgument('route', default_value='yolo', choices=['astra', 'yolo', 'red', 'demo']),
         DeclareLaunchArgument('with_foxglove', default_value='false', choices=['true', 'false']),
         DeclareLaunchArgument('akimbo_hand_above_base_min_mm', default_value='50.0'),
         DeclareLaunchArgument('akimbo_hand_shoulder_max_dx_mm', default_value='100.0'),
@@ -86,6 +94,13 @@ def generate_launch_description():
         DeclareLaunchArgument('camera_info_topic', default_value='/camera/color/camera_info'),
         DeclareLaunchArgument('sync_slop_s', default_value='0.06'),
         DeclareLaunchArgument('max_age_s', default_value='0.5'),
+        DeclareLaunchArgument('hue_low_max', default_value='10'),
+        DeclareLaunchArgument('hue_high_min', default_value='170'),
+        DeclareLaunchArgument('saturation_min', default_value='100'),
+        DeclareLaunchArgument('value_min', default_value='70'),
+        DeclareLaunchArgument('min_area_fraction', default_value='0.001'),
+        DeclareLaunchArgument('confirm_frames', default_value='3'),
+        DeclareLaunchArgument('lost_timeout_s', default_value='1.0'),
         OpaqueFunction(function=launch_route),
         OpaqueFunction(function=launch_bridge),
     ])

@@ -1,5 +1,8 @@
 # 启动与演示
 
+> 方案 A 在分支 `a` 改为红色目标 + 配准深度；原 `route:=astra` 保留，B 不变。最新入口、串口与本机/实机边界见 [红色方案 A](../../../docs/方案A红色物体跟随.md)。本轮未部署小车。
+
+
 perception.launch.py 的 route 只能为 astra、yolo 或 demo，默认 yolo。
 astra 启动真实 `/bodylist` 适配器；yolo 已接入真实 RGB-D 跟踪节点，未配置模型或未确认配准时发布 NOT_READY；只有显式 route:=demo 才会产生模拟位置。
 with_foxglove:=true 时需要另行安装 ros-humble-foxglove-bridge。

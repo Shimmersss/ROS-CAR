@@ -73,3 +73,10 @@
 - 2026-09-15 B 本机验证完成：Linux ARM64 Humble 8 包编译（8.58s），A/B 逻辑、合成 RGB-D 与 A 适配器、14 项语音逻辑、A/B/demo/非法路由回归通过；本机 Python 3.12 的真实 yolo11n 权重哈希、CPU 两帧空图推理、ByteTrack 调用与 reset 通过。不是 Jetson GPU、真实相机配准或真人 B 验收。支持 yolo_python 指定 ABI 匹配的 ROS 虚拟环境解释器，默认仍要求显式模型和配准确认。
 
 - 2026-09-16 本地已同步远端 main 合并提交 `cb0b87a`（#2，Astra 跟随控制）；`main` 与当前 `codex/route-b` 均指向该提交，本地未提交的 B 实现和 A 调整完整保留。三处文档冲突已合并，叉腰默认继续 50/100/50 mm、1 帧 1 票；21 项 A 锁定/跟随逻辑测试通过。本轮仅同步本地 Git，未部署或启动车辆节点；同步前 stash 保留作备份。
+
+- 2026-09-16 已从 `909123d` 创建分支 `a` 并实现新 A 红色目标路线：独立 red_object_tracker 使用双区间 HSV、最大红块三帧锁定、时序关联、丢失立即失效及一秒后重新搜索、配准掩码深度测距。`route_a.launch.py` 和一键管理默认红色感知，原 `route:=astra` 及骨架脚本保留，B 未改。配准、串口与运动默认关闭；没有本轮远端访问或部署。
+- 新 A 复用 person_follower，新增 expected_source 和观测/发布/测量年龄校验，拒绝模拟数据。可选底盘通过 `scripts/build_chassis.sh` 构建到独立 chassis_install，保留原三个 COLCON_IGNORE；迁入驱动两个源文件已加固，不再是原样副本，SOURCE_MANIFEST.json 保留初始来源哈希。基本帧发送限幅、命令/回传超时停车、发布者数量检查、串口进程锁、20 ms 读取超时及滑动重同步；不注册未验证扩展命令，退出只发基本停车帧。
+- 本机 Linux ARM64 Humble 最终验证：9 个主动包编译 7.38 秒，可选串口 3 包 12.5 秒；53 项算法/控制/语音逻辑测试、真实 C++ 驱动伪终端收发与合成红色 RGB-D 控制闭环、A/B/red/demo/非法 route 及 A 启动退出检查通过。日志 `artifacts/route-a-red-test-final.log`。厂商 serial 库仍有既存 signedness/unused 编译警告，不影响本次构建。Foxglove 新布局 `foxglove/red-layout.json`；具体参数和边界见 `docs/方案A红色物体跟随.md`。本轮仅依据历史合并记录整理部署状态，未核对在线文件，不能称与实际部署完全一致。
+- 2026-09-16 红色 Foxglove 视频补齐：`/perception/color_image` 原样转发输入彩色帧，`/perception/detections_image` 输出 bgr8 检测框视频；两者保留输入 header，red-layout 上方并排显示。视频检测与深度同步解耦，缺深度/配准时也显示候选框，TargetState 仍 NOT_READY。RGB-only ROS 测试已验证像素、header、黄框及无运动；本机 ARM64 Humble 构建与闭环回归见 artifacts/route-a-video-test.log。未部署或更改在线 Foxglove。
+- 2026-09-16 一键启动收尾：`启动方案A.command`、remote/manager/runner 统一提示红色路线、原始/画框话题、red-layout 路径和上位机运动开关。远端缺新版 runner 或 active systemd 仍指向骨架时明确报错，不伪报红色已启动。Bash/ShellCheck、模拟 SSH 与新旧 systemd 检查通过；未连接或更新小车。
+- 2026-09-16 新增 Jetson 总入口 scripts/start_project.sh，默认统一启动相机、新 A/Foxglove、语音；底盘/运动显式开启，缺车型/串口/环境时报错。Ctrl-C 或任一子模块退出清理整组，日志 artifacts/project；旧 A systemd active 时拒绝争抢相机。相机脚本使用厂商 astra.launch.xml 固定 camera namespace、开启彩色/深度；配准仍须现场验证。Bash/ShellCheck 和配置拒绝检查通过，未部署或实机启动。

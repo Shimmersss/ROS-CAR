@@ -1,5 +1,8 @@
 # Foxglove 可视化：方案 A
 
+> 方案 A 在分支 `a` 改为红色目标 + 配准深度；原 `route:=astra` 保留，B 不变。最新入口、串口与本机/实机边界见 [红色方案 A](../docs/方案A红色物体跟随.md)。本轮未部署小车。
+
+
 这套可视化仅展示人体感知数据，不启动底盘、不发布 `/cmd_vel`，也不设置自启动。
 
 ```text
@@ -61,3 +64,11 @@ bash scripts/run_astra_camera.sh
 代码同步到 Jetson 后执行 `bash scripts/install_route_a_autostart.sh install`，会安装并立即启用 `roscar-route-a.service`。状态和日志分别使用 `bash scripts/install_route_a_autostart.sh status`、`bash scripts/install_route_a_autostart.sh logs`；移除使用 `bash scripts/install_route_a_autostart.sh remove`。服务固定以 `wheeltec` 用户从 `/home/wheeltec/ROSCAR` 启动，默认 `ROS_DOMAIN_ID=182`、`RGB_STREAM=false`，不启动底盘或 `/cmd_vel`。
 
 当前已经实测骨架可输出人体 ID、质心和关节，但 SDK 仍打印授权提示；该提示未阻止本次输出，具体含义待厂商说明。Foxglove Bridge 只以 `foxglove.sdk.v1` 协议握手，已完成本机 WebSocket 握手测试；下面面板的客户端展示需要本轮实际连接验收。
+
+新 A 导入 `red-layout.json`：标注图、红色掩码、目标、控制速度、里程计与电压。3D 面板需选择输入 CameraInfo 的实际光学 frame；默认名称仅为示例。默认未开启底盘时，速度/里程计/电压无消息属于预期。
+
+## 原始视频与检测框视频（2026-09-16）
+
+Foxglove 导入 `foxglove/red-layout.json`（仓库根目录下）后，上方并排显示原始彩色视频 `/perception/color_image` 与画框视频 `/perception/detections_image`，下方保留掩码、状态和底盘信息。原始帧保持相机输入的像素、编码和 header；画框帧为 bgr8 并保留相同 header，黄色框标识红色候选，绿色框仅标识同帧被 RGB-D 跟踪接受且深度有效的目标。
+
+视频仅依赖配置的 `color_topic`，无需深度或配准确认即可显示与检测；缺少深度时 TargetState 仍为 NOT_READY，不会因此允许运动。必须有真实相机发布彩色话题才能看到实时画面。本轮完成本机代码和布局，未修改小车或在线 Foxglove 配置。

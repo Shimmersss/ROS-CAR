@@ -25,7 +25,9 @@ source "$ROOT/ros2_ws/install/setup.bash"
 set -u
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-182}"
 export ROS_LOCALHOST_ONLY=0
-mkdir -p "$LOG_DIR"
+mkdir -p "$LOG_DIR" "$ROOT/artifacts/route-a"
+exec 9>"$ROOT/artifacts/route-a/stack.lock"
+flock -n 9 || { echo "方案 A 已有实例运行。" >&2; exit 1; }
 
 # shellcheck disable=SC2329  # Invoked by the EXIT/INT/TERM trap below.
 cleanup() {

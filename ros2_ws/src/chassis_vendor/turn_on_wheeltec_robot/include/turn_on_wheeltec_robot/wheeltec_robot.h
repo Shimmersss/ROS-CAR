@@ -2,6 +2,11 @@
 #ifndef __WHEELTEC_ROBOT_H_
 #define __WHEELTEC_ROBOT_H_
 
+#include <chrono>
+#include <deque>
+#include <sys/file.h>
+#include <limits.h>
+#include <algorithm>
 #include <iostream>
 #include <string.h>
 #include <string> 
@@ -201,6 +206,16 @@ class turn_on_robot : public rclcpp::Node
 		void Control();   //Loop control code //循环控制代码
 		serial::Serial Stm32_Serial; //Declare a serial object //声明串口对象 
 	private:
+        using Steady = std::chrono::steady_clock;
+        Steady::time_point last_command_{}, last_feedback_{}, last_send_{};
+        geometry_msgs::msg::Twist desired_;
+        double command_timeout_s_ = 0.5, feedback_timeout_s_ = 0.5;
+        double max_linear_ = 0.15, max_angular_ = 0.5;
+        int port_lock_ = -1;
+        std::deque<uint8_t> rx_buffer_;
+        void SendVelocity(double x, double y, double yaw);
+        void Watchdog();
+
 		//ros::NodeHandle n;           //Create a ROS node handle //创建ROS节点句柄
 		rclcpp::Time _Now, _Last_Time;  //Time dependent, used for integration to find displacement (mileage) //时间相关，用于积分求位移(里程)
 		float Sampling_Time;         //Sampling time, used for integration to find displacement (mileage) //采样时间，用于积分求位移(里程)

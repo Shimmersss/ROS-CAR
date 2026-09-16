@@ -8,14 +8,15 @@ from person_interfaces.msg import TargetState
 import rclpy
 from rclpy.node import Node
 
-from .follow_control import FollowConfig, compute_command, target_is_usable
+from .follow_control import FollowConfig, compute_command, target_is_usable, observation_is_fresh
 
 
 class PersonFollowerNode(Node):
-    def __init__(self):
-        super().__init__('person_follower')
+    def __init__(self, **kwargs):
+        super().__init__('person_follower', **kwargs)
         defaults = FollowConfig()
         self.declare_parameter('enabled', False)
+        self.declare_parameter('expected_source', 'astra')
         self.declare_parameter('target_distance_m', defaults.target_distance_m)
         self.declare_parameter(
             'distance_deadband_m', defaults.distance_deadband_m)
@@ -80,6 +81,16 @@ class PersonFollowerNode(Node):
             age_s,
             self.message_timeout_s,
         )
+
+        if usable:
+            stamp = lambda value: value.sec + value.nanosec*1e-9
+            usable = (not target.is_simulated
+                      and self.count_publishers('/perception/target_state') == 1
+                      and observation_is_fresh(
+                          self.get_clock().now().nanoseconds*1e-9,
+                          stamp(target.header.stamp), stamp(target.observation_stamp),
+                          target.measurement_age_s, self.message_timeout_s,
+                          target.source, self.get_parameter('expected_source').value))
 
         linear = angular = 0.0
         if usable:

@@ -351,3 +351,38 @@
 - 同步前使用 `pre-sync-remote-main-2026-09-16` stash 备份全部已跟踪和未跟踪改动，恢复后保留该备份；工作区仍为未提交状态，未推送。
 - 合并 AGENTS.md、WORKLOG.md 与 astra_body_adapter/README.md 三处文档冲突，保留远端控制功能与本地诊断/B 方案记录；README 叉腰默认采用本地已恢复的 50/100/50 mm、1 帧 1 票。
 - 最小审查：非冲突本地文件逐字节对比 stash 一致，未跟踪文件完整恢复，无未解决冲突；HEAD、main 与 origin/main 相同。A 锁定及跟随控制 21 项 unittest 通过，git diff --check 通过；本轮未执行 ROS 编译或硬件验收，未操作 Jetson 服务。
+
+## 2026-09-16：分支 a，红色物体跟随与串口闭环（仅本机）
+
+- 用户确认新 A 要实现实际跟随完整链路，自动选择最大红块，但本轮只完成本机。已从干净提交 `909123d` 创建 `a`；包含此前合并 `cb0b87a` 的控制器与已提交 B 实现，未改 B 算法。
+- 新增 red_object_tracker：H=0–10/170–179、S≥100、V≥70，形态学去噪、最小面积 0.1%；三帧确认后锁定，位置/重叠关联保持同一红块，单帧丢失立即失效，一秒后重新搜索并生成新 ID。阈值可通过 ROS launch 调整。
+- 红块掩码内统计配准深度；验证相同光学 frame、尺寸、CameraInfo.P、时间及深度编码，拒绝空洞/混合深度。发布 `source=red_object` 的 TargetState、标注图、mono8 掩码和目标 Marker。缺少配准确认与输入时 NOT_READY；不启动人体 SDK、不使用模型、不以红块大小猜距离。
+- 新增 `route_a.launch.py` 与 `run_red_foxglove.sh`；管理脚本和仓库 systemd 模板切到红色路线。原 astra route 与骨架组合脚本保留，两种组合入口共享运行锁。串口、运动、配准确认默认 false；底盘启用要求显式串口和车型，不能从厂商默认推断实车车型。任一 launch 子进程退出会关闭整组。
+- 控制器保留 2 m、0.15 m/s、0.5 rad/s 和不倒车策略；新增 source、非模拟、发布时间/观测时间/测量年龄检查，拒绝重发旧观测，多个目标发布者时发零。原 Astra 仅在明确选择该来源时保留无传感器时间戳的兼容方式。
+- 可选 `build_chassis.sh` 复制三个串口包到忽略的独立构建目录，原 COLCON_IGNORE 保留。修改迁入驱动头文件和 wheeltec_robot.cpp，厂商原始目录未改，SOURCE_MANIFEST.json 保留原始哈希作为来源快照。
+- 驱动基本 11 字节发送限幅、非有限输入发零，20 Hz 检查命令与 24 字节回传，任一超过 0.5 秒或 cmd_vel 发布者数量不是一个时清除缓存并发零。串口设备路径加进程锁；读取超时从两秒改为 20 ms，检查实际返回字节数，滑动定长/帧尾/BCC 解析支持坏帧重新同步。I/O 异常退出且不重放旧速度，退出只发基本停车帧，不注册机械臂/回充/灯光/安全扩展命令。
+- 新增 Foxglove `red-layout.json`，展示标注图、掩码、目标状态与位置、速度命令、里程计和电压；3D 坐标系需选实际相机光学 frame。本轮仅验证 JSON 结构，没有连接 Foxglove 客户端或相机。
+- 最终容器验证：Linux ARM64 ROS 2 Humble，9 个主动包编译 7.38 秒；3 个串口包独立构建 12.5 秒。7 个红色逻辑、25 个 A 锁定/控制/新鲜度、7 个 B 逻辑及 14 个语音测试全部通过（合计 53 项）。保留原厂 serial 的 signedness/unused 编译警告，未将警告写成失败或零警告。
+- 真实 C++ wheeltec_robot_node 使用伪终端：验证正负速度、限幅、BCC、24 字节里程计/IMU/电压、坏帧/分片恢复、指令与回传超时停车、多个速度发布者停车、重复打开拒绝；合成 RGB-D 经真实红色节点→跟随器→驱动产生串口帧，并验证深度单位、失效/丢失/重锁、过期/错 frame/不同步以及重发旧观测停车。
+- 新 A launch 默认无 bodylist/cmd_vel/odom、非法运动使能拒绝、串口打开失败后整组退出均通过。原 A 合成适配器、B 合成推理、A/B/red/demo/非法 route 回归通过。完整日志为 `artifacts/route-a-red-test-final.log`；同步边界 3 项测试、Python/JSON 项目结构、Bash 语法、ShellCheck（仅排除外部 ROS source 无法读取的 SC1091）、git diff --check 通过。
+- 最小审查：默认无控制节点；真实来源与模拟输入测试边界明确；旧观测不能因状态重发恢复运动；原始厂商清单与本地补丁区分；文档同步说明历史底盘链路已运行、随后曾停止控制，以及本轮未核对在线部署。未 SSH、未同步 Jetson、未安装服务、未做实车运动；相机彩色流/配准、车型和真实收发、STM32 断线保护及现场跟随仍待后续验收。
+
+## 2026-09-16：红色检测原始/画框视频与 Foxglove
+
+- 解释运动默认关闭来自已确认方案：with_chassis=false 不启动驱动和控制器；显式开底盘后 motion_enabled 仍默认 false。用户本轮没有要求修改运动默认值，因此保留。
+- 新增 `/perception/color_image` 原样转发彩色帧；RGB 回调独立输出 `/perception/detections_image` 和 red_mask_image，不依赖深度/CameraInfo/配准。黄色框为检测候选，同帧配准跟踪及深度有效时可显示绿色目标框；视频可见不等于位置有效或运动使能。
+- Foxglove red-layout 顶部并排原始视频和检测框视频，下方保留掩码、目标与底盘面板；同步更新接口、Foxglove README 和方案文档。
+- 新增 RGB-only ROS 检查，验证原始像素不变、原图/框图 header 匹配、黄色检测框实际存在，无深度时 NOT_READY 且无 cmd_vel。最小审查包含布局面板引用、Python 项目结构与 diff 检查；ARM64 Humble 构建、原有逻辑及真实驱动伪串口/红色闭环回归日志为 artifacts/route-a-video-test.log。本轮未部署小车，未在在线 Foxglove 中导入布局，真实视频仍需相机彩色话题。
+
+## 2026-09-16：更新红色方案 A 一键启动脚本
+
+- Mac 双击入口显示红色目标路线、上下位机开关边界；成功后打开 Foxglove，给出 red-layout 的本地绝对路径及原始/画框视频话题，提示彩色相机输入仍需发布。
+- remote 入口检查新版 runner 和 manager；manager 检查已运行 systemd 的 ExecStart，旧骨架服务不能被误报为新红色路线。runner 明确区分进程启动与视频输入就绪，输出串口/运动/配准配置。
+- 最小审查及验证：四个脚本 Bash 语法、ShellCheck（排除外部 ROS source SC1091）、git diff --check 通过；临时假 SSH/systemctl 验证旧部署拒绝、新入口转发及两路话题显示。测试未调用真实 SSH，未部署或启动车辆，未实现下位机实体开关协议。
+
+## 2026-09-16：项目总启动入口
+
+- 新增 scripts/start_project.sh，Jetson 本机一条命令统一启动相机、红色检测/Foxglove、语音助手；语音可通过 WITH_VOICE=false 禁用。复用现有模块，不启动 B 或旧骨架避免重复目标发布者。
+- 显式底盘/运动参数、环境/包/凭据文件检查、进程锁、旧 A 服务冲突提示、独立日志、Ctrl-C/子模块退出整组清理。默认不启动车辆；下位机实体开关尚未接入。
+- 相机入口改为厂商 astra.launch.xml，固定 camera namespace 和彩色/深度开启，避免裸节点默认话题与新 A 输入不一致；注册开关仅由 DEPTH_REGISTERED 显式传入。测距仍要求实测校正/配准输入，原始相机流首先用于视频检测。
+- 最小审查及本机验证：Bash 语法、ShellCheck（排除外部 source SC1091）、help、非法 bool/缺串口车型/不完整运动使能拒绝、diff 检查通过。未在 Mac 安装 Jetson 硬件环境，未 SSH 或部署；相机及整组实机启动尚待验收，不将脚本检查视为硬件运行通过。

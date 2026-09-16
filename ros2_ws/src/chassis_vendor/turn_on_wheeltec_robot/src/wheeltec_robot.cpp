@@ -9,8 +9,15 @@ Function: The main function, ROS initialization, creates the Robot_control objec
 int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv); //ROS initializes and sets the node name //ROS初始化 并设置节点名称 
-  turn_on_robot Robot_Control;//Instantiate an object //实例化一个对象
-  Robot_Control.Control();//Loop through data collection and publish the topic //循环执行数据采集和发布话题等操作
+  try {
+    turn_on_robot Robot_Control;
+    Robot_Control.Control();
+  } catch (const std::exception &e) {
+    std::cerr << "Driver stopped: " << e.what() << std::endl;
+    rclcpp::shutdown();
+    return 1;
+  }
+  rclcpp::shutdown();
   return 0;  
 } 
 
@@ -96,44 +103,46 @@ Function: The speed topic subscription Callback function, according to the subsc
 ***************************************/
 void turn_on_robot::Cmd_Vel_Callback(const geometry_msgs::msg::Twist::SharedPtr ori_twist)
 {
-  short  transition;  //intermediate variable //中间变量
-
-  Send_Data.tx[0]=FRAME_HEADER; //frame head 0x7B //帧头0X7B
-  Send_Data.tx[1] = AutoRecharge; //set aside //预留位
-  Send_Data.tx[2] = SecurityPLY; //set aside //预留位
-
-  //The target velocity of the X-axis of the robot
-  //机器人x轴的目标线速度
-  transition=0;
-  transition = ori_twist->linear.x*1000; //将浮点数放大一千倍，简化传输
-  Send_Data.tx[4] = transition;     //取数据的低8位
-  Send_Data.tx[3] = transition>>8;  //取数据的高8位
-
-  //The target velocity of the Y-axis of the robot
-  //机器人y轴的目标线速度
-  transition=0;
-  transition = ori_twist->linear.y*1000;
-  Send_Data.tx[6] = transition;
-  Send_Data.tx[5] = transition>>8;
-
-  //The target angular velocity of the robot's Z axis
-  //机器人z轴的目标角速度
-  transition=0;
-  transition = ori_twist->angular.z*1000;
-  Send_Data.tx[8] = transition;
-  Send_Data.tx[7] = transition>>8;
-
-  Send_Data.tx[9]=Calculate_BCC(Send_Data.tx, SEND_DATA_SIZE - 2); //BCC check byte //BCC校验位
-  Send_Data.tx[10]=FRAME_TAIL; //frame tail 0x7D //帧尾0X7D
-  try
-  {
-    Stm32_Serial.write(Send_Data.tx,sizeof (Send_Data.tx)); //Sends data to the downloader via serial port //通过串口向下位机发送数据 
-  }
-  catch (serial::IOException& e)   
-  {
-    RCLCPP_ERROR(this->get_logger(),("Unable to send data through serial port")); //If sending data fails, an error message is printed //如果发送数据失败，打印错误信息
+  desired_ = *ori_twist;
+  last_command_ = Steady::now();
+  if (!std::isfinite(desired_.linear.x) || !std::isfinite(desired_.linear.y)
+      || !std::isfinite(desired_.angular.z)) {
+    desired_ = geometry_msgs::msg::Twist();
   }
 }
+
+void turn_on_robot::SendVelocity(double x, double y, double yaw)
+{
+  uint8_t frame[SEND_DATA_SIZE] = {FRAME_HEADER, 0, 0, 0, 0, 0, 0, 0, 0, 0, FRAME_TAIL};
+  const double values[3] = {x, y, yaw};
+  for (int i = 0; i < 3; ++i) {
+    const double limit = i == 2 ? max_angular_ : max_linear_;
+    const int16_t value = static_cast<int16_t>(std::round(
+        std::max(-limit, std::min(limit, values[i])) * 1000.0));
+    frame[3+2*i] = (static_cast<uint16_t>(value) >> 8) & 0xff;
+    frame[4+2*i] = static_cast<uint16_t>(value) & 0xff;
+  }
+  frame[9] = Calculate_BCC(frame, 9);
+  if (Stm32_Serial.write(frame, sizeof(frame)) != sizeof(frame)) {
+    throw std::runtime_error("Incomplete serial command write");
+  }
+}
+
+void turn_on_robot::Watchdog()
+{
+  const auto now = Steady::now();
+  if (std::chrono::duration<double>(now-last_send_).count() < 0.05) return;
+  last_send_ = now;
+  const bool fresh = std::chrono::duration<double>(now-last_command_).count() <= command_timeout_s_
+      && std::chrono::duration<double>(now-last_feedback_).count() <= feedback_timeout_s_
+      && count_publishers("/cmd_vel") == 1;
+  if (fresh) SendVelocity(desired_.linear.x, desired_.linear.y, desired_.angular.z);
+  else {
+    desired_ = geometry_msgs::msg::Twist();
+    SendVelocity(0, 0, 0);
+  }
+}
+
 
 
 
@@ -473,41 +482,36 @@ Function: Read and verify the data sent by the lower computer frame by frame thr
 ***************************************/
 bool turn_on_robot::Get_Sensor_Data()
 {
-  short transition_16=0; //Intermediate variable //中间变量
-  uint8_t check=0,check2=0,check3=0, error=1,error2=1,error3=1,Receive_Data_Pr[1]; //Temporary variable to save the data of the lower machine //临时变量，保存下位机数据
-  static int count,count2,count3; //Static variable for counting //静态变量，用于计数
-  static uint8_t Last_Receive;
-  Stm32_Serial.read(Receive_Data_Pr,sizeof(Receive_Data_Pr)); //Read the data sent by the lower computer through the serial port //通过串口读取下位机发送过来的数据
-
-  Receive_Data.rx[count] = Receive_Data_Pr[0]; //Fill the array with serial data //串口数据填入数组
-  Receive_AutoCharge_Data.rx[count3] = Receive_Data_Pr[0];
-  Distance_Data.rx[count2] = Receive_Data_Pr[0];
-
-  Receive_Data.Frame_Header = Receive_Data.rx[0]; //The first part of the data is the frame header 0X7B //数据的第一位是帧头0X7B
-  Receive_Data.Frame_Tail = Receive_Data.rx[23];  //The last bit of data is frame tail 0X7D //数据的最后一位是帧尾0X7D
-
-  //基础数据包接收( 7F 7B 或 7D 7B )
-  if( ((Last_Receive==AutoCharge_TAIL || Last_Receive==FRAME_TAIL ) && Receive_Data_Pr[0] == FRAME_HEADER) || 
-        count>0 )
-    count++;
-  else
-    count=0;
-
-  //自动回充数据包接收(FC 7C 或 7D 7C)
-  if( ((Last_Receive==Distance_TAIL || Last_Receive==FRAME_TAIL ) && Receive_Data_Pr[0] == AutoCharge_HEADER) || 
-        count3>0 )
-    count3++;
-  else
-    count3=0;
-
-  //超声波数据接收( 7D FA )
-  if( (Last_Receive==FRAME_TAIL && Receive_Data_Pr[0] == Distance_HEADER) || 
-        count2>0 )
-    count2++;
-  else
-    count2=0;
-
-  Last_Receive = Receive_Data_Pr[0]; //保存本次接收到的数据
+  short transition_16=0;
+  uint8_t check=0, check2=0, check3=0, error=1, error2=1, error3=1;
+  int count=0, count2=0, count3=0;
+  uint8_t byte = 0;
+  // A timeout returns zero bytes: never feed an uninitialised byte into the parser.
+  if (Stm32_Serial.read(&byte, 1) != 1) return false;
+  rx_buffer_.push_back(byte);
+  while (!rx_buffer_.empty()) {
+    const auto head = rx_buffer_.front();
+    const size_t length = head == FRAME_HEADER ? RECEIVE_DATA_SIZE :
+        head == Distance_HEADER ? Distance_DATA_size :
+        head == AutoCharge_HEADER ? AutoCharge_DATA_SIZE : 0;
+    if (!length) { rx_buffer_.pop_front(); continue; }
+    if (rx_buffer_.size() < length) return false;
+    const uint8_t tail = head == FRAME_HEADER ? FRAME_TAIL :
+        head == Distance_HEADER ? Distance_TAIL : AutoCharge_TAIL;
+    uint8_t bcc = 0;
+    for (size_t i=0; i<length-2; ++i) bcc ^= rx_buffer_[i];
+    if (rx_buffer_[length-1] != tail || rx_buffer_[length-2] != bcc) {
+      rx_buffer_.pop_front(); // Sliding resynchronisation, including embedded headers.
+      continue;
+    }
+    auto destination = head == FRAME_HEADER ? Receive_Data.rx :
+        head == Distance_HEADER ? Distance_Data.rx : Receive_AutoCharge_Data.rx;
+    for (size_t i=0; i<length; ++i) { destination[i] = rx_buffer_.front(); rx_buffer_.pop_front(); }
+    if (head == FRAME_HEADER) { count=length; Receive_Data.Frame_Tail=tail; }
+    else if (head == Distance_HEADER) count2=length;
+    else count3=length;
+    break;
+  }
 
   //自动回充数据处理
   if(count3 == AutoCharge_DATA_SIZE)
@@ -579,6 +583,7 @@ bool turn_on_robot::Get_Sensor_Data()
       }
       if(error == 0)
       {
+        last_feedback_ = Steady::now();
         Receive_Data.Flag_Stop=Receive_Data.rx[1]; //set aside //预留位
         Robot_Vel.X = Odom_Trans(Receive_Data.rx[2],Receive_Data.rx[3]); //Get the speed of the moving chassis in the X direction //获取运动底盘X方向速度
           
@@ -632,8 +637,10 @@ void turn_on_robot::Control()
   {
       try
       {
+          rclcpp::spin_some(this->get_node_base_interface());
+          Watchdog();
           _Now = this->now();
-            Sampling_Time = (_Now - _Last_Time).seconds();  //Retrieves time interval, which is used to integrate velocity to obtain displacement (mileage) 
+            Sampling_Time = std::max(0.0, std::min(0.1, (_Now - _Last_Time).seconds()));  //Retrieves time interval, which is used to integrate velocity to obtain displacement (mileage)
                                                       //获取时间间隔，用于积分速度获得位移(里程)
           if (true == Get_Sensor_Data()) //The serial port reads and verifies the data sent by the lower computer, and then the data is converted to international units
                                         //通过串口读取并校验下位机发送过来的数据，然后数据转换为国际单位
@@ -682,9 +689,12 @@ void turn_on_robot::Control()
           }
           rclcpp::spin_some(this->get_node_base_interface());   //The loop waits for the callback function //循环等待回调函数
       }
-      catch (const rclcpp::exceptions::RCLError & e )
+      catch (const std::exception & e )
       {
-      RCLCPP_ERROR(this->get_logger(),"unexpectedly failed whith %s",e.what()); 
+      RCLCPP_ERROR(this->get_logger(), "Serial/control failure: %s; stopping driver", e.what());
+      desired_ = geometry_msgs::msg::Twist();
+      try { SendVelocity(0, 0, 0); } catch (...) {}
+      throw; // Supervisor may restart; never replay a cached command after reopening.
       }
   }
 }
@@ -736,7 +746,7 @@ turn_on_robot::turn_on_robot():rclcpp::Node ("wheeltec_robot")
   this->declare_parameter<std::string>("odom_frame_id", "odom");
   this->declare_parameter<std::string>("robot_frame_id", "base_footprint");
   this->declare_parameter<std::string>("gyro_frame_id", "gyro_link");
-  this->declare_parameter<std::string>("car_mode", "mini_mec");
+  this->declare_parameter<std::string>("car_mode", "");
   this->declare_parameter<double>("odom_x_scale",1.0);
   this->declare_parameter<double>("odom_y_scale",1.0);
   this->declare_parameter<double>("odom_z_scale_positive",1.0);
@@ -753,6 +763,24 @@ turn_on_robot::turn_on_robot():rclcpp::Node ("wheeltec_robot")
   this->get_parameter("odom_y_scale", odom_y_scale);
   this->get_parameter("odom_z_scale_positive", odom_z_scale_positive);
   this->get_parameter("odom_z_scale_negative", odom_z_scale_negative);
+
+  command_timeout_s_ = declare_parameter<double>("command_timeout_s", 0.5);
+  feedback_timeout_s_ = declare_parameter<double>("feedback_timeout_s", 0.5);
+  max_linear_ = declare_parameter<double>("max_linear_mps", 0.15);
+  max_angular_ = declare_parameter<double>("max_angular_rps", 0.5);
+  if (car_mode.empty() || usart_port_name.empty() || serial_baud_rate <= 0)
+    throw std::invalid_argument("Explicit car_mode and valid serial configuration required");
+  for (auto value : {command_timeout_s_, feedback_timeout_s_, max_linear_, max_angular_})
+    if (!std::isfinite(value) || value <= 0) throw std::invalid_argument("Invalid watchdog/limit");
+  if (max_linear_ > 0.15 || max_angular_ > 0.5)
+    throw std::invalid_argument("Route A serial limits must not exceed 0.15 m/s and 0.5 rad/s");
+  char canonical[PATH_MAX];
+  if (!realpath(usart_port_name.c_str(), canonical)) throw std::runtime_error("Serial device missing");
+  const std::string lock_path = "/tmp/roscar-serial-" +
+      std::to_string(std::hash<std::string>{}(canonical)) + ".lock";
+  port_lock_ = open(lock_path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
+  if (port_lock_ < 0 || flock(port_lock_, LOCK_EX | LOCK_NB) != 0)
+    throw std::runtime_error("Serial device already owned by another ROSCAR driver");
 
   //将car_mode转换为小写，便于后续判断车型模式
   std::transform(car_mode.begin(), car_mode.end(), car_mode.begin(),
@@ -776,22 +804,10 @@ turn_on_robot::turn_on_robot():rclcpp::Node ("wheeltec_robot")
   range_e_publisher_ = create_publisher<sensor_msgs::msg::Range>("ultrasonic_data_E", 10);
   range_f_publisher_ = create_publisher<sensor_msgs::msg::Range>("ultrasonic_data_F", 10);
 
-  //回充订阅者
-  Recharge_Flag_Sub = create_subscription<std_msgs::msg::Int8>(
-      "robot_recharge_flag", 10, std::bind(&turn_on_robot::Recharge_Flag_Callback, this,std::placeholders::_1));
-  //回充服务提供
-  //SetCharge_Service=this->create_service<turtlesim::srv::Spawn>("/set_charge",std::bind(&turn_on_robot::Set_Charge_Callback,this,std::placeholders::_1 ,std::placeholders::_2));
-  arm_cmd_Sub = create_subscription<std_msgs::msg::Float32MultiArray>(
-        "arm_cmd", 10, std::bind(&turn_on_robot::arm_cmd_Callback, this,std::placeholders::_1));
-  SetRgb_Sub = create_subscription<std_msgs::msg::UInt8MultiArray>(
-      "set_rgb_color", 5, std::bind(&turn_on_robot::Set_LightRgb_Callback, this,std::placeholders::_1));
-
-  
+  // This deployment supports only the verified basic velocity protocol.
+  // No arm, recharge, light or security command subscriptions are installed.
   Cmd_Vel_Sub = create_subscription<geometry_msgs::msg::Twist>(
       "/cmd_vel", 2, std::bind(&turn_on_robot::Cmd_Vel_Callback, this, std::placeholders::_1));
-
-  //底盘安全防护关闭话题订阅
-  Security_Sub = create_subscription<std_msgs::msg::Int8>("chassis_security",2, std::bind(&turn_on_robot::Security_Callback, this,std::placeholders::_1));
 
   RCLCPP_INFO(this->get_logger(),"wheeltec_robot Data ready"); //Prompt message //提示信息
 
@@ -800,14 +816,15 @@ turn_on_robot::turn_on_robot():rclcpp::Node ("wheeltec_robot")
     //Attempts to initialize and open the serial port //尝试初始化与开启串口
     Stm32_Serial.setPort(usart_port_name); //Select the serial port number to enable //选择要开启的串口号
     Stm32_Serial.setBaudrate(serial_baud_rate); //Set the baud rate //设置波特率
-    serial::Timeout _time = serial::Timeout::simpleTimeout(2000); //Timeout //超时等待
+    serial::Timeout _time = serial::Timeout::simpleTimeout(20); //Timeout //超时等待
     Stm32_Serial.setTimeout(_time);
     Stm32_Serial.open(); //Open the serial port //开启串口
     Stm32_Serial.flushInput();
   }
   catch (serial::IOException& e)
   {
-    RCLCPP_ERROR(this->get_logger(),"wheeltec_robot can not open serial port,Please check the serial port cable! "); //If opening the serial port fails, an error message is printed //如果开启串口失败，打印错误信息
+    throw; // Opening failure is fatal; do not run an apparently healthy driver.
+    // //If opening the serial port fails, an error message is printed //如果开启串口失败，打印错误信息
   } 
   if(Stm32_Serial.isOpen())
   {
@@ -821,61 +838,10 @@ Function: Destructor, executed only once and called by the system when an object
 ***************************************/
 turn_on_robot::~turn_on_robot()
 {
-  //Sends the stop motion command to the lower machine before the turn_on_robot object ends
-  //对象turn_on_robot结束前向下位机发送停止运动命令
-  Send_Data.tx[0]=FRAME_HEADER;
-  Send_Data.tx[1] = 0;  
-  Send_Data.tx[2] = 0; 
-
-  //The target velocity of the X-axis of the robot //机器人X轴的目标线速度 
-  Send_Data.tx[4] = 0;     
-  Send_Data.tx[3] = 0;  
-
-  //The target velocity of the Y-axis of the robot //机器人Y轴的目标线速度 
-  Send_Data.tx[6] = 0;
-  Send_Data.tx[5] = 0;  
-
-  //The target velocity of the Z-axis of the robot //机器人Z轴的目标角速度 
-  Send_Data.tx[8] = 0;  
-  Send_Data.tx[7] = 0;    
-  Send_Data.tx[9]=Calculate_BCC(Send_Data.tx, SEND_DATA_SIZE - 2); //BCC check byte //BCC校验位
-  Send_Data.tx[10]=FRAME_TAIL; 
-  try
-  {
-    Stm32_Serial.write(Send_Data.tx,sizeof (Send_Data.tx)); //Send data to the serial port //向串口发数据  
+  try {
+    if (Stm32_Serial.isOpen()) { SendVelocity(0, 0, 0); Stm32_Serial.close(); }
+  } catch (const std::exception &e) {
+    RCLCPP_ERROR(get_logger(), "Final serial stop failed: %s", e.what());
   }
-  catch (serial::IOException& e)   
-  {
-    RCLCPP_ERROR(this->get_logger(),"Unable to send data through serial port"); //If sending data fails, an error message is printed //如果发送数据失败,打印错误信息
-  }
-
-  // Sends the stop motion command to the lower machine before the turn_on_robot object ends
-  // 对象turn_on_robot结束前向下位机发送停止运动命令
-  Send_Data.tx[0]=0xAA;
-  Send_Data.tx[1] = 0;  
-  Send_Data.tx[2] = 0; 
-
-
-  Send_Data.tx[3]=((short)(1.5707*1000))>>8;
-  Send_Data.tx[4]=(short)(1.5707*1000);
-
-  Send_Data.tx[5]=((short)(0.3917*1000))>>8;
-  Send_Data.tx[6]=(short)(0.3917*1000);
- 
-  //The target velocity of the Z-axis of the robot //机器人Z轴的目标角速度 
-  Send_Data.tx[7] = 0;    
-  Send_Data.tx[8]=Calculate_BCC(Send_Data.tx, 8); //BCC check byte //BCC校验位
-  Send_Data.tx[9]=0xBB; 
-
-  try
-  {
-    Stm32_Serial.write(Send_Data.tx,sizeof (Send_Data.tx)); //Send data to the serial port //向串口发数据  
-  }
-  catch (serial::IOException& e)   
-  {
-    RCLCPP_ERROR(this->get_logger(),"Unable to send data through serial port"); //If sending data fails, an error message is printed //如果发送数据失败,打印错误信息
-  }
-
-  Stm32_Serial.close(); //Close the serial port //关闭串口  
-  RCLCPP_INFO(this->get_logger(),"Shutting down"); //Prompt message //提示信息
+  if (port_lock_ >= 0) { flock(port_lock_, LOCK_UN); close(port_lock_); }
 }

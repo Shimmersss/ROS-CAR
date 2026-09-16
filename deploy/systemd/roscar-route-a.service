@@ -1,5 +1,5 @@
 [Unit]
-Description=ROSCAR Route A Astra person perception and Foxglove
+Description=ROSCAR Route A red object perception and Foxglove
 Wants=network-online.target
 After=network-online.target
 
@@ -10,8 +10,10 @@ Group=wheeltec
 WorkingDirectory=/home/wheeltec/ROSCAR
 Environment=HOME=/home/wheeltec
 Environment=ROS_DOMAIN_ID=182
-Environment=RGB_STREAM=false
-ExecStart=/bin/bash /home/wheeltec/ROSCAR/scripts/run_astra_foxglove.sh
+Environment=WITH_CHASSIS=false
+Environment=MOTION_ENABLED=false
+Environment=DEPTH_REGISTERED=false
+ExecStart=/bin/bash /home/wheeltec/ROSCAR/scripts/run_red_foxglove.sh
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15
