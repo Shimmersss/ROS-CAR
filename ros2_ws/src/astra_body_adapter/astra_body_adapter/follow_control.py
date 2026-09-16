@@ -4,8 +4,8 @@ import math
 
 @dataclass(frozen=True)
 class FollowConfig:
-    target_distance_m: float = 2.0
-    distance_deadband_m: float = 0.15
+    target_distance_m: float = 0.3
+    distance_deadband_m: float = 0.0
     bearing_deadband_rad: float = 0.08
     turn_in_place_rad: float = 0.6
     max_linear_mps: float = 0.15

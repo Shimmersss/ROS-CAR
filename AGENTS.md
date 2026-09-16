@@ -82,3 +82,11 @@
 - 2026-09-16 新增 Jetson 总入口 scripts/start_project.sh，默认统一启动相机、新 A/Foxglove、语音；底盘/运动显式开启，缺车型/串口/环境时报错。Ctrl-C 或任一子模块退出清理整组，日志 artifacts/project；旧 A systemd active 时拒绝争抢相机。相机脚本使用厂商 astra.launch.xml 固定 camera namespace、开启彩色/深度；配准仍须现场验证。Bash/ShellCheck 和配置拒绝检查通过，未部署或实机启动。
 - 2026-09-16 新增 RuntimeMetrics，红色节点 /perception/performance 与跟随器 /control/performance 默认每秒汇总 FPS、彩色/RGB-D 回调平均与 P95 耗时、观测年龄和有效控制延迟。空样本 NaN、空窗口零 FPS，样本缓冲有界；PERFORMANCE_ENABLED=false 或 launch performance_enabled:=false 重启关闭。Foxglove red-layout 底部增加三组性能图表。ARM64 Humble 构建、指标/视频/控制闭环及原 A/B/语音回归通过，日志 artifacts/performance-test.log；未部署、未量化 Jetson 统计开销。保留已有未提交的空串口参数修复，本轮未远端应用。
 - 2026-09-16 16:19 左右用户授权只读上车核对坐标：在线目录为 /home/wheeltec/ROSCAR-red，相机/红色节点 depth_registered=true、640×480 RGB 与16UC1深度均使用 camera_color_optical_frame。12秒240条TargetState中31条有效、182条depth rejected、其余LOST/SEARCHING；最大红块多数采样深度全零，全图有效深度约23–24%。后续6秒122条全部无有效位置。不能称稳定准确坐标；偶然掩码测距约1.107m未经物理真值核验。发现 person_follower enabled=true、12秒读到5条非零cmd_vel，已告知用户，未更改开关/部署/启动节点。深度CameraInfo.K有NaN而P有限，彩色K/P有限，需进一步核验标定及真实配准。
+- 2026-09-16 用户更换红纸板后复测：已将在线 /person_follower enabled 设为 false 并验证301条cmd_vel全零。15秒302/302条TargetState有效、ID red:17稳定，300条Marker ADD，frame=camera_color_optical_frame；中位XYZ约(0.0504,-0.0455,1.4020)m，Z窗口内为1.402m。新目标下坐标稳定恢复，未改过滤/配准算法。物理真值待用户量距，不能把发布稳定等同绝对准确。
+- 2026-09-16 用户明确要求打开跟随，已在线设置 /person_follower enabled=true 并读回确认。开启前红色目标red:22坐标有效、距离约1.402m、偏角0.0184rad且速度为零；开启后抽样速度仍为零，符合当前2m保持距离和偏角死区。未更改限速/距离/源码，非完整实车跟随验收。
+
+- 2026-09-16 用户要求超过1m跟随：FollowConfig默认目标距离改为1.0m、距离死区0，保留0.15m/s前进和0.5rad/s转向上限、不倒车。在线 /home/wheeltec/ROSCAR-red 定点修改并原生编译 astra_body_adapter 成功，停旧栈后在 tmux roscar-red-1m 中以运动关闭重启，读回新参数后恢复 enabled=true。抽样有效红色目标水平距离1.000526m、cmd_vel.linear.x约0.000351m/s；仅证明指令链路，不证明实际位移。1m按相机测得水平距离判断，先前约8cm测距偏差未校正。
+- 1米阈值回归：本机ARM64 Humble 9+3包构建、控制边界、PTY真实驱动/合成红色闭环及A/B/语音回归通过，见 artifacts/follow-1m-test.log；启动默认运动仍关闭，本次在线enabled=true为运行期设置。
+
+- 2026-09-16 用户进一步要求30cm跟随：共享FollowConfig默认目标距离改为0.30m（距离死区仍0），在线ROSCAR-red原生构建完成并重启至tmux roscar-red-30cm；读回0.3/0.0及初始disabled后恢复enabled=true。cmd_vel抽样前进0.15m/s、转向0，仅证明指令输出。启动默认运动仍关闭，测距偏差未校正。
+- 本机Linux ARM64 Humble完整回归通过：9个主动包与3个底盘包编译、真实驱动PTY和红色RGB-D闭环、A/B/red/demo/非法路由、视频/性能及语音测试，日志artifacts/follow-30cm-test.log。最小审查和git diff --check通过。

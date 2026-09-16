@@ -153,8 +153,8 @@ def main():
         assert any(math.isfinite(m.control_latency_ms) and m.control_latency_ms>=0
                    for m in control_metrics), 'no valid control latency samples'
         first=states[-1].target_id
-        depth_value=1.5;encoding='32FC1';pump(.4)
-        assert abs(states[-1].position.z-1.5)<1e-5
+        depth_value=0.25;encoding='32FC1';pump(.4)
+        assert abs(states[-1].position.z-0.25)<1e-5
         assert all(v[0]==0 for t,v in frames if t>time.monotonic()-.15)
         depth_value=0;pump(.4);assert not states[-1].position_valid;latest_zero()
         depth_value=3;has_red=False;pump(.4)
