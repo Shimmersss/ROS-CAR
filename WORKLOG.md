@@ -434,3 +434,9 @@
 - 本机Linux ARM64 Humble完整回归通过：9个主动包与3个底盘包编译、真实驱动PTY和红色RGB-D闭环、A/B/red/demo/非法路由、视频/性能及语音测试，日志artifacts/follow-30cm-test.log。最小审查和git diff --check通过。
 
 - 2026-09-16：按用户要求将厂商目录中的雷达/激光雷达相关包复制到 `ros2_ws/src/radar_vendor/`，包含 `wheeltec_radar`、LS/LD LiDAR、RPLIDAR、pointcloud_to_laserscan 和双雷达融合；新增来源哈希清单与说明。默认保留 `COLCON_IGNORE`，未接入当前启动路线、未编译或实机验证。
+
+## 2026-09-16：雷达源码迁入完整性复核
+
+- 用户再次要求将雷达源码移入工作目录。检查确认 `ros2_ws/src/radar_vendor/` 已包含 wheeltec_radar、lslidar_ros2、ldlidar_ros2、rplidar_ros、pointcloud_to_laserscan-humble 和 double_lidar_fusion 六组目录，共7个ROS包，无需重复复制。
+- 对照厂商 wheeltec_radar 与 wheeltec_lidar_ros2，排除Git/Python缓存和.DS_Store后，238个文件全部存在且逐字节一致；SOURCE_MANIFEST.json的239项（含本地README）SHA-256均匹配。
+- 最小审查确认COLCON_IGNORE存在，默认构建继续跳过雷达目录；未修改启动入口，未连接小车、编译或进行硬件验证。git diff --check通过。
