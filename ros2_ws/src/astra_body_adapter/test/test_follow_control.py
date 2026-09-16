@@ -10,7 +10,13 @@ from astra_body_adapter.follow_control import (
 
 class FollowControlTest(unittest.TestCase):
     def setUp(self):
-        self.config = FollowConfig()
+        self.config = FollowConfig(target_distance_m=2.0, distance_deadband_m=0.15)
+
+    def test_default_thirty_centimetre_trigger(self):
+        for distance in (.25, .3):
+            self.assertEqual(compute_command(distance, 0., True), (0., 0.))
+        self.assertGreater(compute_command(.31, 0., True)[0], 0.)
+        self.assertAlmostEqual(compute_command(.7, 0., True)[0], .15)
 
     def test_far_centered_target_moves_forward_at_limited_speed(self):
         linear, angular = compute_command(3.0, 0.0, True, self.config)
