@@ -394,3 +394,12 @@
 - performance_enabled 默认 true，ROS launch 和 PERFORMANCE_ENABLED 环境变量可显式关闭（重启生效）；关闭时不创建性能定时器/发布者。Foxglove red-layout 增加 FPS、检测耗时、观测与控制延迟三组曲线，同步更新接口与主方案。指标功能不采集 CPU/GPU/内存，资源占用仍需 tegrastats。
 - 测试最初发现整数测试样本触发 ROS float64 字段断言，汇总器现统一浮点转换。最终 Linux ARM64 Humble 主动及串口包编译通过；新增指标窗口/均值/P95/非法样本/禁用检查、RGB-only 实际性能输出、有效控制延迟样本均通过，原有红色闭环、A/B/demo/非法 route、语音回归通过。日志 artifacts/performance-test.log。
 - 最小审查：计数无同步控制副作用，耗时使用单调计时，延迟限定同一 ROS 时间基准，输入 FPS 不声称为硬件原始 FPS；现有 RGB 与 RGB-D 两条检测路径分别计时，不隐藏重复计算。JSON 面板引用、结构、ShellCheck、diff 检查通过。原未提交空串口参数修复保留，未部署任何代码、未实测 Jetson 性能差异；只给出预期开销较小的判断，没有编造百分比。
+
+## 2026-09-16：在线三维坐标只读检查
+
+- 用户明确授权上车核对，SSH roscar-wifi 成功。实际运行目录 /home/wheeltec/ROSCAR-red，相机硬件2bc5:0402 Astra，厂商相机已开彩色/深度及depth_registration；新A启用配准确认、底盘参数car_mode=mini_akm。这只是读取当前配置，不代表本轮核验实物车型。
+- 第一条目标状态为TRACKING但detail=Red target; depth rejected、position_valid=false、XYZ NaN。12秒只读订阅240条状态：182条深度拒绝、31条Registered mask depth有效、21条LOST、6条SEARCHING；随后6秒122条均无有效位置。
+- 读取RGB/深度/CameraInfo：640×480、rgb8/16UC1、frame均camera_color_optical_frame；彩色P的fx/fy约570.342，cx319.5、cy239.5。深度P与彩色P相同，但深度K包含NaN。仅相同frame/P不能证明真实像素对齐或测距准确。
+- 247次最新图像配对诊断（诊断采样并非message_filters精确同步）：最大红块约x304–364/y247–268，面积约800像素，多数目标区域深度100%为零，全图有效深度约23–24%。偶然有效样本掩码有效率72.7%、中位深度1.107m、计算XYZ约(0.0243,0.0437,1.107)m；该值不是物理精度验收，可能仍受对齐/背景影响。
+- 当前person_follower动态enabled=true（启动命令曾为false），240条cmd_vel里5条非零；已明确告知用户深度恢复可能驱动车辆。本轮仅新建临时只读订阅器，结束即退出，未改参数、未发指令、未重启或部署。
+- 结论：当前不能稳定发布可确认准确的坐标，主要直接证据是目标ROI缺失深度；下一步需在运动禁用的受控条件下，结合目标材质/距离/现场真值、深度图和标定配准检查。最小审查区分有效坐标、稳定性和绝对精度，未把推测的硬件原因当定论。
