@@ -406,3 +406,12 @@
 - 首次两轮 0.05 m/s、0.5 秒测试分别在加入零速握手前后执行，里程计都基本为零，未形成有效运动。没有直接提高到驱动 0.15 m/s 上限；第三轮使用冒烟脚本硬上限 0.08 m/s、1 秒，`/odom.twist.twist.linear.x` 出现连续正值，峰值约 0.088 m/s，随后逐级下降并最终回到 0.0。
 - 第三轮证明 ROS 指令、串口、下位机和编码器反馈链路产生了运动响应，但远程没有视觉观察车身是否在地面实际位移。测试结束后 `wheeltec_robot_node` 和测试发布器均退出，`fuser` 确认串口无人占用；`roscar-red` tmux 感知会话仍运行。后续需由用户现场确认实际位移和前进方向。
 - 版本收尾检查发现 Windows 工作区会将 Shell 脚本检出为 CRLF，直接 SCP 后 Jetson Bash 报 `\r` 语法错误；新增 `.gitattributes` 固定 `*.sh` 和 `*.command` 为 LF，并在提交前用暂存区内容重建、同步及复测相关脚本。该问题只影响后续从 Windows 再部署的文件，既有在线进程未因检查而中断。
+
+## 2026-09-16：分支 a 红色跟随真机部署
+
+- 用户要求将分支 `a` 的跟随功能部署到小车测试。Jetson 的旧 `/home/wheeltec/ROSCAR` 骨架服务自动启动并占用相机；按用户授权停止 `roscar-route-a.service`。旧服务仍为 enabled，停止后因旧脚本响应 TERM 的退出码显示 failed，但其进程已退出、相机已释放。
+- 核对 `/home/wheeltec/ROSCAR-red` 中总入口、相机、红色感知与底盘冒烟脚本和本地哈希一致，Bash 语法通过；所需红色跟踪、person_follower、底盘驱动和 Foxglove 可执行文件均存在。先以 `WITH_CHASSIS=false`、`MOTION_ENABLED=false` 运行相机预检，再以 `WITH_CHASSIS=true`、`SERIAL_PORT=/dev/wheeltec_controller`、`CAR_MODE=mini_akm`、`MOTION_ENABLED=false` 重新启动全链路。
+- Astra 启用 depth_registration 后，彩色和深度均为 640×480，彩色、深度与 CameraInfo 使用 `camera_color_optical_frame`；真实 `/perception/target_state` 来源为 `red_object`、`is_simulated=false`，观测年龄约 0.03 s。当前无红色目标，状态为 SEARCHING/Confirming largest red component。
+- 底盘串口成功打开，`/PowerVoltage` 实测约 12.03 V；`/cmd_vel` 恰有 person_follower 一个发布者和 wheeltec_robot 一个订阅者，禁用时消息全零。动态设置 `/person_follower.enabled=true` 成功，随后再次确认无目标时速度仍全零。
+- 当前 `tmux` 会话 `roscar-red` 保持运行，Foxglove Bridge 为 `ws://192.168.1.240:8765`。本轮证明真实相机、注册 RGB-D、红色状态、控制节点和底盘串口已组成在线链路；尚未由用户现场确认红色物体引导下的实际位移、方向和转向效果，不将其写为完整实车跟随验收。系统无避障，测试需清空场地并随时断电或将 enabled 设回 false。
+- 最小审查：检查五个 ROS 节点、唯一目标发布者、唯一速度发布/订阅对、真实来源标记、电压回传、跟随参数和零速度；未修改 B 或语音代码，未把本机未跟踪的根目录 `red-layout.json` 纳入版本。
