@@ -415,3 +415,14 @@
 - 底盘串口成功打开，`/PowerVoltage` 实测约 12.03 V；`/cmd_vel` 恰有 person_follower 一个发布者和 wheeltec_robot 一个订阅者，禁用时消息全零。动态设置 `/person_follower.enabled=true` 成功，随后再次确认无目标时速度仍全零。
 - 当前 `tmux` 会话 `roscar-red` 保持运行，Foxglove Bridge 为 `ws://192.168.1.240:8765`。本轮证明真实相机、注册 RGB-D、红色状态、控制节点和底盘串口已组成在线链路；尚未由用户现场确认红色物体引导下的实际位移、方向和转向效果，不将其写为完整实车跟随验收。系统无避障，测试需清空场地并随时断电或将 enabled 设回 false。
 - 最小审查：检查五个 ROS 节点、唯一目标发布者、唯一速度发布/订阅对、真实来源标记、电压回传、跟随参数和零速度；未修改 B 或语音代码，未把本机未跟踪的根目录 `red-layout.json` 纳入版本。
+
+## 2026-09-16：恢复语音助手与 TTS 播报
+
+- 用户明确要求暂停跟随工作，只处理语音模块。检查发现当前项目以 `WITH_VOICE=false` 启动，因此只有相机、感知、底盘和 Foxglove 节点；语音私有配置仍存在且权限为 0600。
+- 在现有 tmux 会话中独立启动语音，不重启其他模块；在线节点包括 `wheeltec_mic_wake`、`xfyun_asr`、`voice_command_router`、`deepseek_chat`、`xfyun_tts`。麦克风串口成功打开，蜂鸣器保持禁用。
+- 初次注入 TTS 时状态虽为 `SPEAKING→IDLE`，用户未听到声音。检查发现默认 `playback_device=default` 被 PulseAudio 指向板载声卡；板上唯一 USB 播放端为 `plughw:CARD=Device,DEV=0`，与旧部署成功配置一致。USB PCM 已 100% 且未静音；用户确认 12 秒测试音和修复 DNS 后的讯飞中文 TTS 均可听。
+- 当前 Wi-Fi 从路由器取得的 DNS 一度无响应，公网 IP 可达但讯飞/DeepSeek 域名解析卡住。临时将当前接口 DNS 切到 223.5.5.5 和 119.29.29.29 后，两域名约 50 ms 解析，讯飞 TTS 恢复；这是运行时设置，Wi-Fi 重连后可能丢失。
+- 硬件唤醒已多次输出角度，但 ASR 报 `write operation timed out`。根因是 `_receive_one()` 为非阻塞轮询设置 1 ms WebSocket 超时后没有恢复，下一帧 `send()` 继承 1 ms；现保存并恢复原超时，避免网络轻微抖动造成发送失败。
+- 修复同步到 `/home/wheeltec/ROSCAR-red` 后，xfyun_speech 原生 Humble 构建成功，协议和 WebSocket 超时恢复共 5 项测试通过。为避免与他人正在调整的跟随会话耦合，语音改为独立 `roscar-voice` tmux 会话；未重启或修改跟随进程。
+- 真人连续完成两轮完整链路：“你是人类吗？”与“你好吗？”均收到硬件唤醒、LISTENING、ASR_TEXT、DeepSeek ANSWER、TTS `SPEAKING→IDLE`，用户现场听到播报，日志未再出现发送超时。中间两次只唤醒未发出超过阈值的语音被安全丢弃。
+- `scripts/run_voice_assistant.sh` 从硬编码 `enable_tts:=false` 改为默认开启，可用 `VOICE_TTS_ENABLED=false` 恢复纯文本模式；配置固定已验证 USB 播放设备。同步更新 README。未修改跟随代码或参数。
