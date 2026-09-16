@@ -32,7 +32,7 @@ def check_route(route):
                 if route == 'demo' and any(m.status == TargetState.LOST for m in received):
                     break
             assert received, f'{route}: no messages received'
-            assert all(m.source == route for m in received)
+            assert all(m.source == ('red_object' if route == 'red' else route) for m in received)
             assert all(m.header.stamp.sec > 0 for m in received)
             assert '/cmd_vel' not in dict(probe.get_topic_names_and_types())
             if route != 'demo':
@@ -76,7 +76,7 @@ def check_route(route):
 
 
 if __name__ == '__main__':
-    for selected in ['astra', 'yolo', 'demo']:
+    for selected in ['astra', 'yolo', 'red', 'demo']:
         check_route(selected)
     invalid = subprocess.run(
         ['ros2', 'launch', 'perception_bringup', 'perception.launch.py', 'route:=invalid'],

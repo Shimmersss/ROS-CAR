@@ -25,3 +25,8 @@ ros2_ws/src/wheeltec_mic_aiui/AIUI/cfg/aiui.cfg
 *.bag
 *.db3
 *.mcap
+
+/ros2_ws/chassis_src/
+/ros2_ws/chassis_build/
+/ros2_ws/chassis_install/
+/ros2_ws/chassis_log/

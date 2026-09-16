@@ -13,13 +13,13 @@
 - 小车已安装 Codex CLI 0.154.0、Clash Verge Rev 2.5.2 与必要桌面依赖。Codex 已确认 ChatGPT 登录；启动器自动使用 `127.0.0.1:7897` 代理。Clash 已导入用户订阅、使用规则模式和新加坡节点，关闭 TUN/局域网代理访问，配置桌面登录自启动。配置位置及验证范围见 `deploy/README.md`；订阅 URL、节点凭据和登录凭据禁止写入项目文件。
 - 已完成源码静态初查，具体证据与待办见 WORKLOG.md；尚未在 Jetson 编译或连接硬件。
 - 当前任务边界：用户要求先不考虑下位机；先研究和验证人体感知、目标跟踪、深度测距及 Foxglove 展示，暂不接车辆运动。
-- 当前路线建议：相机驱动 + YOLO11n + ByteTrack + 配准后的深度测距，按需求再评估 Pose、分割或 ReID。此路线尚未实施。
+- 当前路线建议：相机驱动 + YOLO11n + ByteTrack + 配准后的深度测距，按需求再评估 Pose、分割或 ReID。此路线已在 codex/route-b 分支补齐本地软件实现，尚未实机验收。
 - 方案主文档为 `人体跟随感知方案.md`，包含硬件区别、骨架 SDK 路线、源码现状、YOLO/深度流程、Foxglove/SSH 配置和感知验收顺序。更新方案时同步维护此文档。
 - 已补充骨架与滤波逻辑：可见人体应用代码为姿势锁定、平均 RGB 恢复和简化 PD，没有显式人体卡尔曼；SDK 内部未知。ByteTrack 自带检测框卡尔曼，空间深度滤波需独立设计；整车 EKF 不等于人体滤波。
 - 两条路线的 SVG 图位于 `docs/diagrams/`，主文档已链接。图中必须区分“已有源码/库”“待开发/接入”“待实机验证”，避免将库已附带表述为已部署成功。
 - 两图并排合并的 PNG 为 `docs/diagrams/人体跟随两方案对比.png`（5780×3800）；修改 SVG 后如需分享合并图，应同步重新导出。
 - 主动开发工作区为 `ros2_ws/src/`，包含 person_interfaces、astra_body_adapter、yolo_person_tracker、perception_bringup。厂商目录保持原样并排除普通 Git；构建仅扫描主动工作区。
-- 正式 `route:=astra` 已接入实测 bodylist_adapter；`route:=yolo` 仍为 NOT_READY。只有显式 `route:=demo` 才输出 `is_simulated=true` 的演示数据，禁止将 demo 或容器验证描述为实机人体识别。
+- 正式 `route:=astra` 已接入实测 bodylist_adapter；`route:=yolo` 已接入真实 RGB-D 节点，默认缺少模型/配准配置时为 NOT_READY。只有显式 `route:=demo` 才输出 `is_simulated=true` 的演示数据，禁止将 demo 或容器验证描述为实机人体识别。
 - 四个包已在本机 Docker 的 Linux ARM64 ROS 2 Humble 环境编译通过；A/B、demo 与非法 route 运行检查通过。尚未在 Jetson 连接相机、验证 SDK 或 CUDA。
 - 项目入口见 README.md，接口见 docs/interfaces.md，任务顺序见 docs/roadmap.md。Mac 同步脚本默认 dry-run，不传厂商原包、权重、录像或构建产物，不执行远端删除。
 
@@ -63,3 +63,21 @@
 - 新增并已安装 `roscar-route-a.service` 与 `scripts/install_route_a_autostart.sh`，用于 Jetson 开机自动启动方案 A，并在前台进程异常退出后延迟 5 秒重启。服务固定使用 `wheeltec` 和 `/home/wheeltec/ROSCAR`，保持 `ROS_DOMAIN_ID=182`、`RGB_STREAM=false`；手动入口会识别 systemd 服务，避免重复启动。
 - 2026-09-15 实际部署结果：同步白名单已加入 `deploy/systemd/`；Jetson 服务为 `enabled/active/running`、`NRestarts=0`，骨架、正式 astra 适配器和 Foxglove Bridge 均在其 cgroup 内。8765 从 Mac 可达，五个感知话题存在，`TargetState` 为真实 Astra 的 SEARCHING，`/cmd_vel` 不存在。尚未为验收而重启整车，因此“重启后自动拉起”目前依据 systemd enabled 状态，未做断电重启验证。
 - 2026-09-15 用户将范围扩展到无避障人体跟随。`astra_body_adapter` 新增默认禁用的 `person_follower`，将已验证 `TargetState` 转换为 `/cmd_vel`；仅 TRACKING+有效+未超时时动作，2.0 m 目标距离、0.15 m/s 前进上限、0.5 rad/s 转向上限、不倒车。Jetson 已构建并运行21项逻辑测试；底盘与跟随以临时用户服务运行，并执行过1秒 0.15 m/s 的受限直行指令及后续零速度。未由远程日志证明实际位移，不得描述为完整实车跟随验收；当前无避障，且 STM32 指令丢失保护仍需独立验证。
+- Foxglove 掩码“无消息”诊断：在线 `/bodylist` 约 29.6 Hz、`/perception/body_mask_image` 约 27.1 Hz，服务和链路完整；当前客户端 Image 面板主题为空，手动选为 `/perception/body_mask_image` 后立即显示并由 foxglove_bridge 建立订阅。此刻 `Bodylist.count=0`，所以画面为黑色。`astra-layout.json` 已补当前面板字段 `imageMode.imageTopic`，保留旧 `topic` 兼容字段。
+- 叉腰未识别在线诊断：正式 adapter 已加载放宽参数 20/160/20 mm、10 帧 3 票，功能处于开启状态；采样 `Bodylist.count=0`，所以本次失败发生在 SDK 人体/关节检测之前，无法进入叉腰条件判断。检查时另发现独立手动进程 `person_follower(enabled=true)` 和厂商 `wheeltec_robot` 使 `/cmd_vel` 出现，已停止两组进程并刷新 ROS 发现；复核仅余方案 A 三节点，`/cmd_vel` 为 Unknown topic，A 服务保持 active。不得再次把控制节点混入感知验收。
+- 用户随后要求恢复最初叉腰条件。默认值已回退为厂商等价 50/100/50 mm、1 帧 1 票；本机 7 个逻辑测试通过，Jetson 两包原生 Humble 编译成功，直接 unittest 共 21 项通过（其中叉腰状态机 7 项）。A 服务已重启并实查参数生效，`/cmd_vel` 不存在。重启后 15 秒 388 帧 Bodylist 全部 count=0；USB 仍识别 ASTRA S，只有 bodyreader 占用，SDK 报 0x500007c9 Invalid license。该提示过去与成功骨架输出并存，当前不能单独认定为根因；锁定阈值不参与 SDK 骨架生成。
+- 用户现场叉腰时连续监视两轮各 60 秒：第一轮 1785 帧中 365 帧有人，第二轮 1757 帧中 641 帧有人，最大均 1 人；人体 ID 由已锁定的 210 丢失后变为 161、3、171，未重新 TRACKING。有关节的帧主要不满足原始条件中的肩高手 50 mm，手肩横差也偶尔超过 100 mm。结论是人体骨架间歇输出和 ID 跳变为首要问题，严格原始条件进一步降低重新锁定机会；不是叉腰功能未开启。
+
+- 2026-09-15 B 方案按用户要求先仅本机推进：实现 YOLO11n/ByteTrack 后端、显式中央目标锁定/释放、轨迹 epoch 防重置误接、配准深度躯干统计及 Foxglove 图像/目标球。相机配准必须人工确认，默认 depth_registered=false。详细输入与验收边界见 docs/方案B实现与验收.md；不部署或切换小车 A 服务。用户收窄范围前远端创建过 .venv-yolo，pip 下载超时退出，未完成应用依赖安装，未停止 A。
+
+- 2026-09-15 B 本机验证完成：Linux ARM64 Humble 8 包编译（8.58s），A/B 逻辑、合成 RGB-D 与 A 适配器、14 项语音逻辑、A/B/demo/非法路由回归通过；本机 Python 3.12 的真实 yolo11n 权重哈希、CPU 两帧空图推理、ByteTrack 调用与 reset 通过。不是 Jetson GPU、真实相机配准或真人 B 验收。支持 yolo_python 指定 ABI 匹配的 ROS 虚拟环境解释器，默认仍要求显式模型和配准确认。
+
+- 2026-09-16 本地已同步远端 main 合并提交 `cb0b87a`（#2，Astra 跟随控制）；`main` 与当前 `codex/route-b` 均指向该提交，本地未提交的 B 实现和 A 调整完整保留。三处文档冲突已合并，叉腰默认继续 50/100/50 mm、1 帧 1 票；21 项 A 锁定/跟随逻辑测试通过。本轮仅同步本地 Git，未部署或启动车辆节点；同步前 stash 保留作备份。
+
+- 2026-09-16 已从 `909123d` 创建分支 `a` 并实现新 A 红色目标路线：独立 red_object_tracker 使用双区间 HSV、最大红块三帧锁定、时序关联、丢失立即失效及一秒后重新搜索、配准掩码深度测距。`route_a.launch.py` 和一键管理默认红色感知，原 `route:=astra` 及骨架脚本保留，B 未改。配准、串口与运动默认关闭；没有本轮远端访问或部署。
+- 新 A 复用 person_follower，新增 expected_source 和观测/发布/测量年龄校验，拒绝模拟数据。可选底盘通过 `scripts/build_chassis.sh` 构建到独立 chassis_install，保留原三个 COLCON_IGNORE；迁入驱动两个源文件已加固，不再是原样副本，SOURCE_MANIFEST.json 保留初始来源哈希。基本帧发送限幅、命令/回传超时停车、发布者数量检查、串口进程锁、20 ms 读取超时及滑动重同步；不注册未验证扩展命令，退出只发基本停车帧。
+- 本机 Linux ARM64 Humble 最终验证：9 个主动包编译 7.38 秒，可选串口 3 包 12.5 秒；53 项算法/控制/语音逻辑测试、真实 C++ 驱动伪终端收发与合成红色 RGB-D 控制闭环、A/B/red/demo/非法 route 及 A 启动退出检查通过。日志 `artifacts/route-a-red-test-final.log`。厂商 serial 库仍有既存 signedness/unused 编译警告，不影响本次构建。Foxglove 新布局 `foxglove/red-layout.json`；具体参数和边界见 `docs/方案A红色物体跟随.md`。本轮仅依据历史合并记录整理部署状态，未核对在线文件，不能称与实际部署完全一致。
+- 2026-09-16 红色 Foxglove 视频补齐：`/perception/color_image` 原样转发输入彩色帧，`/perception/detections_image` 输出 bgr8 检测框视频；两者保留输入 header，red-layout 上方并排显示。视频检测与深度同步解耦，缺深度/配准时也显示候选框，TargetState 仍 NOT_READY。RGB-only ROS 测试已验证像素、header、黄框及无运动；本机 ARM64 Humble 构建与闭环回归见 artifacts/route-a-video-test.log。未部署或更改在线 Foxglove。
+- 2026-09-16 一键启动收尾：`启动方案A.command`、remote/manager/runner 统一提示红色路线、原始/画框话题、red-layout 路径和上位机运动开关。远端缺新版 runner 或 active systemd 仍指向骨架时明确报错，不伪报红色已启动。Bash/ShellCheck、模拟 SSH 与新旧 systemd 检查通过；未连接或更新小车。
+- 2026-09-16 新增 Jetson 总入口 scripts/start_project.sh，默认统一启动相机、新 A/Foxglove、语音；底盘/运动显式开启，缺车型/串口/环境时报错。Ctrl-C 或任一子模块退出清理整组，日志 artifacts/project；旧 A systemd active 时拒绝争抢相机。相机脚本使用厂商 astra.launch.xml 固定 camera namespace、开启彩色/深度；配准仍须现场验证。Bash/ShellCheck 和配置拒绝检查通过，未部署或实机启动。
+- 2026-09-16 新增 RuntimeMetrics，红色节点 /perception/performance 与跟随器 /control/performance 默认每秒汇总 FPS、彩色/RGB-D 回调平均与 P95 耗时、观测年龄和有效控制延迟。空样本 NaN、空窗口零 FPS，样本缓冲有界；PERFORMANCE_ENABLED=false 或 launch performance_enabled:=false 重启关闭。Foxglove red-layout 底部增加三组性能图表。ARM64 Humble 构建、指标/视频/控制闭环及原 A/B/语音回归通过，日志 artifacts/performance-test.log；未部署、未量化 Jetson 统计开销。保留已有未提交的空串口参数修复，本轮未远端应用。

@@ -10,6 +10,7 @@
   <exec_depend>person_interfaces</exec_depend>
   <exec_depend>astra_body_adapter</exec_depend>
   <exec_depend>yolo_person_tracker</exec_depend>
+  <exec_depend>red_object_tracker</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend>

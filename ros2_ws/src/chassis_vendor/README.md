@@ -1,6 +1,6 @@
-# 下位机串口代码（暂存，未启用）
+# 下位机串口代码（可选构建）
 
-从本地 WHEELTEC Humble / JP6.2 原包原样复制，保留原文件、注释和许可证声明；排除嵌套 Git 与缓存。逐文件来源及 SHA-256 见 [SOURCE_MANIFEST.json](SOURCE_MANIFEST.json)。
+最初从本地 WHEELTEC Humble / JP6.2 原包原样复制。分支 a 已修改驱动的基本收发、超时停车与扩展隔离；厂商原包未改。初始来源及 SHA-256（用于对照原始快照，不代表当前改动后哈希）见 [SOURCE_MANIFEST.json](SOURCE_MANIFEST.json)。
 
 | 目录 | 用途 |
 |---|---|
@@ -8,7 +8,7 @@
 | wheeltec_robot_msg | 驱动依赖的厂商消息 |
 | serial | 原包 depend/serial_ros2，ROS 包名 serial，底层串口库 |
 
-父目录中的 `COLCON_IGNORE` 让默认 colcon 构建跳过这三个包。感知启动文件未引用它们，没有新增自动启动或串口访问。日常同步脚本会随 `ros2_ws/src` 复制本目录；本次没有向 Jetson 同步。
+各包的 COLCON_IGNORE 保留，默认主动工作区不构建。执行 `bash scripts/build_chassis.sh` 在独立副本中构建三个包；新 A 仅在 `with_chassis:=true` 时启动驱动，运动仍需另行使能。本轮未向 Jetson 同步。详见 [红色方案 A](../../../docs/方案A红色物体跟随.md)。
 
 ## 已有协议
 
@@ -26,11 +26,10 @@
 
 输入来自 `/cmd_vel`（Twist），线速度 m/s、角速度 rad/s。标准回传帧共 24 字节，携带状态、三轴底盘速度、六轴 IMU 原始数据、电池电压及校验。具体实现见 [wheeltec_robot.cpp](turn_on_wheeltec_robot/src/wheeltec_robot.cpp)。
 
-## 后续启用前的工作
+## 本分支改动
 
-- 核对实物下位机固件协议、车型、串口和 IMU 配置，原厂默认 mini_mec 不代表实际车型。
-- 在 Humble 环境补齐 package.xml / CMakeLists.txt 声明的依赖，再单独编译这三个包；当前迁入代码尚未编译或实机验证。
-- 整理独立底盘启动入口。原厂 launch 保留了相机、外置 IMU、超声波等条件依赖，本次未复制整个整车功能栈，不应直接把原厂整车 launch 当作已可用入口。
-- 后续再接目标状态到速度控制、指令仲裁和失联停车逻辑。本次不生成车辆指令。
-
-目前保留 `COLCON_IGNORE`。取消忽略只影响包发现和构建，并不等于启动节点。
+- 基本帧限速发送、命令/回传 0.5 秒超时停车、多个 cmd_vel 发布者时停车、串口路径进程锁。
+- 20 ms 读取超时，检查实际读取长度；滑动校验与坏帧重同步，接收异常退出且不重放缓存速度。
+- 不注册机械臂、回充、灯光或安全扩展命令，退出只发基本停车帧。
+- 车型必须显式给出；原厂 launch 仍是参考配置，不能替代现场核验。
+- 源码原始清单不覆盖当前补丁；本机伪串口测试不等于实车验收。

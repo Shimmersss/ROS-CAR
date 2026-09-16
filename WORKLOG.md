@@ -309,3 +309,88 @@
 - 在 Jetson 以临时用户服务启动底盘与跟随节点；验证 `/cmd_vel` 为1个发布者到1个订阅者、禁用/SEARCHING 时输出全零。用户确认安全后发10 Hz、1秒、0.15 m/s 直行指令10次，随后发零速度并恢复跟随服务；远程仅能确认指令链，未观测实际位移。
 - 当前跟随参数为 `enabled=true`，感知为 SEARCHING，等待叉腰锁定，`/cmd_vel` 实测为零。两个用户服务均非开机持久化；本功能不含避障，且未完成真人跟随验收。
 - 最小审查：确认光学 X 向右与 ROS 正角速度方向相反；限速、只前进、大偏角原地转向、动态启用、断流停车和非正距离停车均有直接测试或运行证据。
+## 2026-09-15：Foxglove 掩码面板修复
+
+- 用户报告掩码无消息。在线检查确认 systemd 仍为 active、`NRestarts=0`；`/bodylist` 约 29.6 Hz，`/perception/body_mask_image` 约 27.1 Hz，发布链路本身正常。
+- Foxglove 已连接 `ws://192.168.1.240:8765`，TargetState 持续更新，但 Image 面板“主题”为空且掩码发布者订阅数为 0。将主题设为 `/perception/body_mask_image` 后等待提示消失、图像开始显示，foxglove_bridge 订阅数变为 1。
+- 当前读取 `Bodylist.count=0`，因此掩码为黑色，含义是没有人体前景而非没有消息。
+- 当前 Foxglove 工作配置显示图像主题存于 `imageMode.imageTopic`；仓库 `foxglove/astra-layout.json` 已补该字段并保留旧 `topic` 字段，避免新电脑再次导入后主题为空。
+
+## 2026-09-15：叉腰识别在线诊断与控制节点清理
+
+- 运行参数实查：`akimbo_hand_above_base_min_mm=20.0`、`akimbo_hand_shoulder_max_dx_mm=160.0`、`akimbo_shoulder_above_hand_min_mm=20.0`、窗口 10 帧、最少 3 票；叉腰识别已开启且使用放宽值。
+- 当场 `/bodylist` 抽样 `count=0`，TargetState 为 SEARCHING。SDK 当前没有输出人体及关节，因此未进入叉腰几何条件判断；现有日志不记录每帧 count/关节条件，不能从日志还原用户“刚才”的具体手位差值。
+- 安全复核发现两个不属于方案 A systemd cgroup 的独立手动进程：厂商 `base_serial.launch.py`/`wheeltec_robot_node` 与 `person_follower(enabled=true)`；当时 `/cmd_vel` 有 1 个发布者和 1 个订阅者，存在锁定后驱动车辆的可能。
+- 已向两个启动父进程发送 TERM。刷新 ROS 发现后只剩 `/main`、`/perception/astra_bodylist_adapter`、`/foxglove_bridge`，`/cmd_vel` 返回 Unknown topic，方案 A systemd 服务仍为 active。未改动底盘固件或自启服务。
+
+## 2026-09-15：恢复原始叉腰条件并复查骨架
+
+- 按用户要求将默认叉腰条件从放宽值恢复为厂商等价值：手高于脊柱基点 50 mm、手肩横差小于 100 mm、肩高于手 50 mm；投票窗口恢复为 1 帧 1 票，即单帧满足立即锁定。
+- 同步更新 `AkimboConfig`、ROS 节点参数默认值、正式 astra launch、两包 README、主方案文档和逻辑测试。保留通用投票实现，后续仍可通过 launch 参数调整。
+- 本机 7 个叉腰/状态机 unittest 通过，Python 语法和项目结构检查通过。Jetson 原生 Humble `astra_body_adapter`、`perception_bringup` 两包编译成功；`colcon test` 未注册测试、实际为 0 项，因此另行直接运行 unittest，共 21 项通过，其中叉腰状态机 7 项。
+- 重启 `roscar-route-a.service` 后实查参数为 50.0、100.0、50.0、1、1；服务 active、`NRestarts=0`，仅保留 A 方案三节点，`/cmd_vel` 不存在。
+- 骨架问题未随阈值回退改变：15 秒收到 388 帧 Bodylist，positive=0、max_count=0。USB 正常枚举 `2bc5:0402 ASTRA S`，仅 bodyreader 相关进程占用相机；SDK 启动记录 `0x500007c9 Invalid Orbbec Body Tracking license`。历史实测中同类授权提示未阻止骨架输出，因此目前记录为关联异常，不能在没有进一步复测的情况下认定为唯一根因。
+- 用户现场再次执行叉腰，使用临时只读订阅器连续监视两轮各 60 秒。第一轮 `frames=1785、body_positive=365、max_count=1`，观察到 ID 161、3；此前目标 ID 210 已锁定但人体消失后为 LOST。第二轮 `frames=1757、body_positive=641、max_count=1`，观察到 ID 171，仍未重新 TRACKING。
+- 有人体的帧中，双手高于脊柱基点多数满足；手肩横差多次超过原始 100 mm，尤其初始右侧约 148～278 mm；更主要的是 `shoulder.y-hand.y` 经常为负值，SDK 将一只或两只手估计在肩膀上方，未满足肩高手 50 mm。后段横差改善到约 16～86 mm，但右侧肩高手仍约 -36～-110 mm。
+- 现场结论：叉腰逻辑开启且参数生效，未锁定由人体仅在约 20%～36% 帧出现、ID 从 210 跳到 161/3/171，以及关节高度条件不满足共同造成。临时监视器不发布任何 ROS 话题或控制命令，测试结束后清理。
+
+## 2026-09-15：方案 B 本地实现（codex/route-b）
+
+- 用户要求开始 B 后澄清先在本机补齐方案与代码。本轮新增真实 YOLO11n/ByteTrack 后端、配准 RGB-D 输入校验、中央目标显式锁定/释放、epoch 隔离、躯干稳健测距，以及 TargetState、检测框图像、目标球输出。
+- 默认模型为空且配准开关关闭时继续 NOT_READY；只有显式配置本地权重和已验证输入才推理。单任务异步推理避免图像堆积，完成后检查 RGB 与深度采集年龄；失效位置 NaN、Marker DELETE，不保留旧的有效位置。
+- 新增 docs/方案B实现与验收.md，维护主方案、README、接口和路线图；图示保留旧方案快照并指明最新实现文档。没有新增任意 ID 服务占位、姿势识别、ReID、位置滤波、相机自启或车辆控制。
+- 用户收窄为本机前只读确认小车 CUDA 可用、A active、ASTRA S 存在且无 /dev/video*。远端创建了隔离 .venv-yolo，但应用依赖下载超时退出；A 未停止、未切换服务。此后只操作本机。
+- 最小审查覆盖配准显式确认、P 内参/尺寸/frame/时间验证、16UC1 毫米和 32FC1 米换算、异常深度拒绝、断流/失败后的 ID 复用隔离，以及无 cmd_vel 输出。
+- 本机 7 项 B 逻辑测试通过。Linux ARM64 ROS 2 Humble 容器的 8 个主动包编译完成（8.58 秒）；7 项 A 逻辑、7 项 B 逻辑、B 合成 RGB-D/服务/状态/Marker 测试、A 合成适配器、14 项语音逻辑、A/B/demo 与非法 route 回归全部通过。A 使用当前恢复后的 50/100/50 mm、1 帧 1 票，未覆盖同期 A 改动。
+- 本机 Python 3.12.13 独立环境的 36 个依赖通过兼容性检查；使用 torch 2.6.0、torchvision 0.21.0、Ultralytics 8.3.203 和 OpenCV 4.10.0.84。厂商 yolo11n.pt 的 SHA-256 校验通过，真实 CPU 模型连续两帧空白图推理、ByteTrack 调用和 reset 成功；这不是人体识别率、相机或 Jetson GPU 验收。日志为 artifacts/route-b-humble-test.log 与 artifacts/route-b-model-smoke.log。
+- 本轮必要环境已补齐：启动本机 Colima 并构建含 cv_bridge/message_filters/OpenCV 的 Humble 测试镜像；新增可选 yolo_python 解释器参数，避免虚拟环境依赖被 ROS console-script 的系统 shebang 绕过。未将本机 Python 3.12 环境用于 ROS Humble Python 3.10。
+
+## 2026-09-16：同步远端合并结果
+
+- 拉取 origin，将当前 `codex/route-b` 从 `65a68bc` 快进至 `cb0b87a`（`feat: add safe Astra person follower (#2)`），本地 `main` 同步至同一提交。
+- 同步前使用 `pre-sync-remote-main-2026-09-16` stash 备份全部已跟踪和未跟踪改动，恢复后保留该备份；工作区仍为未提交状态，未推送。
+- 合并 AGENTS.md、WORKLOG.md 与 astra_body_adapter/README.md 三处文档冲突，保留远端控制功能与本地诊断/B 方案记录；README 叉腰默认采用本地已恢复的 50/100/50 mm、1 帧 1 票。
+- 最小审查：非冲突本地文件逐字节对比 stash 一致，未跟踪文件完整恢复，无未解决冲突；HEAD、main 与 origin/main 相同。A 锁定及跟随控制 21 项 unittest 通过，git diff --check 通过；本轮未执行 ROS 编译或硬件验收，未操作 Jetson 服务。
+
+## 2026-09-16：分支 a，红色物体跟随与串口闭环（仅本机）
+
+- 用户确认新 A 要实现实际跟随完整链路，自动选择最大红块，但本轮只完成本机。已从干净提交 `909123d` 创建 `a`；包含此前合并 `cb0b87a` 的控制器与已提交 B 实现，未改 B 算法。
+- 新增 red_object_tracker：H=0–10/170–179、S≥100、V≥70，形态学去噪、最小面积 0.1%；三帧确认后锁定，位置/重叠关联保持同一红块，单帧丢失立即失效，一秒后重新搜索并生成新 ID。阈值可通过 ROS launch 调整。
+- 红块掩码内统计配准深度；验证相同光学 frame、尺寸、CameraInfo.P、时间及深度编码，拒绝空洞/混合深度。发布 `source=red_object` 的 TargetState、标注图、mono8 掩码和目标 Marker。缺少配准确认与输入时 NOT_READY；不启动人体 SDK、不使用模型、不以红块大小猜距离。
+- 新增 `route_a.launch.py` 与 `run_red_foxglove.sh`；管理脚本和仓库 systemd 模板切到红色路线。原 astra route 与骨架组合脚本保留，两种组合入口共享运行锁。串口、运动、配准确认默认 false；底盘启用要求显式串口和车型，不能从厂商默认推断实车车型。任一 launch 子进程退出会关闭整组。
+- 控制器保留 2 m、0.15 m/s、0.5 rad/s 和不倒车策略；新增 source、非模拟、发布时间/观测时间/测量年龄检查，拒绝重发旧观测，多个目标发布者时发零。原 Astra 仅在明确选择该来源时保留无传感器时间戳的兼容方式。
+- 可选 `build_chassis.sh` 复制三个串口包到忽略的独立构建目录，原 COLCON_IGNORE 保留。修改迁入驱动头文件和 wheeltec_robot.cpp，厂商原始目录未改，SOURCE_MANIFEST.json 保留原始哈希作为来源快照。
+- 驱动基本 11 字节发送限幅、非有限输入发零，20 Hz 检查命令与 24 字节回传，任一超过 0.5 秒或 cmd_vel 发布者数量不是一个时清除缓存并发零。串口设备路径加进程锁；读取超时从两秒改为 20 ms，检查实际返回字节数，滑动定长/帧尾/BCC 解析支持坏帧重新同步。I/O 异常退出且不重放旧速度，退出只发基本停车帧，不注册机械臂/回充/灯光/安全扩展命令。
+- 新增 Foxglove `red-layout.json`，展示标注图、掩码、目标状态与位置、速度命令、里程计和电压；3D 坐标系需选实际相机光学 frame。本轮仅验证 JSON 结构，没有连接 Foxglove 客户端或相机。
+- 最终容器验证：Linux ARM64 ROS 2 Humble，9 个主动包编译 7.38 秒；3 个串口包独立构建 12.5 秒。7 个红色逻辑、25 个 A 锁定/控制/新鲜度、7 个 B 逻辑及 14 个语音测试全部通过（合计 53 项）。保留原厂 serial 的 signedness/unused 编译警告，未将警告写成失败或零警告。
+- 真实 C++ wheeltec_robot_node 使用伪终端：验证正负速度、限幅、BCC、24 字节里程计/IMU/电压、坏帧/分片恢复、指令与回传超时停车、多个速度发布者停车、重复打开拒绝；合成 RGB-D 经真实红色节点→跟随器→驱动产生串口帧，并验证深度单位、失效/丢失/重锁、过期/错 frame/不同步以及重发旧观测停车。
+- 新 A launch 默认无 bodylist/cmd_vel/odom、非法运动使能拒绝、串口打开失败后整组退出均通过。原 A 合成适配器、B 合成推理、A/B/red/demo/非法 route 回归通过。完整日志为 `artifacts/route-a-red-test-final.log`；同步边界 3 项测试、Python/JSON 项目结构、Bash 语法、ShellCheck（仅排除外部 ROS source 无法读取的 SC1091）、git diff --check 通过。
+- 最小审查：默认无控制节点；真实来源与模拟输入测试边界明确；旧观测不能因状态重发恢复运动；原始厂商清单与本地补丁区分；文档同步说明历史底盘链路已运行、随后曾停止控制，以及本轮未核对在线部署。未 SSH、未同步 Jetson、未安装服务、未做实车运动；相机彩色流/配准、车型和真实收发、STM32 断线保护及现场跟随仍待后续验收。
+
+## 2026-09-16：红色检测原始/画框视频与 Foxglove
+
+- 解释运动默认关闭来自已确认方案：with_chassis=false 不启动驱动和控制器；显式开底盘后 motion_enabled 仍默认 false。用户本轮没有要求修改运动默认值，因此保留。
+- 新增 `/perception/color_image` 原样转发彩色帧；RGB 回调独立输出 `/perception/detections_image` 和 red_mask_image，不依赖深度/CameraInfo/配准。黄色框为检测候选，同帧配准跟踪及深度有效时可显示绿色目标框；视频可见不等于位置有效或运动使能。
+- Foxglove red-layout 顶部并排原始视频和检测框视频，下方保留掩码、目标与底盘面板；同步更新接口、Foxglove README 和方案文档。
+- 新增 RGB-only ROS 检查，验证原始像素不变、原图/框图 header 匹配、黄色检测框实际存在，无深度时 NOT_READY 且无 cmd_vel。最小审查包含布局面板引用、Python 项目结构与 diff 检查；ARM64 Humble 构建、原有逻辑及真实驱动伪串口/红色闭环回归日志为 artifacts/route-a-video-test.log。本轮未部署小车，未在在线 Foxglove 中导入布局，真实视频仍需相机彩色话题。
+
+## 2026-09-16：更新红色方案 A 一键启动脚本
+
+- Mac 双击入口显示红色目标路线、上下位机开关边界；成功后打开 Foxglove，给出 red-layout 的本地绝对路径及原始/画框视频话题，提示彩色相机输入仍需发布。
+- remote 入口检查新版 runner 和 manager；manager 检查已运行 systemd 的 ExecStart，旧骨架服务不能被误报为新红色路线。runner 明确区分进程启动与视频输入就绪，输出串口/运动/配准配置。
+- 最小审查及验证：四个脚本 Bash 语法、ShellCheck（排除外部 ROS source SC1091）、git diff --check 通过；临时假 SSH/systemctl 验证旧部署拒绝、新入口转发及两路话题显示。测试未调用真实 SSH，未部署或启动车辆，未实现下位机实体开关协议。
+
+## 2026-09-16：项目总启动入口
+
+- 新增 scripts/start_project.sh，Jetson 本机一条命令统一启动相机、红色检测/Foxglove、语音助手；语音可通过 WITH_VOICE=false 禁用。复用现有模块，不启动 B 或旧骨架避免重复目标发布者。
+- 显式底盘/运动参数、环境/包/凭据文件检查、进程锁、旧 A 服务冲突提示、独立日志、Ctrl-C/子模块退出整组清理。默认不启动车辆；下位机实体开关尚未接入。
+- 相机入口改为厂商 astra.launch.xml，固定 camera namespace 和彩色/深度开启，避免裸节点默认话题与新 A 输入不一致；注册开关仅由 DEPTH_REGISTERED 显式传入。测距仍要求实测校正/配准输入，原始相机流首先用于视频检测。
+- 最小审查及本机验证：Bash 语法、ShellCheck（排除外部 source SC1091）、help、非法 bool/缺串口车型/不完整运动使能拒绝、diff 检查通过。未在 Mac 安装 Jetson 硬件环境，未 SSH 或部署；相机及整组实机启动尚待验收，不将脚本检查视为硬件运行通过。
+
+## 2026-09-16：低频性能统计与 Foxglove 曲线
+
+- 用户授权补齐系统效率指标，并询问统计对效率的影响。新增 person_interfaces/RuntimeMetrics 及共享 Performance 汇总器，红色/控制节点按一秒实际单调时间窗口发布，不逐帧发送性能消息或刷日志；每类样本上限4096。
+- 红色记录实际输入与成功画框输出 FPS、彩色回调耗时、RGB-D 回调耗时、画框输出时观测年龄；控制端记录有效使能周期从采集到速度 publish 的延迟。每项平均/P95，未知/未来时间不采样、无样本 NaN。控制延迟不代表电机响应，回调耗时也不等于纯 HSV 计算时间。
+- performance_enabled 默认 true，ROS launch 和 PERFORMANCE_ENABLED 环境变量可显式关闭（重启生效）；关闭时不创建性能定时器/发布者。Foxglove red-layout 增加 FPS、检测耗时、观测与控制延迟三组曲线，同步更新接口与主方案。指标功能不采集 CPU/GPU/内存，资源占用仍需 tegrastats。
+- 测试最初发现整数测试样本触发 ROS float64 字段断言，汇总器现统一浮点转换。最终 Linux ARM64 Humble 主动及串口包编译通过；新增指标窗口/均值/P95/非法样本/禁用检查、RGB-only 实际性能输出、有效控制延迟样本均通过，原有红色闭环、A/B/demo/非法 route、语音回归通过。日志 artifacts/performance-test.log。
+- 最小审查：计数无同步控制副作用，耗时使用单调计时，延迟限定同一 ROS 时间基准，输入 FPS 不声称为硬件原始 FPS；现有 RGB 与 RGB-D 两条检测路径分别计时，不隐藏重复计算。JSON 面板引用、结构、ShellCheck、diff 检查通过。原未提交空串口参数修复保留，未部署任何代码、未实测 Jetson 性能差异；只给出预期开销较小的判断，没有编造百分比。

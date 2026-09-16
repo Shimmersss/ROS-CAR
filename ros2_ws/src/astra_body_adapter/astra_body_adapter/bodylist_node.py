@@ -20,9 +20,9 @@ BASE_SPINE = 9
 
 @dataclass(frozen=True)
 class AkimboConfig:
-    hand_above_base_min_mm: float = 20.0
-    hand_shoulder_max_dx_mm: float = 160.0
-    shoulder_above_hand_min_mm: float = 20.0
+    hand_above_base_min_mm: float = 50.0
+    hand_shoulder_max_dx_mm: float = 100.0
+    shoulder_above_hand_min_mm: float = 50.0
 
 
 @dataclass(frozen=True)
@@ -73,8 +73,8 @@ class BodylistTracker:
     def __init__(
             self, invert_y: bool = True,
             akimbo_config: AkimboConfig = AkimboConfig(),
-            gesture_window_frames: int = 10,
-            gesture_min_votes: int = 3):
+            gesture_window_frames: int = 1,
+            gesture_min_votes: int = 1):
         self.invert_y = invert_y
         self.akimbo_config = akimbo_config
         self.gesture_window_frames = gesture_window_frames
@@ -166,11 +166,11 @@ def main(args=None):
             self.declare_parameter('frame_id', 'astra_depth_optical_frame')
             self.declare_parameter('stale_timeout_s', 0.5)
             self.declare_parameter('invert_sdk_y', True)
-            self.declare_parameter('akimbo_hand_above_base_min_mm', 20.0)
-            self.declare_parameter('akimbo_hand_shoulder_max_dx_mm', 160.0)
-            self.declare_parameter('akimbo_shoulder_above_hand_min_mm', 20.0)
-            self.declare_parameter('akimbo_window_frames', 10)
-            self.declare_parameter('akimbo_min_votes', 3)
+            self.declare_parameter('akimbo_hand_above_base_min_mm', 50.0)
+            self.declare_parameter('akimbo_hand_shoulder_max_dx_mm', 100.0)
+            self.declare_parameter('akimbo_shoulder_above_hand_min_mm', 50.0)
+            self.declare_parameter('akimbo_window_frames', 1)
+            self.declare_parameter('akimbo_min_votes', 1)
 
             topic = self.get_parameter('bodylist_topic').value
             self.frame_id = self.get_parameter('frame_id').value

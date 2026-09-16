@@ -7,7 +7,7 @@
 | 内容 | 状态 |
 |---|---|
 | 公共 TargetState 消息、四个 ROS 2 包、A/B/demo 启动选择 | 已建立 |
-| A / B 节点 | A 已接真实骨架适配器；B 仍为 NOT_READY |
+| A / B 节点 | A 已接真实骨架适配器；B 已有本地真实算法实现，待实机验收 |
 | demo | 显式模拟数据：9 秒目标可见、3 秒丢失，用于验证消息与展示 |
 | Mac → Jetson 同步脚本、模型清单、测试脚本 | 已建立 |
 | 讯飞流式 ASR/TTS → DeepSeek 语音助手 | Orin 真人语音 → 讯飞 IAT → DeepSeek 回答已跑通；TTS 暂停 |
@@ -24,7 +24,7 @@
 ros2_ws/src/
   person_interfaces/     公共目标观测消息
   astra_body_adapter/    A 路线真实 /bodylist 适配器
-  yolo_person_tracker/   B 路线入口（NOT_READY）
+  yolo_person_tracker/   B 路线（YOLO/ByteTrack/配准深度）
   perception_bringup/    单路线启动与显式 demo
   xfyun_speech/          讯飞 WebSocket 流式 ASR/TTS
   deepseek_ros2/         DeepSeek 文本对话桥
@@ -51,14 +51,16 @@ rosdep install --from-paths ros2_ws/src --ignore-src -r -y
 bash scripts/build_ros.sh
 source ros2_ws/install/setup.bash
 
-# 默认 B 入口，当前只报告 NOT_READY
+# 默认 B 入口未配置模型/配准时报告 NOT_READY
 ros2 launch perception_bringup perception.launch.py route:=yolo
-# A 入口：需另行运行厂商 bodyreader/main
+# 新 A：外部配准 RGB-D + 红色物体，默认无底盘
+ros2 launch perception_bringup route_a.launch.py
+# 原骨架兼容入口：另行运行 bodyreader/main
 ros2 launch perception_bringup perception.launch.py route:=astra
 # 显式启用模拟数据：route:=demo
 ```
 
-方案 A 推荐使用一键入口。它会后台启动厂商骨架 SDK、正式 Astra 适配器和 Foxglove Bridge，不启动底盘或 `/cmd_vel`：
+方案 A 一键入口在本分支改为红色目标节点和 Foxglove Bridge，等待外部配准 RGB-D，默认不启动底盘或 `/cmd_vel`。可选串口与运动配置见 [方案 A 红色物体跟随](docs/方案A红色物体跟随.md)。本轮仅本机实现，未更新在线服务：
 
 ```bash
 # 在 Jetson 仓库根目录
@@ -125,6 +127,18 @@ python3 scripts/sync_to_jetson.py --host 用户名@IP --dest /home/用户名/ROS
 
 仓库尚未配置代码远端。项目新增文件暂未授予开源许可证；ROS 包许可证占位为 Proprietary，不改变任何第三方代码或模型的原许可证。实际发布前由项目所有者确定许可。
 
-## 方案 A 最新联调（2026-09-14）
+## 原骨架方案 A 历史联调（2026-09-14）
 
-ASTRA S 深度流、真实人体骨架、叉腰锁定、质心测距、掩码和 Foxglove 展示均已实机跑通。`route:=astra` 现启动已验证的 `/bodylist` 适配器；厂商 bodyreader 仍由安全组合脚本单独启动，不包含底盘节点。SDK 授权提示没有阻止本次输出，但仍待厂商解释。详细入口与限制见 [方案 A 联调记录](docs/方案A联调记录.md)。
+以下为历史骨架路线记录，新 A 红色路线尚未实机验收。ASTRA S 深度流、真实人体骨架、叉腰锁定、质心测距、掩码和 Foxglove 展示均已实机跑通。`route:=astra` 现启动已验证的 `/bodylist` 适配器；厂商 bodyreader 仍由安全组合脚本单独启动，不包含底盘节点。SDK 授权提示没有阻止本次输出，但仍待厂商解释。详细入口与限制见 [方案 A 联调记录](docs/方案A联调记录.md)。
+
+B 方案的输入契约、依赖、锁定服务与验证范围见 [方案 B 实现与验收](docs/方案B实现与验收.md)。
+
+## 项目总启动（Jetson）
+
+```bash
+bash scripts/start_project.sh
+```
+
+统一启动 Astra 彩色/深度相机、红色方案 A、Foxglove 与语音助手；Ctrl-C 停止整组。日志在 `artifacts/project/`。语音需要私有凭据，不需要语音时使用 `WITH_VOICE=false bash scripts/start_project.sh`。底盘默认关闭，通过 `WITH_CHASSIS=true SERIAL_PORT=实际串口 CAR_MODE=实际车型` 启用收发；运动另需 `MOTION_ENABLED=true` 和已验证的 `DEPTH_REGISTERED=true`。查看全部选项：`bash scripts/start_project.sh --help`。
+
+总入口在小车本机运行，依赖已构建的项目与厂商相机包；不自动部署。若现有 A systemd 服务运行，先停止该服务以释放相机。默认相机原始彩色流可用于检测可视化；控制测距仍要求实际校正/配准输入，通过 COLOR_TOPIC、DEPTH_TOPIC、CAMERA_INFO_TOPIC 指定，不能把启动驱动当作配准验证。

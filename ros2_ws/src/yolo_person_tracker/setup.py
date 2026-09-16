@@ -16,7 +16,7 @@ setup(
     zip_safe=True,
     maintainer='ROSCAR maintainers',
     maintainer_email='maintainer@example.invalid',
-    description='YOLO person tracking entry point; inference integration pending.',
+    description='YOLO11 tracking with registered depth and explicit selection.',
     license='Proprietary',
     entry_points={'console_scripts': ['tracker = yolo_person_tracker.node:main']},
 )

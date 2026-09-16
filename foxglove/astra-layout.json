@@ -17,6 +17,7 @@
     },
     "Image!rgb": {
       "topic": "/perception/body_mask_image",
+      "imageMode": {"imageTopic": "/perception/body_mask_image"},
       "foxglovePanelTitle": "人体掩码"
     }
   },

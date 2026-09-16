@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
-# Manage the perception-only Route A stack on the Jetson.
-# This script never starts the chassis driver or publishes /cmd_vel.
+# Manage Route A; red perception is default, chassis and motion are opt-in.
 set -euo pipefail
 
 ROOT="${ROSCAR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-RUNNER="${ROUTE_A_RUNNER:-$ROOT/scripts/run_astra_foxglove.sh}"
+RUNNER="${ROUTE_A_RUNNER:-$ROOT/scripts/run_red_foxglove.sh}"
 STATE_DIR="$ROOT/artifacts/route-a"
 PID_FILE="$STATE_DIR/supervisor.pid"
 LOG_FILE="$STATE_DIR/supervisor.log"
 COMMAND="${1:-start}"
 ROS_SETUP="${ROSCAR_ROS_SETUP:-/opt/ros/humble/setup.bash}"
-VENDOR_SETUP="${ROSCAR_VENDOR_SETUP:-/home/wheeltec/wheeltec_ros2/install/setup.bash}"
 PROJECT_SETUP="${ROSCAR_PROJECT_SETUP:-$ROOT/ros2_ws/install/setup.bash}"
 SYSTEMD_UNIT="${ROSCAR_ROUTE_A_UNIT:-roscar-route-a.service}"
 
@@ -38,20 +36,32 @@ running_pid() {
 show_connection() {
   local host_address="${ROSCAR_ADDRESS:-192.168.1.240}"
   printf 'Foxglove：ws://%s:8765\n' "$host_address"
+  printf '原始视频：/perception/color_image\n'
+  printf '画框视频：/perception/detections_image\n'
+  printf '布局：foxglove/red-layout.json\n'
   printf '目标状态：/perception/target_state\n'
-  printf '人体掩码：/perception/body_mask_image\n'
-  printf '3D 目标：/perception/target_marker、/perception/detection_box\n'
+  printf '红色掩码：/perception/red_mask_image\n'
+  printf '3D 目标：/perception/target_marker\n'
 }
 
 systemd_active() {
   command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet "$SYSTEMD_UNIT" 2>/dev/null
 }
 
+check_service_route() {
+  local entry
+  entry="$(systemctl show "$SYSTEMD_UNIT" --property=ExecStart --value)"
+  if [[ "$entry" != *run_red_foxglove.sh* ]]; then
+    printf '当前服务仍是旧方案 A，尚未切换红色入口：%s\n' "$entry" >&2
+    printf '请先部署新代码并更新 systemd 服务，再启动红色方案。\n' >&2
+    return 1
+  fi
+}
+
 preflight() {
   local required
   for required in \
     "$ROS_SETUP" \
-    "$VENDOR_SETUP" \
     "$PROJECT_SETUP" \
     "$RUNNER" \
     "$ROOT/scripts/run_foxglove.sh"; do
@@ -65,6 +75,7 @@ preflight() {
 start_stack() {
   local process_id
   if systemd_active; then
+    check_service_route || return 1
     printf '方案 A 已由 systemd 开机自启服务管理：%s\n' "$SYSTEMD_UNIT"
     show_connection
     return 0
@@ -78,7 +89,6 @@ start_stack() {
   preflight
   : > "$LOG_FILE"
   nohup env \
-    RGB_STREAM="${RGB_STREAM:-false}" \
     ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-182}" \
     bash "$RUNNER" >> "$LOG_FILE" 2>&1 < /dev/null &
   process_id=$!
@@ -91,9 +101,10 @@ start_stack() {
       return 1
     fi
     if grep -q '方案 A 可视化已启动' "$LOG_FILE"; then
-      printf '方案 A 已启动，PID=%s，RGB_STREAM=%s，ROS_DOMAIN_ID=%s\n' \
-        "$process_id" "${RGB_STREAM:-false}" "${ROS_DOMAIN_ID:-182}"
+      printf '方案 A 已启动，PID=%s，ROS_DOMAIN_ID=%s\n' \
+        "$process_id" "${ROS_DOMAIN_ID:-182}"
       show_connection
+      tail -n 8 "$LOG_FILE"
       return 0
     fi
     sleep 0.1
@@ -107,6 +118,7 @@ start_stack() {
 stop_stack() {
   local process_id
   if systemd_active; then
+    check_service_route || return 1
     printf '方案 A 正由 systemd 管理，请运行：sudo systemctl stop %s\n' "$SYSTEMD_UNIT" >&2
     return 1
   fi
@@ -134,6 +146,7 @@ stop_stack() {
 show_status() {
   local process_id
   if systemd_active; then
+    check_service_route || return 1
     printf '方案 A 正由 systemd 运行：%s\n' "$SYSTEMD_UNIT"
     show_connection
     return 0

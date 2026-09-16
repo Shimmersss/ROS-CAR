@@ -1,0 +1,208 @@
+{
+  "configById": {
+    "RawMessages!target": {
+      "topicPath": "/perception/target_state",
+      "diffEnabled": false,
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "目标状态"
+    },
+    "Plot!distance": {
+      "paths": [
+        {
+          "value": "/perception/target_state.horizontal_distance_m",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "isSynced": true,
+      "foxglovePanelTitle": "距离 m"
+    },
+    "Plot!bearing": {
+      "paths": [
+        {
+          "value": "/perception/target_state.bearing_rad",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "isSynced": true,
+      "foxglovePanelTitle": "偏角 rad"
+    },
+    "3D!target": {
+      "fixedFrame": "camera_color_optical_frame",
+      "followTf": "camera_color_optical_frame",
+      "topics": {
+        "/perception/target_marker": {
+          "visible": true
+        }
+      },
+      "foxglovePanelTitle": "红色目标位置（选择实际光学坐标系）"
+    },
+    "Image!rgb": {
+      "topic": "/perception/detections_image",
+      "imageMode": {
+        "imageTopic": "/perception/detections_image"
+      },
+      "foxglovePanelTitle": "红色物体检测框视频"
+    },
+    "Image!mask": {
+      "topic": "/perception/red_mask_image",
+      "imageMode": {
+        "imageTopic": "/perception/red_mask_image"
+      },
+      "foxglovePanelTitle": "红色掩码"
+    },
+    "RawMessages!odom": {
+      "topicPath": "/odom",
+      "foxglovePanelTitle": "底盘实际回传"
+    },
+    "Plot!cmd": {
+      "paths": [
+        {
+          "value": "/cmd_vel.linear.x",
+          "enabled": true
+        },
+        {
+          "value": "/cmd_vel.angular.z",
+          "enabled": true
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "foxglovePanelTitle": "控制速度"
+    },
+    "Plot!voltage": {
+      "paths": [
+        {
+          "value": "/PowerVoltage.data",
+          "enabled": true
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "foxglovePanelTitle": "电池电压 V"
+    },
+    "Image!raw": {
+      "topic": "/perception/color_image",
+      "imageMode": {
+        "imageTopic": "/perception/color_image"
+      },
+      "foxglovePanelTitle": "原始彩色视频"
+    },
+    "Plot!fps": {
+      "foxglovePanelTitle": "输入与检测输出 FPS",
+      "xAxisVal": "timestamp",
+      "isSynced": true,
+      "paths": [
+        {
+          "value": "/perception/performance.input_fps",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/perception/performance.output_fps",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        }
+      ]
+    },
+    "Plot!processing": {
+      "foxglovePanelTitle": "检测耗时 ms（均值/P95）",
+      "xAxisVal": "timestamp",
+      "isSynced": true,
+      "paths": [
+        {
+          "value": "/perception/performance.processing_ms",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/perception/performance.processing_p95_ms",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/perception/performance.rgbd_ms",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        }
+      ]
+    },
+    "Plot!latency": {
+      "foxglovePanelTitle": "观测与控制延迟 ms",
+      "xAxisVal": "timestamp",
+      "isSynced": true,
+      "paths": [
+        {
+          "value": "/perception/performance.observation_age_ms",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/control/performance.control_latency_ms",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/control/performance.control_latency_p95_ms",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        }
+      ]
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "linkedGlobalVariables": [],
+  "playbackConfig": {
+    "speed": 1,
+    "messageOrder": "receiveTime"
+  },
+  "layout": {
+    "direction": "column",
+    "splitPercentage": 75,
+    "first": {
+      "direction": "column",
+      "splitPercentage": 55,
+      "first": {
+        "direction": "row",
+        "first": "Image!raw",
+        "second": "Image!rgb"
+      },
+      "second": {
+        "direction": "row",
+        "first": "Image!mask",
+        "second": {
+          "direction": "column",
+          "first": {
+            "direction": "row",
+            "first": "RawMessages!target",
+            "second": "3D!target"
+          },
+          "second": {
+            "direction": "column",
+            "first": {
+              "direction": "row",
+              "first": "Plot!distance",
+              "second": "Plot!cmd"
+            },
+            "second": {
+              "direction": "row",
+              "first": "RawMessages!odom",
+              "second": "Plot!voltage"
+            }
+          }
+        }
+      }
+    },
+    "second": {
+      "direction": "row",
+      "first": "Plot!fps",
+      "second": {
+        "direction": "row",
+        "first": "Plot!processing",
+        "second": "Plot!latency"
+      }
+    }
+  }
+}
