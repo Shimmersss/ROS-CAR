@@ -8,7 +8,7 @@
 - 目标：室内人体跟随小车，计划使用 Orin Nano Super 8GB，通过 Mac 上的 Foxglove 和 SSH 调试。
 - 用户最初称相机为 Astra Pro；保存的商品资料涉及 Astra Pro Plus 和 Gemini Pro。实际到手型号及 USB 标识仍需核对。
 - 厂商代码位于 `JP6.2_wheeltec_ros2_src_20260903/`，来自 Humble 源码目录，文件夹标注 JP6.2。
-- 底盘具体型号、实物下位机协议兼容性尚未确认；不要将源码默认 `mini_mec` 当作用户车型。已 SSH 确认小车为 Ubuntu 22.04.5 LTS、aarch64，JetPack 6.2 / CUDA 12.6 已通过 SSH 核对。
+- 底盘准确商品型号仍待核对；2026-09-16 实物照片确认 OLED 显示 `Akm` 且有转向舵机，本次底盘测试按仓库车型键 `mini_akm` 运行。不要将源码默认 `mini_mec` 当作用户车型。已 SSH 确认小车为 Ubuntu 22.04.5 LTS、aarch64，JetPack 6.2 / CUDA 12.6 已通过 SSH 核对。
 - SSH 地址已由用户确认：Wi-Fi 为 `wheeltec@192.168.1.240`，网线为 `wheeltec@192.168.100.2`，端口均为 22。本机 `~/.ssh/config` 已添加 `roscar-wifi`、`roscar-ethernet` 别名；两地址均曾登录成功，安装期间网线连接中断，后续使用 Wi-Fi。密码不写入项目文档或 SSH 配置。此前 Codex 应用内新增连接受界面工具安全限制，未由本任务完成。
 - 小车已安装 Codex CLI 0.154.0、Clash Verge Rev 2.5.2 与必要桌面依赖。Codex 已确认 ChatGPT 登录；启动器自动使用 `127.0.0.1:7897` 代理。Clash 已导入用户订阅、使用规则模式和新加坡节点，关闭 TUN/局域网代理访问，配置桌面登录自启动。配置位置及验证范围见 `deploy/README.md`；订阅 URL、节点凭据和登录凭据禁止写入项目文件。
 - 已完成源码静态初查，具体证据与待办见 WORKLOG.md；尚未在 Jetson 编译或连接硬件。
@@ -55,7 +55,7 @@
 - 正式 A route 接入完成：perception_bringup 的 `route:=astra` 改为 bodylist_adapter，方案 A 组合脚本也通过该 route 启动。Jetson 两包编译成功；合成 A 状态机测试、A/B/demo 与非法 route 回归均通过。当前在线进程已是正式 route，6 秒收到 108 条 Bodylist 和 147 条 SEARCHING，`/cmd_vel` 不存在；当时画面无人。启动脚本清理增加 3 秒后进程组 KILL 兜底，处理厂商 SDK 不响应 TERM 的情况。
 - 用户要求叉腰锁定更宽松：默认阈值由厂商等价 50/100/50 mm 调整为手高于脊柱 20 mm、手肩横差小于 160 mm、肩高于手 20 mm；单帧触发改为最近 10 帧中 3 帧投票。五项参数由正式 astra launch 暴露。Jetson 两包编译、7 个逻辑测试和正式 route 合成测试通过；本机 Linux ARM64 Humble 容器五包编译、7 个逻辑测试、正式 A 合成测试、A/B/demo 与非法 route 回归也全部通过。小车因没电离线，在线进程尚未重启加载新值。
 - 已整理 `docs/物理串口协议说明.md` 并生成可交付 ZIP，包含底盘串口字节表、ROS 映射、厂商源码、消息定义和配置。当前串口包仍未编译或实机验证，方案 A 没有打开串口或发布 `/cmd_vel`。静态审查发现厂商安全新协议帧尾赋值被注释、机械臂路径构造 10 字节却发送 11 字节，启用前必须修复并核对固件协议。
-- 已核对用户提供的 `R550_C30D(2.0)_Mini小车STM32源码_GMR编码器_2026.08.21.zip`：这是 STM32F407ZG + FreeRTOS 的 R550/C30D 2.0/GMR 下位机工程，115200、11 字节控制帧、24 字节基础回传、`0x7B/0x7D` 和异或 BCC 均与迁入的 ROS 2 驱动匹配，可视为当前底盘的对应固件候选。固件通过电位器选择 Mec/4WD/MecV/4WDV 等模式，仍须上电核对 OLED/实物档位。安全 `0xB0/0xB1` 和机械臂 `0xAA/0xBB` 扩展未在该固件中检出对应解析，不计入基础协议匹配结论。
+- 已核对用户提供的 `R550_C30D(2.0)_Mini小车STM32源码_GMR编码器_2026.08.21.zip`：这是 STM32F407ZG + FreeRTOS 的 R550/C30D 2.0/GMR 下位机工程，115200、11 字节控制帧、24 字节基础回传、`0x7B/0x7D` 和异或 BCC 均与迁入的 ROS 2 驱动匹配。该候选源码检查到 Mec/4WD/MecV/4WDV，而实物 OLED 实际为 `Akm`，因此基础协议匹配仍成立，但不能再把该候选包描述成实物当前模式的精确固件。安全 `0xB0/0xB1` 和机械臂 `0xAA/0xBB` 扩展未在该固件中检出对应解析，不计入基础协议匹配结论。
 - 2026-09-14 语音方案 B 已新增 `xfyun_speech`、`deepseek_ros2`、`voice_command_router` 三个主动包：讯飞流式 IAT、DeepSeek 文本桥和受限工具路由。Orin 实测 XFM-DP-V0.0.18 可用 `plughw:CARD=XFMDPV0018,DEV=0` 采集 16 kHz/16-bit/单声道音频，三包原生 Humble 编译成功，真人语音 → 讯飞 IAT → `/voice/asr_text` → DeepSeek 中文回答已跑通。静音底噪峰值约 2441，阈值由 500 调至 2800，并增加连续 160 ms 起音判定；本地 VAD 未确认语音时丢弃云端误识别文本。TTS 与蜂鸣器启动参数默认 false；蜂鸣器属于下位机，本轮延后，不使用 Jetson GPIO，不启动底盘。凭据只存于板子权限 0600 的私有文件，不得写入仓库或日志。
 
 - 嘈杂车内环境改用精确 `/voice_words = 小车唤醒` 事件授权一轮识别，不直接信任厂商会对多种 AIUI 事件发布的 `/awake_flag`；交互为“小微小微”后停约 1 秒再提问。手动服务触发仍要求本地 VAD，纯噪声云端文本不会进入 DeepSeek。启动脚本仅附带厂商串口唤醒节点，不启动其离线识别、反馈音频、运动控制或灯光控制。DeepSeek 最终回答同时发布 `/voice/assistant_text` 并追加到 `/home/wheeltec/ROSCAR/logs/deepseek_responses.jsonl`，只存 UTC 时间和回答正文。
@@ -81,3 +81,4 @@
 - 2026-09-16 一键启动收尾：`启动方案A.command`、remote/manager/runner 统一提示红色路线、原始/画框话题、red-layout 路径和上位机运动开关。远端缺新版 runner 或 active systemd 仍指向骨架时明确报错，不伪报红色已启动。Bash/ShellCheck、模拟 SSH 与新旧 systemd 检查通过；未连接或更新小车。
 - 2026-09-16 新增 Jetson 总入口 scripts/start_project.sh，默认统一启动相机、新 A/Foxglove、语音；底盘/运动显式开启，缺车型/串口/环境时报错。Ctrl-C 或任一子模块退出清理整组，日志 artifacts/project；旧 A systemd active 时拒绝争抢相机。相机脚本使用厂商 astra.launch.xml 固定 camera namespace、开启彩色/深度；配准仍须现场验证。Bash/ShellCheck 和配置拒绝检查通过，未部署或实机启动。
 - 2026-09-16 新增 RuntimeMetrics，红色节点 /perception/performance 与跟随器 /control/performance 默认每秒汇总 FPS、彩色/RGB-D 回调平均与 P95 耗时、观测年龄和有效控制延迟。空样本 NaN、空窗口零 FPS，样本缓冲有界；PERFORMANCE_ENABLED=false 或 launch performance_enabled:=false 重启关闭。Foxglove red-layout 底部增加三组性能图表。ARM64 Humble 构建、指标/视频/控制闭环及原 A/B/语音回归通过，日志 artifacts/performance-test.log；未部署、未量化 Jetson 统计开销。保留已有未提交的空串口参数修复，本轮未远端应用。
+- 2026-09-16 新增 `scripts/chassis_motion_smoke_test.sh`：独立启动底盘驱动，使用隔离 ROS 域并要求显式车型；默认仅验证串口回传，`--move` 才由唯一 `/cmd_vel` 发布者执行短直行脉冲，随后连续归零并关闭驱动。三套底盘包已在 Jetson `/home/wheeltec/ROSCAR-red` 原生构建成功；按照片确认的 `mini_akm` 收到约 11.337 V 回传。0.08 m/s、1 秒测试的里程计反馈峰值约 0.088 m/s 并回零，远程未肉眼观察车身位移；测试后驱动退出、串口释放，实车测试状态见 WORKLOG.md。

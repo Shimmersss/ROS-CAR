@@ -394,3 +394,15 @@
 - performance_enabled 默认 true，ROS launch 和 PERFORMANCE_ENABLED 环境变量可显式关闭（重启生效）；关闭时不创建性能定时器/发布者。Foxglove red-layout 增加 FPS、检测耗时、观测与控制延迟三组曲线，同步更新接口与主方案。指标功能不采集 CPU/GPU/内存，资源占用仍需 tegrastats。
 - 测试最初发现整数测试样本触发 ROS float64 字段断言，汇总器现统一浮点转换。最终 Linux ARM64 Humble 主动及串口包编译通过；新增指标窗口/均值/P95/非法样本/禁用检查、RGB-only 实际性能输出、有效控制延迟样本均通过，原有红色闭环、A/B/demo/非法 route、语音回归通过。日志 artifacts/performance-test.log。
 - 最小审查：计数无同步控制副作用，耗时使用单调计时，延迟限定同一 ROS 时间基准，输入 FPS 不声称为硬件原始 FPS；现有 RGB 与 RGB-D 两条检测路径分别计时，不隐藏重复计算。JSON 面板引用、结构、ShellCheck、diff 检查通过。原未提交空串口参数修复保留，未部署任何代码、未实测 Jetson 性能差异；只给出预期开销较小的判断，没有编造百分比。
+
+## 2026-09-16：底盘串口与短距运动冒烟入口
+
+- 新增 `scripts/chassis_motion_smoke_test.sh`，只启动加固后的 `wheeltec_robot_node`，不启动 `person_follower`。运行前拒绝已有底盘节点或 `/cmd_vel` 发布者，避免双开串口或两个速度源触发驱动安全停车。
+- 脚本要求显式 `--car-mode` 且必须匹配 `robot_model.yaml`；默认 `--check` 只等待 `/PowerVoltage` 有效回传。只有显式 `--move` 才创建唯一发布者，以默认 0.05 m/s 前进 0.5 秒，随后连续 0.75 秒发零并关闭驱动；速度硬限制 0.08 m/s、时长硬限制 1 秒。
+- 当前板上已只读确认 `/dev/wheeltec_controller` 解析为 `/dev/ttyCH343USB0`。独立部署最初缺少 `chassis_vendor`，首次构建在复制前立即退出；补同步三套源码后，Jetson 原生 Humble 的 `serial`、`wheeltec_robot_msg`、`turn_on_wheeltec_robot` 全部构建成功，驱动可执行文件已安装。原厂 serial 仍有既存 signedness/unused 编译警告。
+- Jetson 上 Bash 语法、帮助、缺车型及非法车型拒绝检查通过；原在线 ROS 域 182 中没有 `/cmd_vel`，也没有已运行的 `wheeltec_robot` 节点。板上未安装 ShellCheck，因此未宣称通过该项。
+- 用户照片确认 OLED 为 `Akm`，底盘可见转向舵机，选择仓库键 `mini_akm`。照片同时显示约 11.37 V；ROS 驱动隔离测试收到 `/PowerVoltage=11.337`。直接只读串口还采到连续 24 字节 `0x7B...BCC...0x7D` 帧，抽查 BCC 正确。
+- 冒烟脚本修正 ROS 2 `topic echo --once` 参数位置，默认改用本机隔离域 183，并在 ROS 图检查之外增加 `fuser` 串口占用拒绝；运动发布者先持续 1 秒发送零速度，等待 DDS 双向发现后才允许非零命令。
+- 首次两轮 0.05 m/s、0.5 秒测试分别在加入零速握手前后执行，里程计都基本为零，未形成有效运动。没有直接提高到驱动 0.15 m/s 上限；第三轮使用冒烟脚本硬上限 0.08 m/s、1 秒，`/odom.twist.twist.linear.x` 出现连续正值，峰值约 0.088 m/s，随后逐级下降并最终回到 0.0。
+- 第三轮证明 ROS 指令、串口、下位机和编码器反馈链路产生了运动响应，但远程没有视觉观察车身是否在地面实际位移。测试结束后 `wheeltec_robot_node` 和测试发布器均退出，`fuser` 确认串口无人占用；`roscar-red` tmux 感知会话仍运行。后续需由用户现场确认实际位移和前进方向。
+- 版本收尾检查发现 Windows 工作区会将 Shell 脚本检出为 CRLF，直接 SCP 后 Jetson Bash 报 `\r` 语法错误；新增 `.gitattributes` 固定 `*.sh` 和 `*.command` 为 LF，并在提交前用暂存区内容重建、同步及复测相关脚本。该问题只影响后续从 Windows 再部署的文件，既有在线进程未因检查而中断。
