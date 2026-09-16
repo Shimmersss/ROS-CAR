@@ -54,3 +54,7 @@ B 提供 `/perception/lock_target` 与 `/perception/release_target`（std_srvs/T
 Foxglove 导入 `foxglove/red-layout.json`（仓库根目录下）后，上方并排显示原始彩色视频 `/perception/color_image` 与画框视频 `/perception/detections_image`，下方保留掩码、状态和底盘信息。原始帧保持相机输入的像素、编码和 header；画框帧为 bgr8 并保留相同 header，黄色框标识红色候选，绿色框仅标识同帧被 RGB-D 跟踪接受且深度有效的目标。
 
 视频仅依赖配置的 `color_topic`，无需深度或配准确认即可显示与检测；缺少深度时 TargetState 仍为 NOT_READY，不会因此允许运动。必须有真实相机发布彩色话题才能看到实时画面。本轮完成本机代码和布局，未修改小车或在线 Foxglove 配置。
+
+## RuntimeMetrics 性能接口
+
+`/perception/performance`（source=red_object）和 `/control/performance`（source=follower），类型 person_interfaces/RuntimeMetrics，默认 1 Hz。包含真实窗口秒数、输入/输出计数及 FPS、processing/rgbd/observation_age/control_latency 四组平均与 P95 毫秒值。无样本为 NaN，空窗口计数和 FPS 为零。控制模块未启动则不存在控制性能话题。完整测量边界见方案 A 红色物体跟随文档的“性能统计”。

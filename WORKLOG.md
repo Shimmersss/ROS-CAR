@@ -386,3 +386,11 @@
 - 显式底盘/运动参数、环境/包/凭据文件检查、进程锁、旧 A 服务冲突提示、独立日志、Ctrl-C/子模块退出整组清理。默认不启动车辆；下位机实体开关尚未接入。
 - 相机入口改为厂商 astra.launch.xml，固定 camera namespace 和彩色/深度开启，避免裸节点默认话题与新 A 输入不一致；注册开关仅由 DEPTH_REGISTERED 显式传入。测距仍要求实测校正/配准输入，原始相机流首先用于视频检测。
 - 最小审查及本机验证：Bash 语法、ShellCheck（排除外部 source SC1091）、help、非法 bool/缺串口车型/不完整运动使能拒绝、diff 检查通过。未在 Mac 安装 Jetson 硬件环境，未 SSH 或部署；相机及整组实机启动尚待验收，不将脚本检查视为硬件运行通过。
+
+## 2026-09-16：低频性能统计与 Foxglove 曲线
+
+- 用户授权补齐系统效率指标，并询问统计对效率的影响。新增 person_interfaces/RuntimeMetrics 及共享 Performance 汇总器，红色/控制节点按一秒实际单调时间窗口发布，不逐帧发送性能消息或刷日志；每类样本上限4096。
+- 红色记录实际输入与成功画框输出 FPS、彩色回调耗时、RGB-D 回调耗时、画框输出时观测年龄；控制端记录有效使能周期从采集到速度 publish 的延迟。每项平均/P95，未知/未来时间不采样、无样本 NaN。控制延迟不代表电机响应，回调耗时也不等于纯 HSV 计算时间。
+- performance_enabled 默认 true，ROS launch 和 PERFORMANCE_ENABLED 环境变量可显式关闭（重启生效）；关闭时不创建性能定时器/发布者。Foxglove red-layout 增加 FPS、检测耗时、观测与控制延迟三组曲线，同步更新接口与主方案。指标功能不采集 CPU/GPU/内存，资源占用仍需 tegrastats。
+- 测试最初发现整数测试样本触发 ROS float64 字段断言，汇总器现统一浮点转换。最终 Linux ARM64 Humble 主动及串口包编译通过；新增指标窗口/均值/P95/非法样本/禁用检查、RGB-only 实际性能输出、有效控制延迟样本均通过，原有红色闭环、A/B/demo/非法 route、语音回归通过。日志 artifacts/performance-test.log。
+- 最小审查：计数无同步控制副作用，耗时使用单调计时，延迟限定同一 ROS 时间基准，输入 FPS 不声称为硬件原始 FPS；现有 RGB 与 RGB-D 两条检测路径分别计时，不隐藏重复计算。JSON 面板引用、结构、ShellCheck、diff 检查通过。原未提交空串口参数修复保留，未部署任何代码、未实测 Jetson 性能差异；只给出预期开销较小的判断，没有编造百分比。

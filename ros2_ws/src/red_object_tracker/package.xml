@@ -6,6 +6,7 @@
   <license>Proprietary</license>
   <buildtool_depend>ament_python</buildtool_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>astra_body_adapter</exec_depend>
   <exec_depend>person_interfaces</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>cv_bridge</exec_depend>

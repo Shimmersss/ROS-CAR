@@ -72,3 +72,5 @@ bash scripts/run_astra_camera.sh
 Foxglove 导入 `foxglove/red-layout.json`（仓库根目录下）后，上方并排显示原始彩色视频 `/perception/color_image` 与画框视频 `/perception/detections_image`，下方保留掩码、状态和底盘信息。原始帧保持相机输入的像素、编码和 header；画框帧为 bgr8 并保留相同 header，黄色框标识红色候选，绿色框仅标识同帧被 RGB-D 跟踪接受且深度有效的目标。
 
 视频仅依赖配置的 `color_topic`，无需深度或配准确认即可显示与检测；缺少深度时 TargetState 仍为 NOT_READY，不会因此允许运动。必须有真实相机发布彩色话题才能看到实时画面。本轮完成本机代码和布局，未修改小车或在线 Foxglove 配置。
+
+性能图表已加入 red-layout 底部：输入/输出 FPS、检测平均/P95 耗时，以及观测年龄与有效控制延迟。来源为节点每秒汇总的 RuntimeMetrics，而非 Mac 接收视频速率；没有测量样本时曲线为空，不能解释为零延迟。需要重新编译 person_interfaces 和节点包后运行；旧布局需重新导入。

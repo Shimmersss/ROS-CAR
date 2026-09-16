@@ -87,3 +87,18 @@ ros2 launch perception_bringup route_a.launch.py depth_registered:=true \
 Foxglove 导入 `foxglove/red-layout.json`（仓库根目录下）后，上方并排显示原始彩色视频 `/perception/color_image` 与画框视频 `/perception/detections_image`，下方保留掩码、状态和底盘信息。原始帧保持相机输入的像素、编码和 header；画框帧为 bgr8 并保留相同 header，黄色框标识红色候选，绿色框仅标识同帧被 RGB-D 跟踪接受且深度有效的目标。
 
 视频仅依赖配置的 `color_topic`，无需深度或配准确认即可显示与检测；缺少深度时 TargetState 仍为 NOT_READY，不会因此允许运动。必须有真实相机发布彩色话题才能看到实时画面。本轮完成本机代码和布局，未修改小车或在线 Foxglove 配置。
+
+## 性能统计
+
+默认每秒发布 `/perception/performance` 与可选控制器的 `/control/performance`（person_interfaces/RuntimeMetrics）。重新导入 red-layout 后底部显示 FPS、处理耗时、观测/控制延迟。
+
+- input_fps：节点实际收到的回调帧率，不等于相机硬件帧率，不能单独证明相机到 ROS 无丢帧。
+- output_fps：成功输出画框图像的帧率；控制话题上则为速度指令输出频率。
+- processing_ms / processing_p95_ms：彩色回调耗时，包含转换、红色检测、绘制和 publish 调用；不是纯 HSV 算法耗时，也不包含网络传输/客户端绘制。
+- rgbd_ms / rgbd_p95_ms：同步 RGB-D 回调耗时，包含校验、检测、关联和测距；该路径与彩色视频检测目前各自计算，不能把单路耗时当作节点总 CPU 开销。
+- observation_age_ms：采集时间戳到画框输出时的年龄。
+- control_latency_ms：有效目标采集时间戳到本次速度指令 publish 完成的延迟；不是电机实际动作延迟。仅有效、使能的控制周期记录；Astra 缺采集时间戳时不记录。
+
+每秒给出平均/P95，窗口没有样本时耗时为 NaN（不能当零延迟），无输入时 FPS=0。耗时用单调时钟计算；观测年龄依赖相机与 Jetson ROS 时间戳同一时基，负值或未知戳不统计。样本队列每类上限 4096，限制内存；无逐帧 ROS 指标发布或日志。
+
+关闭统计做 A/B 开销对照：`PERFORMANCE_ENABLED=false bash scripts/start_project.sh`，或 launch 参数 `performance_enabled:=false`。重启生效。统计开销预计较小，但未在 Jetson 实测百分比；开启前后保持分辨率、场景、模块和 Foxglove 订阅一致，各测五分钟，对比 FPS、CPU 与延迟。关闭后不创建性能发布者/计时器。CPU/GPU/内存仍用 tegrastats 测量，当前性能话题不包含资源占用。

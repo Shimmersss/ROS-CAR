@@ -17,6 +17,7 @@ docker run --rm --platform linux/arm64 -e ROS_DOMAIN_ID=182 \
     bash /workspace/scripts/build_chassis.sh
     source chassis_install/setup.bash
     python3 -m unittest discover -s src/red_object_tracker/test -v
+    ROS_DOMAIN_ID=176 python3 /workspace/tests/test_performance_runtime.py
     ROS_DOMAIN_ID=177 python3 /workspace/tests/test_red_video_runtime.py
     ROS_DOMAIN_ID=178 python3 /workspace/tests/test_route_a_launch.py
     ROS_DOMAIN_ID=179 python3 /workspace/tests/test_red_serial_runtime.py

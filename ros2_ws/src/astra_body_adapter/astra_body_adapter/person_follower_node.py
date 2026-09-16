@@ -8,6 +8,7 @@ from person_interfaces.msg import TargetState
 import rclpy
 from rclpy.node import Node
 
+from .performance import Performance
 from .follow_control import FollowConfig, compute_command, target_is_usable, observation_is_fresh
 
 
@@ -48,6 +49,7 @@ class PersonFollowerNode(Node):
                 or self.message_timeout_s <= 0.0):
             raise ValueError('message_timeout_s must be positive and finite')
 
+        self.performance = Performance(self, '/control/performance', 'follower')
         self.latest_target = None
         self.received_at = None
         self.publisher = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -62,6 +64,8 @@ class PersonFollowerNode(Node):
             'person follower ready; enabled=false until explicitly armed')
 
     def _target_callback(self, msg):
+        if self.performance.enabled:
+            self.performance.inputs += 1
         self.latest_target = msg
         self.received_at = time.monotonic()
 
@@ -101,12 +105,16 @@ class PersonFollowerNode(Node):
                 self.config,
             )
         self._publish(linear, angular)
+        if usable:
+            self.performance.record('control_latency', self.performance.observation_age(target.observation_stamp))
 
     def _publish(self, linear, angular):
         command = Twist()
         command.linear.x = float(linear)
         command.angular.z = float(angular)
         self.publisher.publish(command)
+        if self.performance.enabled:
+            self.performance.outputs += 1
 
     def stop(self):
         self._publish(0.0, 0.0)

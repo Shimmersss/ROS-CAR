@@ -12,6 +12,7 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, CameraInfo
 from visualization_msgs.msg import Marker
 from person_interfaces.msg import TargetState
+from astra_body_adapter.performance import Performance
 from .vision import Selection, detect, measure
 
 
@@ -42,6 +43,7 @@ class RedTrackerNode(Node):
         self.bridge = CvBridge()
         self.selection = Selection(c['confirm_frames'], c['lost_timeout_s'])
         self.info = self.snapshot = self.last_stamp = self.last_key = None
+        self.performance = Performance(self, 'performance', 'red_object')
         self.last_pair_at = -math.inf
         self.error = ''
         self.pub = self.create_publisher(TargetState, 'target_state', 10)
@@ -65,6 +67,9 @@ class RedTrackerNode(Node):
         self.info = msg
 
     def on_color(self, color):
+        started = time.perf_counter()
+        if self.performance.enabled:
+            self.performance.inputs += 1
         # Visualization needs only RGB: never wait for depth or registration.
         self.raw_pub.publish(color)
         try:
@@ -91,8 +96,13 @@ class RedTrackerNode(Node):
                 output = self.bridge.cv2_to_imgmsg(pixels, encoding)
                 output.header = copy.deepcopy(color.header)
                 publisher.publish(output)
+            if self.performance.enabled:
+                self.performance.outputs += 1
+                self.performance.record('observation_age', self.performance.observation_age(color.header.stamp))
         except (ValueError, TypeError, CvBridgeError, cv2.error) as exc:
             self.get_logger().warning(f'Color visualization rejected: {exc}')
+        finally:
+            self.performance.record('processing', (time.perf_counter()-started)*1000)
 
     def fresh(self, color, depth, received_at):
         now = self.get_clock().now().nanoseconds*1e-9
@@ -105,6 +115,7 @@ class RedTrackerNode(Node):
         if not self.cfg['depth_registered']:
             return
         at = time.monotonic()
+        started = time.perf_counter()
         try:
             info = self.info
             if info is None:
@@ -156,6 +167,8 @@ class RedTrackerNode(Node):
             self.snapshot = None
             self.selection.selected = None
             self.selection.hits = 0
+        finally:
+            self.performance.record('rgbd', (time.perf_counter()-started)*1000)
 
     def tick(self):
         msg = TargetState()

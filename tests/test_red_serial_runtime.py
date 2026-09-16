@@ -18,7 +18,7 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import CameraInfo, Image, Imu
 from std_msgs.msg import Float32
 from visualization_msgs.msg import Marker
-from person_interfaces.msg import TargetState
+from person_interfaces.msg import TargetState, RuntimeMetrics
 from red_object_tracker.node import RedTrackerNode
 from astra_body_adapter.person_follower_node import PersonFollowerNode
 
@@ -40,9 +40,10 @@ def main():
     probe=Node('red_serial_probe'); executor.add_node(probe)
     master, slave=pty.openpty(); path=os.ttyname(slave)
     os.set_blocking(master,False)
-    states=[]; markers=[]; odom=[]; imu=[]; volts=[]; masks=[]; frames=[]
+    control_metrics=[]; states=[]; markers=[]; odom=[]; imu=[]; volts=[]; masks=[]; frames=[]
     for kind, topic, sink in (
         (TargetState,'/perception/target_state',states),
+        (RuntimeMetrics,'/control/performance',control_metrics),
         (Marker,'/perception/target_marker',markers),
         (Image,'/perception/red_mask_image',masks),
         (Odometry,'/odom',odom),(Imu,'/imu/data_raw',imu),(Float32,'/PowerVoltage',volts)):
@@ -149,6 +150,8 @@ def main():
         assert masks and any(m.data.count(255)>0 for m in masks)
         assert markers[-1].action==Marker.ADD
         assert any(v[0]>0 for _,v in frames[-8:]), frames[-8:]
+        assert any(math.isfinite(m.control_latency_ms) and m.control_latency_ms>=0
+                   for m in control_metrics), 'no valid control latency samples'
         first=states[-1].target_id
         depth_value=1.5;encoding='32FC1';pump(.4)
         assert abs(states[-1].position.z-1.5)<1e-5

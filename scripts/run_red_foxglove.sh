@@ -30,14 +30,25 @@ cleanup() {
   wait 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
-setsid ros2 launch perception_bringup route_a.launch.py \
-  "depth_registered:=${DEPTH_REGISTERED:-false}" \
-  "color_topic:=${COLOR_TOPIC:-/camera/color/image_rect}" \
-  "depth_topic:=${DEPTH_TOPIC:-/camera/aligned_depth_to_color/image_raw}" \
-  "camera_info_topic:=${CAMERA_INFO_TOPIC:-/camera/color/camera_info}" \
-  "with_chassis:=${WITH_CHASSIS:-false}" "motion_enabled:=${MOTION_ENABLED:-false}" \
-  "serial_port:=${SERIAL_PORT:-}" "serial_baud_rate:=${SERIAL_BAUD_RATE:-115200}" \
-  "car_mode:=${CAR_MODE:-}" &
+launch_args=(
+  "performance_enabled:=${PERFORMANCE_ENABLED:-true}"
+  "depth_registered:=${DEPTH_REGISTERED:-false}"
+  "color_topic:=${COLOR_TOPIC:-/camera/color/image_rect}"
+  "depth_topic:=${DEPTH_TOPIC:-/camera/aligned_depth_to_color/image_raw}"
+  "camera_info_topic:=${CAMERA_INFO_TOPIC:-/camera/color/camera_info}"
+  "with_chassis:=${WITH_CHASSIS:-false}"
+  "motion_enabled:=${MOTION_ENABLED:-false}"
+)
+if [[ "${WITH_CHASSIS:-false}" == true ]]; then
+  if [[ -z "${SERIAL_PORT:-}" || -z "${CAR_MODE:-}" ]]; then
+    echo '开启底盘需要非空 SERIAL_PORT 和 CAR_MODE。' >&2
+    exit 2
+  fi
+  launch_args+=("serial_port:=$SERIAL_PORT"
+                "serial_baud_rate:=${SERIAL_BAUD_RATE:-115200}"
+                "car_mode:=$CAR_MODE")
+fi
+setsid ros2 launch perception_bringup route_a.launch.py "${launch_args[@]}" &
 PIDS+=("$!")
 setsid bash "$ROOT/scripts/run_foxglove.sh" &
 PIDS+=("$!")

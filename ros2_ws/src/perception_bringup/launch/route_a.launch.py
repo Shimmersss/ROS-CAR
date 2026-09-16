@@ -19,7 +19,7 @@ def start(context):
     if chassis and (not get('car_mode') or not get('serial_port')):
         raise ValueError('Explicit verified car_mode and serial_port required for chassis')
     arguments = {k: get(k) for k in (
-        'depth_registered', 'color_topic', 'depth_topic', 'camera_info_topic',
+        'performance_enabled', 'depth_registered', 'color_topic', 'depth_topic', 'camera_info_topic',
         'sync_slop_s', 'max_age_s', 'hue_low_max', 'hue_high_min',
         'saturation_min', 'value_min', 'min_area_fraction', 'confirm_frames', 'lost_timeout_s')}
     arguments.update(route='red', with_foxglove='false')
@@ -37,13 +37,14 @@ def start(context):
                      car_mode=get('car_mode'), command_timeout_s=.5, feedback_timeout_s=.5,
                      max_linear_mps=.15, max_angular_rps=.5)]),
             Node(package='astra_body_adapter', executable='person_follower',
-                 output='screen', parameters=[dict(enabled=motion, expected_source='red_object')]),
+                 output='screen', parameters=[dict(enabled=motion, expected_source='red_object',
+                                                 performance_enabled=get('performance_enabled') == 'true')]),
         ]
     return actions
 
 
 def generate_launch_description():
-    defaults = dict(with_chassis='false', motion_enabled='false', car_mode='', serial_port='',
+    defaults = dict(performance_enabled='true', with_chassis='false', motion_enabled='false', car_mode='', serial_port='',
                     serial_baud_rate='115200', depth_registered='false',
                     color_topic='/camera/color/image_rect',
                     depth_topic='/camera/aligned_depth_to_color/image_raw',
@@ -53,5 +54,5 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(k, default_value=v,
                               **({'choices': ['true', 'false']} if k in
-                                 ('with_chassis', 'motion_enabled', 'depth_registered') else {}))
+                                 ('with_chassis', 'motion_enabled', 'depth_registered', 'performance_enabled') else {}))
         for k, v in defaults.items()] + [OpaqueFunction(function=start)])

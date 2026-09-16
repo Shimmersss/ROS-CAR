@@ -33,6 +33,7 @@ def launch_route(context):
             'max_age_s': float(LaunchConfiguration('max_age_s').perform(context)),
         })
         if route == 'red':
+            parameters[0]['performance_enabled'] = LaunchConfiguration('performance_enabled').perform(context) == 'true'
             for name in ('model_path', 'device', 'image_size'):
                 parameters[0].pop(name)
             for name in ('hue_low_max', 'hue_high_min', 'saturation_min', 'value_min', 'confirm_frames'):
@@ -78,6 +79,7 @@ def launch_bridge(context):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('route', default_value='yolo', choices=['astra', 'yolo', 'red', 'demo']),
+        DeclareLaunchArgument('performance_enabled', default_value='true', choices=['true', 'false']),
         DeclareLaunchArgument('with_foxglove', default_value='false', choices=['true', 'false']),
         DeclareLaunchArgument('akimbo_hand_above_base_min_mm', default_value='50.0'),
         DeclareLaunchArgument('akimbo_hand_shoulder_max_dx_mm', default_value='100.0'),
