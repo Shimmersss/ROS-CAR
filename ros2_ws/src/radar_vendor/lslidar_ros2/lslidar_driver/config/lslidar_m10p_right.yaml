@@ -1,0 +1,24 @@
+lidar_right:
+  lslidar_driver_node:
+    ros__parameters:
+      # 雷达型号与通讯配置
+      lidar_type: "X10"
+      lidar_model: "M10P"
+      serial_port: "/dev/wheeltec_lidar2"  # 请确保绑定了右侧实际串口名
+
+      # 基础数据话题与坐标系设置
+      frame_id: "laser2"
+      pointcloud_topic: "lslidar_point_cloud"
+      laserscan_topic: "/scan2"
+      publish_scan: true
+
+      # 距离与角度过滤
+      min_range: 0.05
+      max_range: 20.0
+      angle_disable_min: [10000]
+      angle_disable_max: [25500]
+      
+      # 网络占位配置(避开左雷达的IP和端口)
+      device_ip: "192.168.1.201"
+      msop_port: 2370
+      difop_port: 2371

@@ -432,3 +432,5 @@
 - 先在线禁用运动，定点修改远端源码并备份至/tmp/follow_control.before-30cm.py。Jetson astra_body_adapter原生构建成功（总体3.75秒），停止旧栈后以运动关闭启动tmux roscar-red-30cm；相机、串口和语音开关沿用上一轮。读回0.3/0.0/false后恢复enabled=true并确认，cmd_vel抽样为前进0.15m/s、转向0，不代表已验证实际位移或30cm停止精度。相机测距偏差仍未校正。
 - 新默认边界测试覆盖0.25/0.30m不前进、0.31m前进、0.70m限速；串口闭环32FC1停止样例调整为0.25m。本机26项适配器/控制测试通过。
 - 本机Linux ARM64 Humble完整回归通过：9个主动包与3个底盘包编译、真实驱动PTY和红色RGB-D闭环、A/B/red/demo/非法路由、视频/性能及语音测试，日志artifacts/follow-30cm-test.log。最小审查和git diff --check通过。
+
+- 2026-09-16：按用户要求将厂商目录中的雷达/激光雷达相关包复制到 `ros2_ws/src/radar_vendor/`，包含 `wheeltec_radar`、LS/LD LiDAR、RPLIDAR、pointcloud_to_laserscan 和双雷达融合；新增来源哈希清单与说明。默认保留 `COLCON_IGNORE`，未接入当前启动路线、未编译或实机验证。

@@ -90,3 +90,4 @@
 
 - 2026-09-16 用户进一步要求30cm跟随：共享FollowConfig默认目标距离改为0.30m（距离死区仍0），在线ROSCAR-red原生构建完成并重启至tmux roscar-red-30cm；读回0.3/0.0及初始disabled后恢复enabled=true。cmd_vel抽样前进0.15m/s、转向0，仅证明指令输出。启动默认运动仍关闭，测距偏差未校正。
 - 本机Linux ARM64 Humble完整回归通过：9个主动包与3个底盘包编译、真实驱动PTY和红色RGB-D闭环、A/B/red/demo/非法路由、视频/性能及语音测试，日志artifacts/follow-30cm-test.log。最小审查和git diff --check通过。
+- 2026-09-16：新增 `ros2_ws/src/radar_vendor/`，暂存厂商毫米波/激光雷达包；默认 `COLCON_IGNORE`，依赖、型号、串口和实机行为尚未验证。
