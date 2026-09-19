@@ -6,10 +6,13 @@ xfyun_asr:
     frame_ms: 40
     language: zh_cn
     accent: mandarin
-    energy_threshold: 2800.0
+    # 现场静音RMS中位860、P95约1807；2300配合连续160ms起音，兼顾小声与噪声。
+    energy_threshold: 2300.0
     speech_onset_ms: 160
     silence_ms: 1200
-    speech_timeout_sec: 5.0
+    # 唤醒后要先播完应答才开始录音，用户还要留出反应时间，因此把"没人说话就
+    # 放弃"的额度从 5 秒放宽到 8 秒。
+    speech_timeout_sec: 8.0
     max_utterance_sec: 15.0
     response_timeout_sec: 5.0
     wake_topic: ''
@@ -17,6 +20,21 @@ xfyun_asr:
     trusted_wake_text: 小车唤醒
     speaking_topic: /voice/speaking
     output_topic: /voice/asr_text
+    # 提前收尾：短应答（"在"）一经识别出完整分片就立即向讯飞发送结束帧，不再等满
+    # silence_ms。列表应与 deepseek_chat 的 ack_phrases 保持一致；不一致只会退化
+    # 成原来的"等静音"行为，不会出错。
+    talk_topic: /voice/talk
+    early_finalize_phrases: [在, 我在, 在这儿, 在这里]
+    early_finalize_min_elapsed_s: 0.25
+    early_finalize_window_s: 6.0
+    # 扬声器应答的尾音可能进入麦克风。播放结束后
+    # 再保留这么久才允许"静音"结束本轮，否则应答自己就把这一轮说完了。
+    echo_hold_after_speech_s: 0.8
+    # 唤醒应答要先说完再开识别：识别会话若在播放期间建立，音频流会被播放阻塞并
+    # 以 10165 失败。这段时间不计入"没人说话就放弃"的额度。
+    wake_cycle_delay_s: 2.0
+    # 每次识别输出一行耗时分解（静音等待/服务端/是否提前收尾），排延迟时打开。
+    timing_log: true
 
 deepseek_chat:
   ros__parameters:
@@ -32,6 +50,17 @@ deepseek_chat:
     tool_call_topic: /voice/tool_call
     response_log_path: /home/wheeltec/ROSCAR/logs/deepseek_responses.jsonl
     enable_tools: true
+    # 唤醒应答：说了唤醒词后只回一个"在"，直接用固定话术回答，不调用 DeepSeek。
+    # 匹配要求整句归一化后完全相等，因此"在吗""在哪里"等问句仍会正常送到模型。
+    ack_enabled: true
+    ack_phrases: [在, 我在, 在这儿, 在这里]
+    ack_reply: 我在
+    # 唤醒应答：听到唤醒词就立刻先说一声，不等用户提问。它不是一轮对话——
+    # 只走语音、不上回答话题、不进对话历史，因此不影响随后的正常提问。
+    wake_reply_enabled: true
+    wake_reply_topic: /voice_words
+    wake_reply_trigger: 小车唤醒
+    wake_reply_text: 我在
 
 voice_command_router:
   ros__parameters:
@@ -50,10 +79,23 @@ xfyun_tts:
   ros__parameters:
     endpoint: wss://tts-api.xfyun.cn/v2/tts
     input_topic: /voice/tts_text
-    playback_device: default
+    playback_device: plughw:CARD=Device,DEV=0
     sample_rate: 16000
-    voice_name: xiaoyan
+    # 本账号已开通音色（实测 2026-09-16），可用 VOICE_NAME 环境变量临时覆盖：
+    #   x4_yezi   讯飞小露  现场试听选定，默认值（语速稍快、听感自然）
+    #   aisjinger 讯飞小婧  基频最低最平稳（216 Hz、起伏 σ44），备选
+    #   x4_xiaoyan 讯飞小燕 控制台登记的 x4 引擎
+    #   aisbabyxu 讯飞许小宝 童声
+    #   aisjixu / xiaoyan 讯飞许久，改动前的旧音色，两者等价
+    voice_name: x4_yezi
     speed: 50
     volume: 50
     pitch: 50
     max_text_chars: 500
+    # 固定话术预合成：启动时把下面这些短句合成好缓存成本地 WAV，命中时直接播放，
+    # 省掉一次 WebSocket 握手与讯飞往返（实测约 0.9 秒）。缓存文件名带音色/语速/
+    # 音调/音量指纹，换音色不会误用旧音频。合成失败只是回退到在线合成。
+    reply_cache: /home/wheeltec/.cache/roscar/tts
+    precache_texts: [我在]
+    # 每次朗读输出一行耗时（缓存播放 / 在线合成的连接与首音频）。
+    timing_log: true

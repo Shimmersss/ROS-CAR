@@ -10,8 +10,13 @@ import uuid
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 
+from .acknowledgement import (
+    AcknowledgementConfig,
+    match_acknowledgement,
+    match_wake_trigger,
+)
 from .client import DeepSeekClient
 from .response_log import append_response
 
@@ -44,6 +49,21 @@ class DeepSeekChatNode(Node):
             'ignored_phrases',
             ['小车唤醒', '你好小微', '小微小微', '你好小薇', '小薇小薇'],
         )
+        # Wake-word acknowledgements ("在") are answered locally: no API call,
+        # no history entry, and the reply is not spoken into a running TTS.
+        self.declare_parameter('ack_enabled', True)
+        self.declare_parameter(
+            'ack_phrases', ['在', '我在', '在这儿', '在这里'])
+        self.declare_parameter('ack_reply', '我在')
+        # Answer the wake word itself, before the user asks anything. Kept out of
+        # the dialogue history and only spoken, never published as an answer.
+        self.declare_parameter('wake_reply_enabled', True)
+        self.declare_parameter('wake_reply_topic', '/voice_words')
+        self.declare_parameter('wake_reply_trigger', '小车唤醒')
+        self.declare_parameter('wake_reply_text', '我在')
+        # Announces every accepted utterance so the ASR node can finalise a
+        # short acknowledgement without waiting out its silence window.
+        self.declare_parameter('talk_topic', '/voice/talk')
 
         self._answer_pub = self.create_publisher(
             String, self.get_parameter('answer_topic').value, 10)
@@ -52,16 +72,38 @@ class DeepSeekChatNode(Node):
         self._tool_pub = self.create_publisher(
             String, self.get_parameter('tool_call_topic').value, 10)
         self._state_pub = self.create_publisher(String, '/voice/chat_state', 10)
-        self._subscription = self.create_subscription(
-            String, self.get_parameter('input_topic').value, self._on_text, 10)
+        talk_topic = str(self.get_parameter('talk_topic').value)
+        self._talk_pub = (
+            self.create_publisher(String, talk_topic, 10) if talk_topic else None)
 
         self._ignored = set(self.get_parameter('ignored_phrases').value)
+        self._ack = AcknowledgementConfig(
+            phrases=tuple(self.get_parameter('ack_phrases').value),
+            reply=str(self.get_parameter('ack_reply').value),
+        )
+        self._ack_enabled = bool(self.get_parameter('ack_enabled').value)
         self._system_prompt = self.get_parameter('system_prompt').value
         self._history = []
         self._queue = queue.Queue(maxsize=3)
         self._stop = threading.Event()
+        self._tts_speaking = False
         self._worker = threading.Thread(target=self._worker_loop, daemon=True)
         self._worker.start()
+        self._subscription = self.create_subscription(
+            String, self.get_parameter('input_topic').value, self._on_text, 10)
+        self._speaking_subscription = self.create_subscription(
+            Bool, '/voice/speaking', self._on_speaking, 10)
+        self._wake_reply_enabled = bool(
+            self.get_parameter('wake_reply_enabled').value)
+        self._wake_reply_text = str(
+            self.get_parameter('wake_reply_text').value).strip()
+        self._wake_reply_trigger = str(
+            self.get_parameter('wake_reply_trigger').value).strip()
+        wake_reply_topic = str(self.get_parameter('wake_reply_topic').value)
+        self._wake_subscription = None
+        if self._wake_reply_enabled and wake_reply_topic and self._wake_reply_text:
+            self._wake_subscription = self.create_subscription(
+                String, wake_reply_topic, self._on_wake, 10)
         self._publish_state('IDLE')
 
     def _publish_state(self, value):
@@ -73,10 +115,51 @@ class DeepSeekChatNode(Node):
         text = message.data.strip()
         if not text or text in self._ignored:
             return
+        # Announce first: the ASR node may still be finishing this utterance and
+        # can cut its silence wait short. Text is forwarded verbatim; this
+        # module makes no decision from it.
+        if self._talk_pub is not None:
+            talk = String()
+            talk.data = text
+            self._talk_pub.publish(talk)
+        if self._ack_enabled:
+            reply = match_acknowledgement(text, self._ack)
+            if reply is not None:
+                # Answer immediately instead of queueing: the queue may still
+                # hold the previous question, and a stale "我在" is worse than
+                # none. The acknowledgement stays out of the history as well.
+                self._publish_reply(reply)
+                self.get_logger().info(f'唤醒应答: {text} -> {reply}')
+                return
         try:
             self._queue.put_nowait(text)
         except queue.Full:
             self.get_logger().warning('DeepSeek 请求队列已满，丢弃新问题')
+
+    def _on_wake(self, message):
+        """Speak a short greeting the moment the hardware wake word arrives.
+
+        This is not a dialogue turn: it is never published on the answer topic
+        and never enters the history, so the user's real question is still
+        handled as if the greeting had not happened.
+        """
+        if not match_wake_trigger(message.data, self._wake_reply_trigger):
+            return
+        self._publish_reply(self._wake_reply_text, publish_answer=False)
+        self.get_logger().info(f'唤醒应答: {self._wake_reply_text}')
+
+    def _publish_reply(self, answer, publish_answer=True):
+        message = String()
+        message.data = answer
+        if publish_answer:
+            self._answer_pub.publish(message)
+        if self._tts_speaking:
+            self.get_logger().info('TTS 正在播放，跳过应答语音')
+            return
+        self._tts_pub.publish(message)
+
+    def _on_speaking(self, message):
+        self._tts_speaking = bool(message.data)
 
     def _messages_for(self, user_text):
         return [

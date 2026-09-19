@@ -1,0 +1,23 @@
+[Unit]
+Description=ROSCAR red tracking, chassis follow, voice and Foxglove
+Wants=network-online.target
+After=network-online.target
+Conflicts=roscar-route-a.service
+
+[Service]
+Type=simple
+User=wheeltec
+Group=wheeltec
+WorkingDirectory=/home/wheeltec/ROSCAR-red
+Environment=HOME=/home/wheeltec
+Environment=ROS_DOMAIN_ID=182
+Environment=DEPTH_REGISTERED=true
+Environment=MOTION_ENABLED=true
+ExecStart=/bin/bash /home/wheeltec/ROSCAR-red/scripts/start_robot.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

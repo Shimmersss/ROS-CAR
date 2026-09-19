@@ -1,6 +1,24 @@
 """Pure protocol helpers for iFLYTEK IAT and TTS."""
 
 import base64
+import re
+
+# Punctuation and spacing carry no meaning for a phrase comparison, and ASR
+# output is inconsistent about them.
+_NOISE = re.compile(r'[^\u4e00-\u9fffA-Za-z0-9]')
+
+
+def normalize_phrase(text):
+    """Strip punctuation and whitespace so phrases compare by words alone."""
+    return _NOISE.sub('', text or '')
+
+
+def phrase_matches(text, phrases):
+    """True when the whole normalised `text` equals one of `phrases`."""
+    normalized = normalize_phrase(text)
+    if not normalized:
+        return False
+    return normalized in {normalize_phrase(item) for item in phrases or () if item}
 
 
 class XfyunResponseError(RuntimeError):

@@ -52,6 +52,18 @@ class ArecordCapture:
         self._process = None
 
 
+def play_audio(path, device):
+    """Play a WAV file; returns the wall time until aplay accepted it."""
+    completed = subprocess.run(
+        ['aplay', '-q', '-D', device, str(path)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.decode('utf-8', errors='replace').strip()
+        raise RuntimeError(detail or f'aplay exited with status {completed.returncode}')
+
+
 class AplaySink:
     def __init__(self, device, sample_rate, channels=1):
         self._command = [

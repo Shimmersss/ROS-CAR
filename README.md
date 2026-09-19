@@ -142,3 +142,25 @@ bash scripts/start_project.sh
 统一启动 Astra 彩色/深度相机、红色方案 A、Foxglove 与语音助手；Ctrl-C 停止整组。日志在 `artifacts/project/`。语音需要私有凭据，不需要语音时使用 `WITH_VOICE=false bash scripts/start_project.sh`。底盘默认关闭，通过 `WITH_CHASSIS=true SERIAL_PORT=实际串口 CAR_MODE=实际车型` 启用收发；运动另需 `MOTION_ENABLED=true` 和已验证的 `DEPTH_REGISTERED=true`。查看全部选项：`bash scripts/start_project.sh --help`。
 
 总入口在小车本机运行，依赖已构建的项目与厂商相机包；不自动部署。若现有 A systemd 服务运行，先停止该服务以释放相机。默认相机原始彩色流可用于检测可视化；控制测距仍要求实际校正/配准输入，通过 COLOR_TOPIC、DEPTH_TOPIC、CAMERA_INFO_TOPIC 指定，不能把启动驱动当作配准验证。
+
+### 当前小车：检测、底盘、语音一起启动
+
+在 Jetson 项目根目录执行：
+
+```bash
+bash scripts/start_robot.sh
+```
+
+同时启动相机、红色检测、底盘收发、语音助手和 Foxglove。沿用在线串口 `/dev/wheeltec_controller`、115200 和车型配置 `mini_akm`（实物车型仍需核验，可用 `CAR_MODE` 覆盖）。此当前小车专用入口默认开启 30 cm 跟随，并沿用现场配准配置；仅测试感知和收发时关闭运动：
+
+```bash
+MOTION_ENABLED=false bash scripts/start_robot.sh
+```
+
+语音需要 `~/.config/roscar/voice.env` 私有配置及已构建的语音包；底盘需先运行 `bash scripts/build_chassis.sh`。旧实例应先在其终端 Ctrl-C 停止，脚本会拒绝重复实例。Ctrl-C 或任一模块退出时清理整组，日志在 `artifacts/project/`。安装开机服务（固定部署目录 `/home/wheeltec/ROSCAR-red`）：
+
+```bash
+bash scripts/install_robot_autostart.sh
+```
+
+安装器禁用旧骨架服务，并启用及立即启动 `roscar-robot.service`。新服务开机自动启动检测、底盘、语音、Foxglove和跟随运动，进程退出后延迟5秒重试。停止整套服务：`sudo systemctl stop roscar-robot.service`；查看状态：`systemctl status roscar-robot.service`。服务运行时不要重复手动启动。

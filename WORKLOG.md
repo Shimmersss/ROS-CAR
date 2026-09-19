@@ -432,3 +432,27 @@
 - 先在线禁用运动，定点修改远端源码并备份至/tmp/follow_control.before-30cm.py。Jetson astra_body_adapter原生构建成功（总体3.75秒），停止旧栈后以运动关闭启动tmux roscar-red-30cm；相机、串口和语音开关沿用上一轮。读回0.3/0.0/false后恢复enabled=true并确认，cmd_vel抽样为前进0.15m/s、转向0，不代表已验证实际位移或30cm停止精度。相机测距偏差仍未校正。
 - 新默认边界测试覆盖0.25/0.30m不前进、0.31m前进、0.70m限速；串口闭环32FC1停止样例调整为0.25m。本机26项适配器/控制测试通过。
 - 本机Linux ARM64 Humble完整回归通过：9个主动包与3个底盘包编译、真实驱动PTY和红色RGB-D闭环、A/B/red/demo/非法路由、视频/性能及语音测试，日志artifacts/follow-30cm-test.log。最小审查和git diff --check通过。
+
+- 2026-09-16 新增 scripts/start_robot.sh 当前小车三模块入口：固定启用检测/底盘/语音并复用 start_project.sh 的进程管理与清理，附带相机和Foxglove。串口默认沿用上次在线 /dev/wheeltec_controller、115200、mini_akm（仍非实物车型核验结论），支持环境覆盖；运动及配准确认默认false，显式启用命令见README。Bash语法、ShellCheck、模拟总入口参数传递及git diff --check通过，最小审查确认没有新增控制来源。SSH连接超时，本轮未部署或实机启动三模块。
+
+- 2026-09-16 三模块上车测试准备：SSH已恢复，start_robot.sh已同步至/home/wheeltec/ROSCAR-red/scripts/；相机、红色检测、底盘、讯飞、DeepSeek及路由包的ROS安装前缀均可发现，语音私有配置与两串口设备存在。旧roscar-route-a.service仍active占用相机，sudo停止提示需要密码，已请求用户在小车执行停止；独立语音launch收到INT后退出。尚未启动新总入口，不能称三模块联合运行通过。
+
+- 2026-09-16 三模块实机联合启动通过：按用户授权停止占用相机的旧骨架systemd服务和独立语音实例，使用tmux roscar-all在/home/wheeltec/ROSCAR-red运行 DEPTH_REGISTERED=true MOTION_ENABLED=false bash scripts/start_robot.sh。保留远端已有TTS配置，未覆盖语音脚本。12秒采样获得297帧画框图、220条TargetState（末条TRACKING且有效）、218条里程计及IMU、18条电压（末值11.148V）；193条cmd_vel全零且唯一发布者。麦克风串口初始化成功，唤醒、ASR、路由、DeepSeek及TTS节点全部可见且进程存活；本轮没有真人唤醒/云端问答/播放验收。当前总栈保持运行、运动关闭；未更改开机启用设置，旧骨架服务本次已停止。最小审查确认无重复相机/语音/速度源，未保存用户密码。
+
+- 2026-09-16 用户授权运动随整套项目开机启动：start_robot.sh专用入口默认MOTION_ENABLED=true、DEPTH_REGISTERED=true（沿用当前相机配置；测距误差未校正），通用start_project.sh仍保留原默认。新增install_robot_autostart.sh与roscar-robot.service，固定/home/wheeltec/ROSCAR-red；停止手动总栈后已安装并enable/start，旧roscar-route-a.service已disabled。新服务以wheeltec运行检测/底盘/语音/Foxglove/跟随，KillMode=control-group，失败5秒后重试。
+- 在线核验新服务enabled/active/running、NRestarts=0，跟随enabled=true、target_distance_m=0.3。12秒收到311帧框图、235条目标、222条odom/IMU、19条电压（末值11.102V），198条速度中108条非零、发布者仅1个，语音5节点均可见；不据此声称实际位移、停止精度或语音对话验收。未重启整车，开机行为依据systemd启用配置，断电重启验收尚未执行。脚本Bash/ShellCheck与最小差异审查通过；密码未写入项目。
+
+- 2026-09-16 用户要求“小微小微→我在→再听命令”：发现远端语音已有独立于本地版本的wake_reply与ASR延迟/回声抑制实现，未覆盖远端代码。运行参数wake_reply_enabled=true、wake_reply_text=我在、wake_cycle_delay_s=2.0，TTS输出为plughw:CARD=Device,DEV=0（USB声卡，未核实蓝牙）。模拟发布精确/voice_words=小车唤醒事件后，TTS文本于2.092秒发布“我在”，2.096秒speaking=true，3.068秒播放结束，4.386秒ASR进入LISTENING；无命令时最终回到IDLE。现场麦克风真实唤醒日志也出现同样应答/收音顺序。本轮验证现有线上行为，无源码/参数变更，未宣称用户听到音频或蓝牙链路已验证。最小审查确认唤醒应答与收音顺序符合请求；远端语音新增代码尚未合入本地。
+
+- 2026-09-16 按用户要求将线上语音改动同步回Mac：从ROSCAR-red暂存并逐文件比较xfyun_speech、deepseek_ros2、voice_command_router及run_voice_assistant.sh，仅合入文本内容差异，统一CRLF为LF；路由包无实质差异。包含唤醒“我在”、延迟收音/回声保持、短句提前结束、WebSocket轮询超时恢复、TTS缓存及音色配置/测试。未同步私有凭据、录音或构建产物；保留Mac原有控制/性能代码与未提交的总启动配置。
+- 总启动脚本、安装器、systemd单元已与远端已部署文件校验SHA256一致。最小审查发现远端语音脚本可选音色参数误用name=value，本地修为ROS launch所需name:=value；这一个修正未回传小车，线上默认无覆盖时不受影响。其余同步语音源码与线上规范化文本一致。本轮不重启或修改小车运行状态。
+- 同步验证完成：本机Linux ARM64 Humble 9个主动包及3个底盘包构建成功，88项语音测试、A/B/red/demo/非法路由、视频/性能、控制及真实C++驱动PTY/合成RGB-D闭环回归全部通过，日志artifacts/voice-sync-test.log；ShellCheck和git diff --check通过。本轮未提交或推送Git。
+
+## 2026-09-16：语音识别稳定性修复
+
+- 重启后服务实际已启动，语音日志前两次唤醒在开机网络未稳定时出现 DNS `Temporary failure in name resolution`；网络恢复后识别正常，但无本地起音证据时会无条件接受硬件唤醒后的云端文本，曾产生“哦哦”等低音量误识别。
+- 小车麦克风3秒空闲采样75个40ms窗，RMS中位约860、P95约1807、最大约2328。ASR能量阈值2800→2300，继续要求160ms连续起音；无完整起音时，只在硬件唤醒、峰值至少为阈值80%且归一化文本至少4字时接受低音量结果。新增recognition_gate纯逻辑测试，覆盖噪声短句和较长轻声命令。
+- ASR WebSocket只对DNS解析异常最多重试3次，间隔1/2秒，每次重新签名URL以适应启动时校时。不会对认证或其他网络错误盲目重试。保留“我在”播完再听的时序。
+- 小车原生Humble编译xfyun_speech成功（3.95秒），远端14项相关测试通过；同步部署并重启整套服务，ASR参数读回2300、10个项目节点恢复、跟随enabled=true。软件唤醒时序复核另记。静音样本不代表所有噪声场景，真人识别准确率仍需多轮现场测量。
+- 现场软件唤醒测试碰到真人语音与长回答播报同时进行：新唤醒在ASR忙碌时仍覆盖待处理队列，可能让下一轮识别与上轮TTS重叠。现于ASR回调中拒绝播报中、识别中、已有待唤醒或已排队时的重复唤醒；远端再次原生编译并重启总服务。并发唤醒复测结果另见日志。
+- 双唤醒复测：软件间隔0.3秒发布两次精确唤醒事件，TTS仅发布一次“我在”，ASR记录“语音仍在处理，忽略重复唤醒”；随后的识别会话仍完成。现场同时有真实环境语音，因此该次ASR识别内容不能用作准确率指标。远端服务保持active，未测试蓝牙实际链路（声卡仍为USB）。
