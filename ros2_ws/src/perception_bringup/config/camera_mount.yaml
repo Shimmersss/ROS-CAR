@@ -1,0 +1,15 @@
+/perception/target_transform:
+  ros__parameters:
+    target_frame: base_link
+    expected_source_frame: camera_color_optical_frame
+    # Identity is only an installation placeholder, not calibrated geometry.
+    extrinsics_calibrated: false
+    # Keep placeholders out of the live TF tree. Enable only after checking ownership.
+    # Leave false when URDF/another publisher already supplies this transform.
+    publish_mount_tf: false
+    mount_child_frame: camera_link
+    mount_translation: [0.0, 0.0, 0.0]  # metres, child origin in parent
+    mount_quaternion: [0.0, 0.0, 0.0, 1.0]  # x,y,z,w
+    max_age_s: 0.5
+# camera_link -> camera_color_optical_frame belongs to the camera driver.
+# Do not replace optical axis conventions with an identity rotation.

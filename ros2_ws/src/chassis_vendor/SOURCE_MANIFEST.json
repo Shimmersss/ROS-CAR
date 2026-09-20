@@ -1,5 +1,5 @@
 {
-  "description": "原厂源码原样迁入；仅排除 .git、系统缓存和 Python 缓存。",
+  "description": "原厂迁入基线；files[].sha256 保留原始来源哈希，本地修复另记 local_modifications。",
   "files": [
     {
       "path": "turn_on_wheeltec_robot/CMakeLists.txt",
@@ -210,6 +210,14 @@
       "path": "serial/src/serial.cc",
       "source": "JP6.2_wheeltec_ros2_src_20260903/depend/serial_ros2/src/serial.cc",
       "sha256": "7702b646a57e8257db057272773f6a8e54b396a7d09b3d98a01040aa1cee805c"
+    }
+  ],
+  "local_modifications": [
+    {
+      "path": "turn_on_wheeltec_robot/src/wheeltec_robot.cpp",
+      "date": "2026-09-20",
+      "sha256": "cc497d3f92650535414790c87834c7cd0ecd79a2feb9a641e25801e3552ffa26",
+      "reason": "arm_cmd 长度/数值检查，机械臂 10 字节发送，安全扩展帧尾修复；原始来源哈希不变。"
     }
   ]
 }

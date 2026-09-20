@@ -34,3 +34,12 @@ A/B/demo 使用同一接口。输出描述观测状态，不是控制命令。
 Astra 原 Bodyposture 没有 header，不得直接把回调接收时间称为传感器采集时间。真实适配时补源时间，或明确暴露时间未知。不同 optical/SDK 轴约定必须先确认后转换。
 
 B 提供 `/perception/lock_target` 与 `/perception/release_target`（std_srvs/Trigger），锁定最新画面水平中央轨迹。ID 为 epoch:track_id，流重置需显式重锁；不提供任意 ID 的 SetTarget 服务。详见 [B 实现](方案B实现与验收.md)。
+
+
+## B 的可选车体坐标输出
+
+独立 TF 节点派生 `/perception/target_state_base`（相同消息类型）和 `/perception/target_marker_base`。原 `/perception/target_state` 始终保持光学坐标契约，不会因标定状态改变。
+
+base 话题的 `header.frame_id=base_link`（可配置），position 为 X 前、Y 左、Z 上，距离 `hypot(X,Y)`、偏角 `atan2(Y,X)`（左正）；header.stamp 为发布时刻，observation_stamp 沿用来源观测时间，TF 在观测时刻查询。位置只有源数据、标定确认和 TF 都有效时才有效；无效位置/距离/偏角为 NaN，Marker DELETE。消息结构不变，仅补充字段注释。
+
+未标定时默认不发布安装 TF，占位单位矩阵仅存于 camera_mount.yaml；原光学话题、检测图、锁定服务与 Marker 继续可用。**旧 person_follower 使用光学坐标语义，不能直接接 base 话题。** TF 节点仅接受真实 yolo 来源，不将 demo 当实际校准观测。整个 TF 节点退出时，新话题消费者仍需自行检测断流。

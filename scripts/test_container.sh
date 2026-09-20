@@ -8,6 +8,7 @@ docker build --platform linux/arm64 --build-arg "ROS_IMAGE=$IMAGE" \
 docker run --rm --platform linux/arm64 -e ROS_DOMAIN_ID=182 \
   -v "$ROOT/ros2_ws/src:/workspace/ros2_ws/src:ro" \
   -v "$ROOT/tests:/workspace/tests:ro" \
+  -v "$ROOT/scripts:/workspace/scripts:ro" \
   roscar-humble-test bash -c '
     set -eo pipefail
     source /opt/ros/humble/setup.bash
@@ -17,6 +18,10 @@ docker run --rm --platform linux/arm64 -e ROS_DOMAIN_ID=182 \
       python3 -m unittest discover \
       -s /workspace/ros2_ws/src/astra_body_adapter/test -v
     PYTHONPATH=/workspace/ros2_ws/src/yolo_person_tracker python3 -m unittest discover -s src/yolo_person_tracker/test -v
+    ROS_DOMAIN_ID=177 python3 /workspace/tests/test_review_safety.py
+    python3 /workspace/tests/test_route_a_lifecycle.py
+    ROS_DOMAIN_ID=178 python3 /workspace/tests/test_target_tf_runtime.py
+    ROS_DOMAIN_ID=179 python3 /workspace/tests/test_yolo_concurrency.py
     ROS_DOMAIN_ID=180 python3 /workspace/tests/test_yolo_runtime.py
     ROS_DOMAIN_ID=181 python3 /workspace/tests/test_astra_adapter_runtime.py
     python3 -m pytest -q src/xfyun_speech/test src/deepseek_ros2/test src/voice_command_router/test

@@ -12,9 +12,11 @@
 | Mac → Jetson 同步脚本、模型清单、测试脚本 | 已建立 |
 | 讯飞流式 ASR/TTS → DeepSeek 语音助手 | Orin 真人语音 → 讯飞 IAT → DeepSeek 回答已跑通；TTS 暂停 |
 | DeepSeek 蜂鸣器工具链 | 白名单路由已建立；蜂鸣器属于下位机，协议适配延后 |
-| 相机、骨架与测距 | A 已在 Jetson 真人验收；YOLO 路线待实现，SDK 授权提示待厂商解释 |
+| 相机、骨架与测距 | A 已在 Jetson 真人验收；B 已本机接入 YOLO26s/ByteTrack，待相机及 Jetson 验收，SDK 授权提示待厂商解释 |
 | 下位机串口驱动及两个依赖包 | 已迁入 chassis_vendor，默认跳过构建，未启动、未实机验证 |
 | Foxglove | A 路线布局已验收，Wi-Fi 直连 `ws://192.168.1.240:8765` |
+
+B 当前选用官方预训练 **YOLO26s 检测版 + ByteTrack**，默认免 NMS 推理；目标 Jetson 加速使用 TensorRT FP16（引擎尚未在板端构建）。权重准备、本机测试和导出命令见 [B 方案实现与验收](docs/方案B实现与验收.md)。
 
 具体测试结果见 [工作记录](WORKLOG.md)。容器编译通过不等于 Jetson 相机或 GPU 已验证。
 

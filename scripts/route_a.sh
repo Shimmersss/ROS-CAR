@@ -15,6 +15,13 @@ PROJECT_SETUP="${ROSCAR_PROJECT_SETUP:-$ROOT/ros2_ws/install/setup.bash}"
 SYSTEMD_UNIT="${ROSCAR_ROUTE_A_UNIT:-roscar-route-a.service}"
 
 mkdir -p "$STATE_DIR"
+# Serialize lifecycle changes; the runner must not inherit this lock descriptor.
+case "$COMMAND" in
+  start|stop|restart)
+    exec 9>"$STATE_DIR/lifecycle.lock"
+    flock -x 9
+    ;;
+esac
 
 read_pid() {
   local value=''
@@ -44,7 +51,13 @@ show_connection() {
 }
 
 systemd_active() {
-  command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet "$SYSTEMD_UNIT" 2>/dev/null
+  local state
+  command -v systemctl >/dev/null 2>&1 || return 1
+  state="$(systemctl show --property=ActiveState --value "$SYSTEMD_UNIT" 2>/dev/null)" || return 1
+  case "$state" in
+    active|activating|reloading|deactivating) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 preflight() {
@@ -75,12 +88,17 @@ start_stack() {
     return 0
   fi
 
+  if command -v systemctl >/dev/null 2>&1 &&
+      [[ "$(systemctl show --property=LoadState --value "$SYSTEMD_UNIT" 2>/dev/null || true)" == loaded ]]; then
+    printf '方案 A 由已安装服务管理；请运行 sudo systemctl start %s\n' "$SYSTEMD_UNIT" >&2
+    return 1
+  fi
   preflight
   : > "$LOG_FILE"
   nohup env \
     RGB_STREAM="${RGB_STREAM:-false}" \
     ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-182}" \
-    bash "$RUNNER" >> "$LOG_FILE" 2>&1 < /dev/null &
+    bash "$RUNNER" 9>&- >> "$LOG_FILE" 2>&1 < /dev/null &
   process_id=$!
   printf '%s\n' "$process_id" > "$PID_FILE"
 

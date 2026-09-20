@@ -1,6 +1,6 @@
 # 下位机串口代码（暂存，未启用）
 
-从本地 WHEELTEC Humble / JP6.2 原包原样复制，保留原文件、注释和许可证声明；排除嵌套 Git 与缓存。逐文件来源及 SHA-256 见 [SOURCE_MANIFEST.json](SOURCE_MANIFEST.json)。
+从本地 WHEELTEC Humble / JP6.2 原包迁入，保留来源和许可证；2026-09-20 已对 wheeltec_robot.cpp 应用安全修复。逐文件原始哈希及本地修复哈希分别见 SOURCE_MANIFEST.json 的 files 和 local_modifications。清单： [SOURCE_MANIFEST.json](SOURCE_MANIFEST.json)。
 
 | 目录 | 用途 |
 |---|---|
@@ -29,8 +29,10 @@
 ## 后续启用前的工作
 
 - 核对实物下位机固件协议、车型、串口和 IMU 配置，原厂默认 mini_mec 不代表实际车型。
-- 在 Humble 环境补齐 package.xml / CMakeLists.txt 声明的依赖，再单独编译这三个包；当前迁入代码尚未编译或实机验证。
+- 2026-09-20 已补齐独立测试容器依赖，三个包在 Linux ARM64 Humble 编译通过；尚未对修复版本进行 Jetson/串口实测。运行 `bash scripts/test_chassis_container.sh` 可在副本中编译，不移除源目录 COLCON_IGNORE。
 - 整理独立底盘启动入口。原厂 launch 保留了相机、外置 IMU、超声波等条件依赖，本次未复制整个整车功能栈，不应直接把原厂整车 launch 当作已可用入口。
 - 后续再接目标状态到速度控制、指令仲裁和失联停车逻辑。本次不生成车辆指令。
 
 目前保留 `COLCON_IGNORE`。取消忽略只影响包发现和构建，并不等于启动节点。
+
+本地修复拒绝不足/超出四项、非有限或越界机械臂输入；正常与析构路径均只发送 10 字节机械臂帧；安全扩展显式填写帧尾。用真实回调代码和串口记录替身完成 ASan/UBSan 检查。目标固件是否支持这些扩展仍待核对。

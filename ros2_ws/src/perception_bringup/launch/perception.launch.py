@@ -5,7 +5,8 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.launch_description_sources import AnyLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.substitutions import FindPackageShare
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -26,6 +27,7 @@ def launch_route(context):
         parameters = [{name: ParameterValue(LaunchConfiguration(name).perform(context), value_type=str) for name in
                        ('model_path', 'device', 'color_topic', 'depth_topic', 'camera_info_topic')}]
         parameters[0].update({
+            'nms_free': LaunchConfiguration('nms_free').perform(context) == 'true',
             'depth_registered': LaunchConfiguration('depth_registered').perform(context) == 'true',
             'image_size': int(LaunchConfiguration('image_size').perform(context)),
             'sync_slop_s': float(LaunchConfiguration('sync_slop_s').perform(context)),
@@ -51,11 +53,16 @@ def launch_route(context):
             # The installed console script may have a system-Python shebang.
             import shlex
             node_options['prefix'] = [shlex.quote(python)]
-    return [Node(
+    nodes = [Node(
         **node_options, package=package, executable=executable,
         namespace='perception', output='screen',
         parameters=parameters,
     )]
+    if route == 'yolo':
+        nodes.append(Node(package='yolo_person_tracker', executable='target_transform',
+                          namespace='perception', output='screen',
+                          parameters=[LaunchConfiguration('camera_mount_config').perform(context)]))
+    return nodes
 
 
 def launch_bridge(context):
@@ -76,9 +83,12 @@ def generate_launch_description():
         DeclareLaunchArgument('akimbo_shoulder_above_hand_min_mm', default_value='50.0'),
         DeclareLaunchArgument('akimbo_window_frames', default_value='1'),
         DeclareLaunchArgument('akimbo_min_votes', default_value='1'),
+        DeclareLaunchArgument('camera_mount_config', default_value=PathJoinSubstitution([
+            FindPackageShare('perception_bringup'), 'config', 'camera_mount.yaml'])),
         DeclareLaunchArgument('yolo_python', default_value=''),
         DeclareLaunchArgument('model_path', default_value=''),
         DeclareLaunchArgument('device', default_value='cpu'),
+        DeclareLaunchArgument('nms_free', default_value='true', choices=['true', 'false']),
         DeclareLaunchArgument('image_size', default_value='640'),
         DeclareLaunchArgument('depth_registered', default_value='false', choices=['true', 'false']),
         DeclareLaunchArgument('color_topic', default_value='/camera/color/image_rect'),

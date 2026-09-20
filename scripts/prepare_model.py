@@ -1,28 +1,49 @@
 #!/usr/bin/env python3
-"""Copy verified model bytes from the user's local vendor archive; never load weights."""
+"""Prepare a manifest-pinned model; only this explicit command may download weights."""
+import argparse
 import hashlib
 import json
 from pathlib import Path
 import shutil
+import tempfile
+import urllib.request
 
 
 def main():
     root = Path(__file__).resolve().parents[1]
-    entry = json.loads((root / 'models/manifest.json').read_text())['models'][0]
-    source = root / 'JP6.2_wheeltec_ros2_src_20260903/ultralytics_ros2/model/yolo11n.pt'
+    manifest = json.loads((root / 'models/manifest.json').read_text())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--model', default=manifest['default_model'],
+                        choices=[item['name'] for item in manifest['models']])
+    args = parser.parse_args()
+    entry = next(item for item in manifest['models'] if item['name'] == args.model)
     target = root / 'models' / entry['local_path']
-    if not source.is_file():
-        raise SystemExit('原厂模型未找到，请恢复本地厂商资料目录。')
-    if hashlib.sha256(source.read_bytes()).hexdigest() != entry['sha256']:
-        raise SystemExit('原厂模型与清单哈希不符，未复制。')
+
+    def verify(path):
+        return (path.stat().st_size == entry['size_bytes']
+                and hashlib.sha256(path.read_bytes()).hexdigest() == entry['sha256'])
+
     if target.exists():
-        if hashlib.sha256(target.read_bytes()).hexdigest() == entry['sha256']:
-            print('模型已存在且哈希一致。')
+        if verify(target):
+            print(f'模型已存在且 SHA-256 一致：{target}')
             return
         raise SystemExit('目标已有不同内容，未覆盖。')
     target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(source, target)
-    print(f'已复制并校验：{target}；尚未加载推理。')
+    with tempfile.NamedTemporaryFile(dir=target.parent, suffix='.part', delete=False) as file:
+        temporary = Path(file.name)
+    try:
+        if 'url' in entry:
+            with urllib.request.urlopen(entry['url'], timeout=60) as response, temporary.open('wb') as out:
+                shutil.copyfileobj(response, out)
+        else:
+            source = root / 'JP6.2_wheeltec_ros2_src_20260903/ultralytics_ros2/model' / entry['name']
+            shutil.copyfile(source, temporary)
+        if not verify(temporary):
+            raise SystemExit('模型大小或 SHA-256 与清单不符，未安装。')
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    print(f'已准备并校验：{target}；尚未加载推理。')
 
 
 if __name__ == '__main__':

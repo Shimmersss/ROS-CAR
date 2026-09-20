@@ -64,6 +64,24 @@ class PersonFollowerNode(Node):
         self.latest_target = msg
         self.received_at = time.monotonic()
 
+    def _source_is_fresh(self, target):
+        if target.is_simulated or target.source not in ('astra', 'yolo'):
+            return False
+        now = self.get_clock().now().nanoseconds * 1e-9
+        def fresh(stamp):
+            value = stamp.sec + stamp.nanosec * 1e-9
+            return value > 0 and 0 <= now - value <= self.message_timeout_s
+        if not fresh(target.header.stamp):
+            return False
+        # Astra Bodylist has no sensor timestamp: retain its explicit unknown-age
+        # contract, while still checking publication and local receipt deadlines.
+        if target.source == 'astra' and (target.observation_stamp.sec == 0
+                                        and target.observation_stamp.nanosec == 0):
+            return True
+        return (fresh(target.observation_stamp)
+                and math.isfinite(target.measurement_age_s)
+                and 0 <= target.measurement_age_s <= self.message_timeout_s)
+
     def _control_tick(self):
         now = time.monotonic()
         age_s = (
@@ -72,7 +90,7 @@ class PersonFollowerNode(Node):
         )
         target = self.latest_target
         enabled = bool(self.get_parameter('enabled').value)
-        usable = target is not None and target_is_usable(
+        usable = target is not None and self._source_is_fresh(target) and target_is_usable(
             enabled,
             target.status,
             TargetState.TRACKING,

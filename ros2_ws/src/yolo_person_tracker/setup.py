@@ -16,7 +16,8 @@ setup(
     zip_safe=True,
     maintainer='ROSCAR maintainers',
     maintainer_email='maintainer@example.invalid',
-    description='YOLO11 tracking with registered depth and explicit selection.',
+    description='YOLO26 tracking with registered depth and explicit selection.',
     license='Proprietary',
-    entry_points={'console_scripts': ['tracker = yolo_person_tracker.node:main']},
+    entry_points={'console_scripts': ['tracker = yolo_person_tracker.node:main',
+                                       'target_transform = yolo_person_tracker.target_tf:main']},
 )
