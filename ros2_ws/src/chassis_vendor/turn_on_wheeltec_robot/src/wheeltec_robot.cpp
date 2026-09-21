@@ -1,4 +1,6 @@
 #include "turn_on_wheeltec_robot/wheeltec_robot.h"
+#include <cmath>
+#include <limits>
 
 
 /**************************************
@@ -157,6 +159,23 @@ void turn_on_robot::Watchdog()
  */
 void turn_on_robot::arm_cmd_Callback(const std_msgs::msg::Float32MultiArray arm_cmd_msg)
 {
+  if (arm_cmd_msg.data.size() != 4) {
+    RCLCPP_ERROR(this->get_logger(), "arm_cmd requires exactly four values");
+    return;
+  }
+  for (std::size_t i = 0; i < 3; ++i) {
+    const double scaled = static_cast<double>(arm_cmd_msg.data[i]) * 1000.0;
+    if (!std::isfinite(scaled) || scaled < std::numeric_limits<int16_t>::min() ||
+        scaled > std::numeric_limits<int16_t>::max()) {
+      RCLCPP_ERROR(this->get_logger(), "arm_cmd joint outside finite int16 milliradian range");
+      return;
+    }
+  }
+  if (!std::isfinite(arm_cmd_msg.data[3]) || arm_cmd_msg.data[3] < 0 ||
+      arm_cmd_msg.data[3] > 255 || std::floor(arm_cmd_msg.data[3]) != arm_cmd_msg.data[3]) {
+    RCLCPP_ERROR(this->get_logger(), "arm_cmd gripper must be an integer byte");
+    return;
+  }
   //  printf("joint_states_Callback \n");
        if(fabs(last_A-arm_cmd_msg.data[0])>0.01||
         fabs(last_B-arm_cmd_msg.data[1])>0.01||
@@ -187,7 +206,7 @@ void turn_on_robot::arm_cmd_Callback(const std_msgs::msg::Float32MultiArray arm_
 
   try
   {
-    Stm32_Serial.write(Send_Data.tx,sizeof (Send_Data.tx)); //向串口发数据
+    Stm32_Serial.write(Send_Data.tx,10); //向串口发数据
     //ROS_INFO_STREAM("New control command");//显示受到了新的控制指令  
   }
   catch (serial::IOException& e)
@@ -444,7 +463,8 @@ void turn_on_robot::Security_Callback(const std_msgs::msg::Int8 &Security_Flag)
   Send_Data.tx[3] = 0;Send_Data.tx[4] = 0;
   Send_Data.tx[5] = 0;Send_Data.tx[6] = 0;
   Send_Data.tx[7] = 0;Send_Data.tx[8] = 0;
-  Send_Data.tx[9]=Calculate_BCC(Send_Data.tx, SEND_DATA_SIZE - 2); //BCC check byte //BCC校验位  Send_Data.tx[10]=FRAME_TAIL; //frame tail 0x7D //帧尾0X7D
+  Send_Data.tx[9]=Calculate_BCC(Send_Data.tx, SEND_DATA_SIZE - 2);
+  Send_Data.tx[10]=FRAME_TAIL;
   try
   {
     Stm32_Serial.write(Send_Data.tx,sizeof (Send_Data.tx)); //Sends data to the downloader via serial port //通过串口向下位机发送数据 

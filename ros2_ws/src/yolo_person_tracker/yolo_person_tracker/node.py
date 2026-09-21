@@ -2,6 +2,8 @@
 import copy
 import math
 import time
+from functools import wraps
+from threading import RLock
 from concurrent.futures import ThreadPoolExecutor
 
 import cv2
@@ -10,6 +12,8 @@ import message_filters
 import rclpy
 from cv_bridge import CvBridge, CvBridgeError
 from rclpy.node import Node
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, CameraInfo
 from std_srvs.srv import Trigger
@@ -18,17 +22,23 @@ from person_interfaces.msg import TargetState
 from .backend import YoloBackend
 from .depth import measure
 from .state import Selection
+from .input_contract import stamp_seconds, validate_pair
 
 
-def stamp_seconds(stamp):
-    return stamp.sec + stamp.nanosec * 1e-9
+def serialized(method):
+    """Keep selection/snapshot/future transitions atomic across callback groups."""
+    @wraps(method)
+    def call(self, *args, **kwargs):
+        with self.state_lock:
+            return method(self, *args, **kwargs)
+    return call
 
 
 class TrackerNode(Node):
     def __init__(self, backend=None, **kwargs):
         super().__init__('yolo_person_tracker', **kwargs)
         defaults = {
-            'model_path': '', 'device': 'cpu', 'image_size': 640,
+            'model_path': '', 'device': 'cpu', 'image_size': 640, 'nms_free': True,
             'color_topic': '/camera/color/image_rect',
             'depth_topic': '/camera/aligned_depth_to_color/image_raw',
             'camera_info_topic': '/camera/color/camera_info',
@@ -41,6 +51,10 @@ class TrackerNode(Node):
             raise ValueError('Require 0 < sync_slop_s < max_age_s')
         if self.cfg['image_size'] < 32:
             raise ValueError('image_size must be at least 32')
+        self.state_lock = RLock()
+        self.input_group = MutuallyExclusiveCallbackGroup()
+        self.state_group = MutuallyExclusiveCallbackGroup()
+        self.positions = {}
         self.bridge = CvBridge()
         self.selection = Selection()
         self.info = None
@@ -55,14 +69,14 @@ class TrackerNode(Node):
         self.pub = self.create_publisher(TargetState, 'target_state', 10)
         self.marker_pub = self.create_publisher(Marker, 'target_marker', 10)
         self.image_pub = self.create_publisher(Image, 'detections_image', 2)
-        self.create_service(Trigger, 'lock_target', self.lock_target)
-        self.create_service(Trigger, 'release_target', self.release_target)
+        self.create_service(Trigger, 'lock_target', self.lock_target, callback_group=self.state_group)
+        self.create_service(Trigger, 'release_target', self.release_target, callback_group=self.state_group)
         self.create_subscription(CameraInfo, self.cfg['camera_info_topic'],
-                                 self.on_info, qos_profile_sensor_data)
+                                 self.on_info, qos_profile_sensor_data, callback_group=self.input_group)
         self.color_sub = message_filters.Subscriber(
-            self, Image, self.cfg['color_topic'], qos_profile=qos_profile_sensor_data)
+            self, Image, self.cfg['color_topic'], qos_profile=qos_profile_sensor_data, callback_group=self.input_group)
         self.depth_sub = message_filters.Subscriber(
-            self, Image, self.cfg['depth_topic'], qos_profile=qos_profile_sensor_data)
+            self, Image, self.cfg['depth_topic'], qos_profile=qos_profile_sensor_data, callback_group=self.input_group)
         self.sync = message_filters.ApproximateTimeSynchronizer(
             [self.color_sub, self.depth_sub], queue_size=5, slop=self.cfg['sync_slop_s'])
         self.sync.registerCallback(self.on_pair)
@@ -74,12 +88,15 @@ class TrackerNode(Node):
                 self.error = 'Configure an existing local model_path; no automatic weight download'
             else:
                 self.loading = self.pool.submit(YoloBackend, self.cfg['model_path'],
-                                                self.cfg['device'], self.cfg['image_size'])
-        self.timer = self.create_timer(.05, self.tick)
+                                                self.cfg['device'], self.cfg['image_size'],
+                                                self.cfg['nms_free'])
+        self.timer = self.create_timer(.05, self.tick, callback_group=self.state_group)
 
+    @serialized
     def on_info(self, msg):
         self.info = msg
 
+    @serialized
     def lock_target(self, request, response):
         fresh = self.snapshot is not None and self.fresh_snapshot()
         if self.error or not fresh:
@@ -88,6 +105,7 @@ class TrackerNode(Node):
             response.success, response.message = self.selection.lock(max_age=self.cfg['max_age_s'])
         return response
 
+    @serialized
     def release_target(self, request, response):
         self.selection.release()
         response.success, response.message = True, 'Target released'
@@ -103,41 +121,16 @@ class TrackerNode(Node):
         return (self.fresh(self.snapshot[0], self.snapshot[2])
                 and self.fresh(self.snapshot[5], self.snapshot[2]))
 
+    @serialized
     def on_pair(self, color, depth):
         if self.backend is None or not self.cfg['depth_registered'] or self.future is not None:
             return
         received_at = time.monotonic()
         try:
             info = self.info
-            if info is None:
-                raise ValueError('Waiting for color CameraInfo')
-            if not self.fresh(color, received_at) or not self.fresh(depth, received_at):
-                raise ValueError('Zero, future or expired image timestamp')
-            if abs(stamp_seconds(color.header.stamp)-stamp_seconds(depth.header.stamp)) > self.cfg['sync_slop_s']:
-                raise ValueError('RGB/depth timestamps exceed sync tolerance')
-            if (not color.header.frame_id or color.header.frame_id != depth.header.frame_id
-                    or color.header.frame_id != info.header.frame_id):
-                raise ValueError('Color, registered depth and CameraInfo must share optical frame')
-            if (color.width, color.height) != (depth.width, depth.height) or (
-                    color.width, color.height) != (info.width, info.height):
-                raise ValueError('Color, registered depth and calibration dimensions differ')
-            if (info.binning_x > 1 or info.binning_y > 1
-                    or info.roi.x_offset or info.roi.y_offset):
-                raise ValueError('Binned/cropped calibration requires explicit normalization')
-            # Inputs must be rectified. P is the rectified projection, not raw-image K.
-            intrinsics = (info.p[0], info.p[5], info.p[2], info.p[6])
-            if (not all(math.isfinite(v) for v in intrinsics)
-                    or intrinsics[0] <= 0 or intrinsics[1] <= 0
-                    or info.p[3] != 0 or info.p[7] != 0):
-                raise ValueError('Invalid or unsupported rectified color projection matrix')
-            if color.encoding not in ('rgb8', 'bgr8', 'rgba8', 'bgra8'):
-                raise ValueError('Expected color RGB/BGR image')
-            image = self.bridge.imgmsg_to_cv2(color, desired_encoding='bgr8').copy()
-            if depth.encoding not in ('16UC1', '32FC1'):
-                raise ValueError('Depth must be 16UC1 millimetres or 32FC1 metres')
-            metres = self.bridge.imgmsg_to_cv2(depth, desired_encoding='passthrough').astype(np.float32)
-            if depth.encoding == '16UC1':
-                metres *= .001
+            intrinsics = validate_pair(
+                color, depth, info, self.get_clock().now().nanoseconds*1e-9,
+                self.cfg['max_age_s'], self.cfg['sync_slop_s'])
             stamp = stamp_seconds(color.header.stamp)
             key = (color.header.frame_id, color.width, color.height, tuple(info.p))
             reset = self.last_key is not None and (
@@ -148,18 +141,26 @@ class TrackerNode(Node):
                 self.selection.reset_stream()
             self.last_key, self.last_stamp, self.last_input_at = key, stamp, received_at
             self.error = ''
-            self.future = self.pool.submit(self.infer, image, reset)
-            self.pending = (color, metres, received_at, intrinsics, image, depth)
+            self.future = self.pool.submit(self.process_pair, color, depth, received_at, intrinsics, reset)
         except (ValueError, TypeError, cv2.error, CvBridgeError) as exc:
             self.error = str(exc)
             self.snapshot = None
             self.selection.candidates = []
 
-    def infer(self, image, reset):
+    def process_pair(self, color, depth, received_at, intrinsics, reset):
+        # One worker owns all backend calls; no callback can reset/update ByteTrack concurrently.
+        bridge = CvBridge()
+        image = bridge.imgmsg_to_cv2(color, desired_encoding='bgr8').copy()
+        metres = bridge.imgmsg_to_cv2(depth, desired_encoding='passthrough').astype(np.float32)
+        if depth.encoding == '16UC1':
+            metres *= .001
         if reset:
             self.backend.reset()
-        return self.backend.infer(image)
+        detections = self.backend.infer(image)
+        positions = {d.track_id: measure(metres, d.box, intrinsics) for d in detections}
+        return (color, metres, received_at, intrinsics, image, depth), detections, positions
 
+    @serialized
     def tick(self):
         if self.loading is not None and self.loading.done():
             try:
@@ -171,11 +172,10 @@ class TrackerNode(Node):
             self.loading = None
         if self.future is not None and self.future.done():
             try:
-                detections = self.future.result()
-                self.snapshot = self.pending
-                self.selection.update(detections, self.pending[0].width, self.pending[2])
+                self.snapshot, detections, self.positions = self.future.result()
+                self.selection.update(detections, self.snapshot[0].width, self.snapshot[2])
                 if self.fresh_snapshot():
-                    self.publish_image(self.pending[0], self.pending[4], detections)
+                    self.publish_image(self.snapshot[0], self.snapshot[4], detections)
             except Exception as exc:
                 self.error = f'Inference failed: {type(exc).__name__}: {exc}'
                 self.snapshot = None
@@ -211,7 +211,7 @@ class TrackerNode(Node):
             else:
                 msg.status = TargetState.TRACKING
                 msg.confidence = chosen.confidence
-                xyz = measure(depth, chosen.box, intrinsics)
+                xyz = self.positions.get(chosen.track_id)
                 msg.detail = 'Tracked; torso depth rejected' if xyz is None else 'Tracked; registered torso depth'
                 if xyz is not None:
                     msg.position_valid = True
@@ -254,11 +254,14 @@ class TrackerNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = TrackerNode()
+    executor = MultiThreadedExecutor(num_threads=2)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        executor.shutdown()
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

@@ -1,11 +1,14 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>yolo_person_tracker</name><version>0.1.0</version>
-  <description>YOLO11 person tracking with registered depth and explicit selection.</description>
+  <description>YOLO26 person tracking with registered depth and explicit selection.</description>
   <maintainer email="maintainer@example.invalid">ROSCAR maintainers</maintainer>
   <license>Proprietary</license>
   <buildtool_depend>ament_python</buildtool_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>tf2_ros_py</exec_depend>
+  <exec_depend>tf2_geometry_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>person_interfaces</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>cv_bridge</exec_depend>

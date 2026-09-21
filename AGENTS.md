@@ -1,6 +1,6 @@
 # 项目协作约定
 
-1. 每次完成项目更新后，及时更新 AGENTS.md 和 WORKLOG.md，并做一轮最小程度的审查。
+1. 每次项目更新后更新 WORKLOG.md，并做与改动范围相称的最小审查；仅在长期规则或项目入口变化时更新 AGENTS.md，避免堆积历史日志。
 2. 缺少必要环境时主动补齐；不得将静态检查描述为编译通过或实机验证。
 
 ## 当前上下文（2026-09-14）
@@ -107,3 +107,11 @@
 
 - 2026-09-20 用户要求审查当天新增代码并修复：已修复 SIGTERM/重复信号停车清理、跟随请求 frame 写死与红色目标 frame 未透传、性能开关漏传、短暂 TF 到达延迟误锁存、导航状态类型校验、雷达健康计时暂停，以及构建/同步遗漏。保护新增最小量程盲区必须位于车体内的校验；未确认参数仍不影响原感知。审查清单见 docs/2026-09-20代码审查.md；本轮仅本机，无远端/硬件操作。
 - 本轮修复最终验证：导航、原功能完整回归、雷达专项全部退出码0；11主动包、3底盘包、2雷达包构建及真实驱动PTY验证通过。新增SIGTERM最终零速/重复信号清理、TF短延迟与持续缺失、盲区、错误状态类型、暂停ROS时钟等回归通过。日志 artifacts/review-navigation-final.log、review-regression-final.log、review-radar.log；结构/配置/ShellCheck/同步单测及最小复审通过。
+
+- 2026-09-20 用户再次明确 B 方案仅本机完善。本轮新增只读 `scripts/check_rgbd_input.py` 与共享 `input_contract.py`，输出帧率、缺流/陈旧状态、时间差/消息年龄、内参和全图深度有效率 JSON；`metadata_pass` 仅表示格式/时间/解码预检，`registration_verified` 始终 false。正式 B 节点同步加强 P 矩阵检查。Linux ARM64 Humble 8 包编译（7.26s）、21 项 A、11 项 B、14 项语音逻辑、A/B 合成及路由回归全部通过；未访问或部署小车。厂商源码发现配准设置失败可能仍标 aligned frame、OpenNI 图像使用回调时刻打时间戳，后续必须现场另验配准/同步。详见 docs/方案B实现与验收.md。
+- 2026-09-20 用户选择 YOLO26s 检测版并要求官方预训练权重/加速推理。已从 Ultralytics assets v8.4.0 下载 yolo26s.pt（20,422,725 字节），与官方 digest 的 SHA-256 `646f8bc3fe0a656803d95c294f7852321748cb29d13466a1af8862e2db384a1b` 一致；模型准备脚本默认选该权重，保留 YOLO11n 基线。Ultralytics 固定 8.4.156、thop 2.1.6，B 默认 `nms_free=true`（nms=False）和固定方形输入，继续 ByteTrack/相机深度。Mac 真实权重空图与官方 bus.jpg 四帧跟踪通过；不是现场真人/遮挡验收。TensorRT FP16 导出入口 scripts/export_yolo26_engine.py 已准备，默认仅计划，--execute 仅允许目标 Jetson，engine 尚未构建。仍仅本机，未访问或部署小车；8 包 Humble 编译、48 项逻辑测试、A/B 合成及路由回归通过。
+- 2026-09-20 用户要求补齐 B 的受控并发与真实 tf2 三维变换，并强调未标定不能影响既有功能。跟踪器改为 2 线程 ROS executor + 单一工作线程顺序图像转换/YOLO/ByteTrack/测距，回调状态用 RLock 保护。独立 target_transform 只派生 target_state_base/target_marker_base，原光学 target_state、图像、Marker 与锁定接口不变。camera_mount.yaml 用零平移/单位四元数占位，extrinsics_calibrated=false、publish_mount_tf=false，不把占位 TF 写入现有树；标定缺失只让新 base 位置无效。tf2 按 observation_stamp 非阻塞查询，base 偏角左正，旧光学偏角右正，禁止直接把新 base 话题接给旧光学 follower。Linux ARM64 Humble 8 包编译（7.28s）、48 项逻辑、TF/并发专项及完整合成/路由回归通过，包含未标定时原 TRACKING/测距/图像/Marker 正常的断言。仅本机，实际安装外参和实机时延仍未验收。
+
+- 2026-09-20 本机代码审查见 `docs/代码审查-2026-09-20.md`：确认跟随节点未拒绝模拟目标、仅按接收时刻判断新鲜度（均本机拦截速度输出复现），可选 GPIO 禁用参数在初始化后失效（假 GPIO 复现）；另发现厂商 arm_cmd 数组无长度检查、A 服务重启退避期可重复手动启动。均待修复，本轮未改业务代码、未部署或启动车辆。B 未标定兼容、TF 与并发专项测试通过。
+
+- 2026-09-20 用户授权全部修复审查问题：R1–R5 和两项串口遗留问题已本地修复。跟随拒绝模拟/未知来源与过期发布/观测，保留 A 未知传感器时间戳契约；GPIO 禁用/退出收尾改为定时器；A 服务安装后统一由 systemd 管理，手动生命周期加 flock；机械臂输入检查及 10 字节发送、安全帧尾均修正。8 主动包编译、48 逻辑测试和新增控制/GPIO/生命周期回归、既有 TF/并发/A/B/路由回归通过。另补齐容器依赖并首次在本机独立副本编译串口 3 包，通过真实回调串口替身 ASan/UBSan 检查；COLCON_IGNORE 保留，扩展固件支持未确认，无部署/实机验证。SOURCE_MANIFEST 原哈希保留，local_modifications 记录本地补丁哈希。

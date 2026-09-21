@@ -38,3 +38,9 @@ N10P 本机验证运行 `bash scripts/test_radar_container.sh`；Linux/Jetson �
 受保护跟随入口为 `ros2 launch motion_guard follow.launch.py`，默认仅感知，不启动底盘或雷达；已有带底盘红色路线也接入 guard。`motion_enabled=true` 不等于已授权，须先填写确认 safety.yaml，再调用 `/control/arm`。停止用 `/control/stop`。本地源码更新未部署到在线服务；部署前阅读 motion_guard/README.md 的接口迁移和停车模型限制。
 
 可选导航环境：安装 `ros-humble-navigation2 ros-humble-nav2-bringup ros-humble-slam-toolbox`，再构建主动工作区。`deploy/navigation-test.Dockerfile` 与 `scripts/test_navigation_container.sh` 提供本机 ARM64 Humble 的真实导航节点测试。未自动部署或新增自启动，设备启动、标定及 Foxglove 说明见 `docs/导航与自动绕障.md`。
+
+### 2026-09-20 本机审查修复验证
+
+`bash scripts/test_container.sh` 包含控制来源/时效、GPIO 假设备及 A 启动互斥测试。随后可运行 `bash scripts/test_chassis_container.sh`，补齐独立容器依赖并在临时副本编译串口三包、运行串口字节检查；不移除工作区 COLCON_IGNORE、不访问串口。
+
+`route_a.sh` 发现 systemd 服务已安装时不再启动手动副本，包括自动重启退避期。已停止/失败服务应使用 `sudo systemctl start roscar-route-a.service`；手动模式生命周期通过 Linux `flock` 互斥。

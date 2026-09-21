@@ -94,6 +94,7 @@ class PersonFollowerNode(Node):
         if usable:
             stamp = lambda value: value.sec + value.nanosec*1e-9
             usable = (not target.is_simulated
+                      and target.source in ('astra', 'yolo', 'red_object')
                       and self.count_publishers('/perception/target_state') == 1
                       and observation_is_fresh(
                           self.get_clock().now().nanoseconds*1e-9,

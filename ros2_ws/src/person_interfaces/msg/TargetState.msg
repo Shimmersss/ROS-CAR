@@ -17,7 +17,8 @@ string target_id
 # true only for a fresh accepted observation (or explicit simulated observation).
 bool position_valid
 geometry_msgs/Point position
-# Metres and radians, using optical X right, Y down, Z forward.
+# Metres/radians. Optical topic: hypot(X,Z), atan2(X,Z), positive right.
+# target_state_base: hypot(X,Y), atan2(Y,X), positive left. See frame_id.
 float32 horizontal_distance_m
 float32 bearing_rad
 # NaN if unavailable; never silently use zero as a valid distance.

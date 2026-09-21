@@ -72,3 +72,12 @@ Foxglove 导入 `foxglove/red-layout.json`（仓库根目录下）后，上方�
 ## 导航接口
 
 `/navigation/follow_goal` 为 map 下 PoseStamped；`/navigation/state` 为 String JSON（stamp_ns、active、fault、ready、allow_motion、reason、distance_remaining）；`/navigation/cmd_vel_raw` 为 Nav2 Twist，仅经 velocity_adapter 转为现有 TwistStamped 请求。`/navigation/start_follow`、`/navigation/stop_follow` 均为 Trigger，不直接绕过 /control/arm。地图与代价地图是 OccupancyGrid，/plan 和 /local_plan 是 Path；/initialpose 为 AMCL PoseWithCovarianceStamped。所有导航速度仍须经过 motion_guard。
+
+
+## B 的可选车体坐标输出
+
+独立 TF 节点派生 `/perception/target_state_base`（相同消息类型）和 `/perception/target_marker_base`。原 `/perception/target_state` 始终保持光学坐标契约，不会因标定状态改变。
+
+base 话题的 `header.frame_id=base_link`（可配置），position 为 X 前、Y 左、Z 上，距离 `hypot(X,Y)`、偏角 `atan2(Y,X)`（左正）；header.stamp 为发布时刻，observation_stamp 沿用来源观测时间，TF 在观测时刻查询。位置只有源数据、标定确认和 TF 都有效时才有效；无效位置/距离/偏角为 NaN，Marker DELETE。消息结构不变，仅补充字段注释。
+
+未标定时默认不发布安装 TF，占位单位矩阵仅存于 camera_mount.yaml；原光学话题、检测图、锁定服务与 Marker 继续可用。**旧 person_follower 使用光学坐标语义，不能直接接 base 话题。** TF 节点仅接受真实 yolo 来源，不将 demo 当实际校准观测。整个 TF 节点退出时，新话题消费者仍需自行检测断流。

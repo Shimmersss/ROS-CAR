@@ -1,1 +1,1 @@
-"""YOLO person tracking entry point; inference integration pending."""
+"""YOLO/ByteTrack tracking with registered RGB-D measurements."""
