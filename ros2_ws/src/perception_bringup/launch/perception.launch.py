@@ -5,7 +5,8 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.launch_description_sources import AnyLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.substitutions import FindPackageShare
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -27,14 +28,17 @@ def launch_route(context):
         parameters = [{name: ParameterValue(LaunchConfiguration(name).perform(context), value_type=str) for name in
                        ('model_path', 'device', 'color_topic', 'depth_topic', 'camera_info_topic')}]
         parameters[0].update({
+            'nms_free': LaunchConfiguration('nms_free').perform(context) == 'true',
             'depth_registered': LaunchConfiguration('depth_registered').perform(context) == 'true',
             'image_size': int(LaunchConfiguration('image_size').perform(context)),
             'sync_slop_s': float(LaunchConfiguration('sync_slop_s').perform(context)),
             'max_age_s': float(LaunchConfiguration('max_age_s').perform(context)),
+            'visualization_fps': float(LaunchConfiguration('visualization_fps').perform(context)),
+            'visualization_scale': float(LaunchConfiguration('visualization_scale').perform(context)),
         })
         if route == 'red':
             parameters[0]['performance_enabled'] = LaunchConfiguration('performance_enabled').perform(context) == 'true'
-            for name in ('model_path', 'device', 'image_size'):
+            for name in ('model_path', 'device', 'image_size', 'nms_free'):
                 parameters[0].pop(name)
             for name in ('hue_low_max', 'hue_high_min', 'saturation_min', 'value_min', 'confirm_frames'):
                 parameters[0][name] = int(LaunchConfiguration(name).perform(context))
@@ -60,11 +64,16 @@ def launch_route(context):
             # The installed console script may have a system-Python shebang.
             import shlex
             node_options['prefix'] = [shlex.quote(python)]
-    return [Node(
+    nodes = [Node(
         **node_options, package=package, executable=executable,
         namespace='perception', output='screen',
         parameters=parameters,
     )]
+    if route == 'yolo':
+        nodes.append(Node(package='yolo_person_tracker', executable='target_transform',
+                          namespace='perception', output='screen',
+                          parameters=[LaunchConfiguration('camera_mount_config').perform(context)]))
+    return nodes
 
 
 def launch_bridge(context):
@@ -76,19 +85,34 @@ def launch_bridge(context):
     return [IncludeLaunchDescription(AnyLaunchDescriptionSource(bridge))]
 
 
+def launch_radar(context):
+    if LaunchConfiguration('with_radar').perform(context) != 'true':
+        return []
+    path = os.path.join(get_package_share_directory('perception_bringup'), 'launch', 'radar.launch.py')
+    return [IncludeLaunchDescription(AnyLaunchDescriptionSource(path), launch_arguments={
+        'radar_config': LaunchConfiguration('radar_config').perform(context),
+    }.items())]
+
+
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('route', default_value='yolo', choices=['astra', 'yolo', 'red', 'demo']),
         DeclareLaunchArgument('performance_enabled', default_value='true', choices=['true', 'false']),
+        DeclareLaunchArgument('with_radar', default_value='false', choices=['true', 'false']),
+        DeclareLaunchArgument('radar_config', default_value=os.path.join(
+            get_package_share_directory('perception_bringup'), 'config', 'radar.yaml')),
         DeclareLaunchArgument('with_foxglove', default_value='false', choices=['true', 'false']),
         DeclareLaunchArgument('akimbo_hand_above_base_min_mm', default_value='50.0'),
         DeclareLaunchArgument('akimbo_hand_shoulder_max_dx_mm', default_value='100.0'),
         DeclareLaunchArgument('akimbo_shoulder_above_hand_min_mm', default_value='50.0'),
         DeclareLaunchArgument('akimbo_window_frames', default_value='1'),
         DeclareLaunchArgument('akimbo_min_votes', default_value='1'),
+        DeclareLaunchArgument('camera_mount_config', default_value=PathJoinSubstitution([
+            FindPackageShare('perception_bringup'), 'config', 'camera_mount.yaml'])),
         DeclareLaunchArgument('yolo_python', default_value=''),
         DeclareLaunchArgument('model_path', default_value=''),
         DeclareLaunchArgument('device', default_value='cpu'),
+        DeclareLaunchArgument('nms_free', default_value='true', choices=['true', 'false']),
         DeclareLaunchArgument('image_size', default_value='640'),
         DeclareLaunchArgument('depth_registered', default_value='false', choices=['true', 'false']),
         DeclareLaunchArgument('color_topic', default_value='/camera/color/image_rect'),
@@ -96,6 +120,8 @@ def generate_launch_description():
         DeclareLaunchArgument('camera_info_topic', default_value='/camera/color/camera_info'),
         DeclareLaunchArgument('sync_slop_s', default_value='0.06'),
         DeclareLaunchArgument('max_age_s', default_value='0.5'),
+        DeclareLaunchArgument('visualization_fps', default_value='10.0'),
+        DeclareLaunchArgument('visualization_scale', default_value='0.5'),
         DeclareLaunchArgument('hue_low_max', default_value='10'),
         DeclareLaunchArgument('hue_high_min', default_value='170'),
         DeclareLaunchArgument('saturation_min', default_value='100'),
@@ -105,4 +131,5 @@ def generate_launch_description():
         DeclareLaunchArgument('lost_timeout_s', default_value='1.0'),
         OpaqueFunction(function=launch_route),
         OpaqueFunction(function=launch_bridge),
+        OpaqueFunction(function=launch_radar),
     ])

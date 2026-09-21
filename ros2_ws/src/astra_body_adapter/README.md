@@ -10,21 +10,6 @@ Bodylist 没有源时间戳或置信度，因此 `observation_stamp` 为零，`m
 
 `person_follower` 默认 `expected_source=astra`，新 A 组合入口设置为 `red_object`。拒绝模拟目标，并校验发布/观测时间和测量年龄；原 Astra 缺传感器时间戳时，仅在明确选择该来源后使用接收和发布时间。
 
-`person_follower` 订阅 `/perception/target_state` 并以20 Hz发布 `/cmd_vel`。它默认禁用，且只在目标处于 `TRACKING`、位置有效且最近 0.5 秒内有消息时输出非零速度。默认保持2米、最高前进 0.15 m/s、最高转向 0.5 rad/s，不自动倒车。
+`person_follower` 订阅 `/perception/target_state`，20 Hz 发布 `/control/cmd_vel_request`（TwistStamped，base_link），不再直接发布 `/cmd_vel`。仍检查真实来源、唯一目标发布者和观测时效；光学正右偏角对应负角速度。
 
-```bash
-ros2 run astra_body_adapter person_follower
-ros2 param set /person_follower enabled true
-```
-
-底盘驱动需单独启动并订阅 `/cmd_vel`。该节点不提供避障；无雷达、Nav2 或超声波保护时只能在受控空旷区域使用。
-
-叉腰判定默认恢复为厂商等价条件并单帧锁定：手高于脊柱基点 50 mm、手与对应肩膀横向差小于 100 mm、肩高于手 50 mm。可通过正式 launch 参数调整：
-
-```bash
-ros2 launch perception_bringup perception.launch.py route:=astra \
-  akimbo_hand_above_base_min_mm:=50.0 \
-  akimbo_hand_shoulder_max_dx_mm:=100.0 \
-  akimbo_shoulder_above_hand_min_mm:=50.0 \
-  akimbo_window_frames:=1 akimbo_min_votes:=1
-```
+运动必须通过 `motion_guard`，见 `ros2_ws/src/motion_guard/README.md`。保护入口默认未授权，尺寸/安装/停车参数未确认时只允许感知；授权后失效会停车并锁存。默认纯感知入口不启动跟随或保护节点。

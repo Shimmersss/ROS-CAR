@@ -1,0 +1,13 @@
+# Never publish placeholder transforms. Enable only after measuring these mounts.
+laser:
+  confirmed: false
+  parent: base_footprint
+  child: laser
+  xyz: [0.0, 0.0, 0.0]
+  quaternion_xyzw: [0.0, 0.0, 0.0, 1.0]
+camera:
+  confirmed: false
+  parent: base_footprint
+  child: camera_color_optical_frame
+  xyz: [0.0, 0.0, 0.0]
+  quaternion_xyzw: [-0.5, 0.5, -0.5, 0.5]

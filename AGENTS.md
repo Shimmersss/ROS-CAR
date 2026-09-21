@@ -1,6 +1,6 @@
 # 项目协作约定
 
-1. 每次完成项目更新后，及时更新 AGENTS.md 和 WORKLOG.md，并做一轮最小程度的审查。
+1. 每次项目更新后更新 WORKLOG.md，并做与改动范围相称的最小审查；仅在长期规则或项目入口变化时更新 AGENTS.md，避免堆积历史日志。
 2. 缺少必要环境时主动补齐；不得将静态检查描述为编译通过或实机验证。
 
 ## 当前上下文（2026-09-14）
@@ -84,3 +84,37 @@
 - 2026-09-16 新增 `scripts/chassis_motion_smoke_test.sh`：独立启动底盘驱动，使用隔离 ROS 域并要求显式车型；默认仅验证串口回传，`--move` 才由唯一 `/cmd_vel` 发布者执行短直行脉冲，随后连续归零并关闭驱动。三套底盘包已在 Jetson `/home/wheeltec/ROSCAR-red` 原生构建成功；按照片确认的 `mini_akm` 收到约 11.337 V 回传。0.08 m/s、1 秒测试的里程计反馈峰值约 0.088 m/s 并回零，远程未肉眼观察车身位移；测试后驱动退出、串口释放，实车测试状态见 WORKLOG.md。
 - 2026-09-16 已将分支 `a` 的红色目标跟随部署到 Jetson `/home/wheeltec/ROSCAR-red`。为释放相机停止旧 `roscar-route-a.service`（服务仍 enabled，停止后因旧脚本退出码显示 failed）；以 ROS 域 182 启动 Astra 注册深度、红色跟踪、Foxglove、`mini_akm` 底盘和 person_follower。实测相机彩色/深度同为 640×480 且 optical frame 一致，TargetState 为真实 `red_object`、约 0.03 s 新鲜度；底盘电压约 12.03 V，`/cmd_vel` 恰有一个发布者和一个订阅者。跟随参数已动态设为 enabled=true；当时无红色目标，复核速度全零。现场红物体运动效果仍待用户确认，且该路线无避障。
 - 2026-09-16 按用户要求暂停跟随工作、只处理语音。板上独立启动 wheeltec_mic_wake、xfyun_asr、voice_command_router、deepseek_chat、xfyun_tts，麦克风串口打开。确认默认 PulseAudio 错投板载声卡；USB 播放设备为 `plughw:CARD=Device,DEV=0`，测试音和讯飞中文 TTS 均由用户确认可听。修复 ASR 的 1 ms 接收轮询超时泄漏到下一帧发送、导致 Wi-Fi 下 `write operation timed out`；板上构建及 5 项测试通过，真人连续完成“你是人类吗”“你好吗”两轮唤醒→ASR→DeepSeek→TTS。`run_voice_assistant.sh` 默认开启 TTS，可用 `VOICE_TTS_ENABLED=false` 关闭。蜂鸣器继续关闭，不修改跟随代码或参数。
+- 2026-09-16 16:19 左右用户授权只读上车核对坐标：在线目录为 /home/wheeltec/ROSCAR-red，相机/红色节点 depth_registered=true、640×480 RGB 与16UC1深度均使用 camera_color_optical_frame。12秒240条TargetState中31条有效、182条depth rejected、其余LOST/SEARCHING；最大红块多数采样深度全零，全图有效深度约23–24%。后续6秒122条全部无有效位置。不能称稳定准确坐标；偶然掩码测距约1.107m未经物理真值核验。发现 person_follower enabled=true、12秒读到5条非零cmd_vel，已告知用户，未更改开关/部署/启动节点。深度CameraInfo.K有NaN而P有限，彩色K/P有限，需进一步核验标定及真实配准。
+- 2026-09-16 用户更换红纸板后复测：已将在线 /person_follower enabled 设为 false 并验证301条cmd_vel全零。15秒302/302条TargetState有效、ID red:17稳定，300条Marker ADD，frame=camera_color_optical_frame；中位XYZ约(0.0504,-0.0455,1.4020)m，Z窗口内为1.402m。新目标下坐标稳定恢复，未改过滤/配准算法。物理真值待用户量距，不能把发布稳定等同绝对准确。
+- 2026-09-16 用户明确要求打开跟随，已在线设置 /person_follower enabled=true 并读回确认。开启前红色目标red:22坐标有效、距离约1.402m、偏角0.0184rad且速度为零；开启后抽样速度仍为零，符合当前2m保持距离和偏角死区。未更改限速/距离/源码，非完整实车跟随验收。
+
+- 2026-09-16 用户要求超过1m跟随：FollowConfig默认目标距离改为1.0m、距离死区0，保留0.15m/s前进和0.5rad/s转向上限、不倒车。在线 /home/wheeltec/ROSCAR-red 定点修改并原生编译 astra_body_adapter 成功，停旧栈后在 tmux roscar-red-1m 中以运动关闭重启，读回新参数后恢复 enabled=true。抽样有效红色目标水平距离1.000526m、cmd_vel.linear.x约0.000351m/s；仅证明指令链路，不证明实际位移。1m按相机测得水平距离判断，先前约8cm测距偏差未校正。
+- 1米阈值回归：本机ARM64 Humble 9+3包构建、控制边界、PTY真实驱动/合成红色闭环及A/B/语音回归通过，见 artifacts/follow-1m-test.log；启动默认运动仍关闭，本次在线enabled=true为运行期设置。
+
+- 2026-09-16 用户进一步要求30cm跟随：共享FollowConfig默认目标距离改为0.30m（距离死区仍0），在线ROSCAR-red原生构建完成并重启至tmux roscar-red-30cm；读回0.3/0.0及初始disabled后恢复enabled=true。cmd_vel抽样前进0.15m/s、转向0，仅证明指令输出。启动默认运动仍关闭，测距偏差未校正。
+- 本机Linux ARM64 Humble完整回归通过：9个主动包与3个底盘包编译、真实驱动PTY和红色RGB-D闭环、A/B/red/demo/非法路由、视频/性能及语音测试，日志artifacts/follow-30cm-test.log。最小审查和git diff --check通过。
+- 2026-09-16：新增 `ros2_ws/src/radar_vendor/`，暂存厂商毫米波/激光雷达包；默认 `COLCON_IGNORE`，依赖、型号、串口和实机行为尚未验证。
+
+- 2026-09-16 雷达迁入复核：`ros2_ws/src/radar_vendor/` 已完整包含厂商 `wheeltec_radar/` 与 `wheeltec_lidar_ros2/` 下六组目录、7个ROS包；238个厂商文件逐一比对一致，现有239项清单（含本地README）哈希通过。无需重复复制，保留默认COLCON_IGNORE；本轮未编译、部署或启动。
+
+- 2026-09-20 用户要求雷达实际融入 ROS，并确认型号 N10P。本机接入 lslidar_driver 的 N10Plus 配置（串口 460800、10 Hz），新增 build_radar.sh 独立覆盖工作区、run_radar.sh、radar.launch.py 和 with_radar:=true 组合入口；默认现有感知不启用雷达。输出 /scan、/radar/points、/radar/status；安装 TF 默认关闭，只有确认实测外参才发布。未融合避障或车辆控制。
+- 本轮 9 个主动包与 lslidar_msgs/lslidar_driver 两包在 Linux ARM64 Humble 编译通过；真实驱动读取伪串口 N10Plus 108 字节合成帧，扫描/点云及左侧 1m、其余 2m 方向检查通过，健康状态、未标定 TF 拒绝及 A/B/red/demo/非法路由回归通过。修复厂商 X10 扫描 atan2(-y,x) 与同 frame 点云不一致问题，原始哈希保留，local_modifications 记补丁。日志 artifacts/radar-test.log；COLCON_IGNORE 保留，其他雷达包未启用。未 SSH/部署或读取实物，默认 /dev/wheeltec_lidar 仍需现场确认；详见 docs/N10P雷达接入.md。
+
+- 2026-09-20 用户要求补齐控制保护代码：新增主动包 motion_guard，person_follower 改发带时间戳的 /control/cmd_vel_request，由 guard 作为正式链路唯一 /cmd_vel 出口。默认 PERCEPTION_ONLY；尺寸、雷达安装和停车模型均有独立确认开关，未确认仅阻止运动，不改变感知。显式 arm 后方可动作，近障/目标或扫描或请求失效/TF 缺失/重复发布者触发 FAULT，恢复数据与重启均不自动续动。stop/disarm 服务发零回待命。
+- 保护采用包围车体并增加反应/刹车距离的全方向保守圆形包络，覆盖转弯和指令突变；默认未知回波不作为通行证。雷达 TF 按扫描时刻查询、仅支持水平二维安装；A 观测时间未知保持兼容。现有底盘命令与反馈超时继续保留。新的受保护组合入口默认跟随距离 1m，旧 FollowConfig 默认值未修改。
+- 新增 record_follow.sh / replay_follow.sh，回放域174、本机且仅白名单话题，速度重映射到 /replay/cmd_vel。新增 6 项纯保护测试、ROS 服务/故障锁存+真实 C++ 底盘伪串口测试、真实 rosbag 隔离回放测试。10 个主动包与 3 个底盘包本机构建通过，新增专项均通过，详见 artifacts/motion-guard-test.log。测试中的 legacy 红色跟随/串口回归使用明确标记的测试专用桥，正式启动只能经 guard。未 SSH/部署/启动车辆；停车模型和传感器覆盖仍需实车验收。
+
+- 2026-09-20 用户要求接入 SLAM、Nav2、自动绕障及 Foxglove。本机新增 navigation_bringup（第11个主动包），提供 SLAM Toolbox 建图、AMCL 已有地图定位、NavFn/DWB、观测时刻 TF 人体留距目标和串行取消/更新；模式互斥，速度统一经 motion_guard，默认不运动、不启底盘、不部署。
+- 新增 odom_tf 平面桥修正厂商 odom.position.z 存航向的问题（只影响 TF，不改原消息）；有 EKF 时必须禁用该桥。外参占位不发布，未确认标定不进入导航跟随。原 A/B 感知默认入口不变。Foxglove 地图/代价地图/路径/导航状态布局与录包隔离回放已补齐；实际客户端和实车导航仍待验收。完整启动与标定边界见 docs/导航与自动绕障.md。
+- 导航最终本机验收：11 主动包构建，真实 SLAM 地图、NavFn 障碍绕行路径、BT/DWB 原始速度、map_server/AMCL 定位输出以及导航桥故障/目标ID/停走状态测试通过；完整旧功能与真实驱动 PTY、rosbag 隔离回放回归通过。日志 artifacts/navigation-test.log、artifacts/navigation-regression.log；均为合成输入软件测试，不是实车自主导航成功。
+
+- 2026-09-20 用户要求审查当天新增代码并修复：已修复 SIGTERM/重复信号停车清理、跟随请求 frame 写死与红色目标 frame 未透传、性能开关漏传、短暂 TF 到达延迟误锁存、导航状态类型校验、雷达健康计时暂停，以及构建/同步遗漏。保护新增最小量程盲区必须位于车体内的校验；未确认参数仍不影响原感知。审查清单见 docs/2026-09-20代码审查.md；本轮仅本机，无远端/硬件操作。
+- 本轮修复最终验证：导航、原功能完整回归、雷达专项全部退出码0；11主动包、3底盘包、2雷达包构建及真实驱动PTY验证通过。新增SIGTERM最终零速/重复信号清理、TF短延迟与持续缺失、盲区、错误状态类型、暂停ROS时钟等回归通过。日志 artifacts/review-navigation-final.log、review-regression-final.log、review-radar.log；结构/配置/ShellCheck/同步单测及最小复审通过。
+
+- 2026-09-20 用户再次明确 B 方案仅本机完善。本轮新增只读 `scripts/check_rgbd_input.py` 与共享 `input_contract.py`，输出帧率、缺流/陈旧状态、时间差/消息年龄、内参和全图深度有效率 JSON；`metadata_pass` 仅表示格式/时间/解码预检，`registration_verified` 始终 false。正式 B 节点同步加强 P 矩阵检查。Linux ARM64 Humble 8 包编译（7.26s）、21 项 A、11 项 B、14 项语音逻辑、A/B 合成及路由回归全部通过；未访问或部署小车。厂商源码发现配准设置失败可能仍标 aligned frame、OpenNI 图像使用回调时刻打时间戳，后续必须现场另验配准/同步。详见 docs/方案B实现与验收.md。
+- 2026-09-20 用户选择 YOLO26s 检测版并要求官方预训练权重/加速推理。已从 Ultralytics assets v8.4.0 下载 yolo26s.pt（20,422,725 字节），与官方 digest 的 SHA-256 `646f8bc3fe0a656803d95c294f7852321748cb29d13466a1af8862e2db384a1b` 一致；模型准备脚本默认选该权重，保留 YOLO11n 基线。Ultralytics 固定 8.4.156、thop 2.1.6，B 默认 `nms_free=true`（nms=False）和固定方形输入，继续 ByteTrack/相机深度。Mac 真实权重空图与官方 bus.jpg 四帧跟踪通过；不是现场真人/遮挡验收。TensorRT FP16 导出入口 scripts/export_yolo26_engine.py 已准备，默认仅计划，--execute 仅允许目标 Jetson，engine 尚未构建。仍仅本机，未访问或部署小车；8 包 Humble 编译、48 项逻辑测试、A/B 合成及路由回归通过。
+- 2026-09-20 用户要求补齐 B 的受控并发与真实 tf2 三维变换，并强调未标定不能影响既有功能。跟踪器改为 2 线程 ROS executor + 单一工作线程顺序图像转换/YOLO/ByteTrack/测距，回调状态用 RLock 保护。独立 target_transform 只派生 target_state_base/target_marker_base，原光学 target_state、图像、Marker 与锁定接口不变。camera_mount.yaml 用零平移/单位四元数占位，extrinsics_calibrated=false、publish_mount_tf=false，不把占位 TF 写入现有树；标定缺失只让新 base 位置无效。tf2 按 observation_stamp 非阻塞查询，base 偏角左正，旧光学偏角右正，禁止直接把新 base 话题接给旧光学 follower。Linux ARM64 Humble 8 包编译（7.28s）、48 项逻辑、TF/并发专项及完整合成/路由回归通过，包含未标定时原 TRACKING/测距/图像/Marker 正常的断言。仅本机，实际安装外参和实机时延仍未验收。
+
+- 2026-09-20 本机代码审查见 `docs/代码审查-2026-09-20.md`：确认跟随节点未拒绝模拟目标、仅按接收时刻判断新鲜度（均本机拦截速度输出复现），可选 GPIO 禁用参数在初始化后失效（假 GPIO 复现）；另发现厂商 arm_cmd 数组无长度检查、A 服务重启退避期可重复手动启动。均待修复，本轮未改业务代码、未部署或启动车辆。B 未标定兼容、TF 与并发专项测试通过。
+
+- 2026-09-20 用户授权全部修复审查问题：R1–R5 和两项串口遗留问题已本地修复。跟随拒绝模拟/未知来源与过期发布/观测，保留 A 未知传感器时间戳契约；GPIO 禁用/退出收尾改为定时器；A 服务安装后统一由 systemd 管理，手动生命周期加 flock；机械臂输入检查及 10 字节发送、安全帧尾均修正。8 主动包编译、48 逻辑测试和新增控制/GPIO/生命周期回归、既有 TF/并发/A/B/路由回归通过。另补齐容器依赖并首次在本机独立副本编译串口 3 包，通过真实回调串口替身 ASan/UBSan 检查；COLCON_IGNORE 保留，扩展固件支持未确认，无部署/实机验证。SOURCE_MANIFEST 原哈希保留，local_modifications 记录本地补丁哈希。

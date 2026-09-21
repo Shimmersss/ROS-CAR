@@ -1,0 +1,975 @@
+{
+  "source": "JP6.2_wheeltec_ros2_src_20260903",
+  "items": [
+    {
+      "path": "README.md",
+      "sha256": "13a1771f8b83150693a20fd51cbc8145aad90fe7ade0eafac34928884b2c3fbc"
+    },
+    {
+      "path": "double_lidar_fusion/CMakeLists.txt",
+      "sha256": "5754410dd302c7a0ad7bda9e9348c83ab63af9556a318975f3a4d2314d0b3a05"
+    },
+    {
+      "path": "double_lidar_fusion/include/double_lidar_fusion/lidar_fusion.hpp",
+      "sha256": "09431e5c984d0d190d2be9f6c7b3ccff9b17dfab20af246616229087d03563d1"
+    },
+    {
+      "path": "double_lidar_fusion/launch/double_lidar_fusion.launch.py",
+      "sha256": "afb678b4bc884f31a6107a9c5413d959b122043cf44660d3351c1eeded5e2e61"
+    },
+    {
+      "path": "double_lidar_fusion/package.xml",
+      "sha256": "f5766b508332db888374098cbf7b9a5f591759b9376945075ab80a470a0a6a8a"
+    },
+    {
+      "path": "double_lidar_fusion/src/lidar_fusion.cpp",
+      "sha256": "5738a1eccf3a1981950b110f2512bb99cdcd043bac24a67043c34cccfb82eb84"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/CMakeLists.txt",
+      "sha256": "f6fc69f1cc1bceb57b2241ce04ce70115a84084b5befbea11af895c6c87c5e2a"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/include/ros2_api.h",
+      "sha256": "02ab49be3bc162469d7cf9b2cf1210841fa6f2935fe240a2a37d603473522667"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/ld06.launch.py",
+      "sha256": "26834425a0fee1192bf2ee64ae60bc884c465a08d7e9f0b948ccb9b3fed2cd96"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/ld06net.launch.py",
+      "sha256": "759ed398a870d6d6628b3fbf9f5ef979732370c3ce4666087c36563b3bde44b1"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/ld19.launch.py",
+      "sha256": "9420605d6fc3b9435aa0b67258c1c145298354fa678813cb54fc788b8c4da18d"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/stl06n.launch.py",
+      "sha256": "c191862e56fb528398943d2c4bccf04f9209edece6f98af51ca4eebcda6417d6"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/stl06nbj.launch.py",
+      "sha256": "6f9038e747a76222e4e501ffde109e1800069e108f502304b6b5d6387cfaf042"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/stl06nbjnet.launch.py",
+      "sha256": "0dbcddca847110819dd1e35824faa127937e90da259e3c5d8065a8fb0cdc9687"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/stl06nnet.launch.py",
+      "sha256": "df2eaab1ae9accd12084887226654648b4df3cf1113e729da888b3ffef25255f"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/stl06p.launch.py",
+      "sha256": "4b2b4eeb9dd72c27e3c4584c8c1128240e24e6827aa13a9906684c34f485686d"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/stl19n.launch.py",
+      "sha256": "e6e1c99605978f397bc7e76ffd436ed53537af5cf53ab2e2642fa8e2d6191bc5"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/stl19nnet.launch.py",
+      "sha256": "20f2d903a0b33f932275a2c23f11933d58893878d2b3328360180e5f729984ef"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/stl19p.launch.py",
+      "sha256": "2d85c2b929a8ffa55ae21753a2e63408fcab69fc882ef5b89d36b2073d40284c"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/stl19pnet.launch.py",
+      "sha256": "5894dc5a65e91d2ff355a615b441328ac494ab3cd45dafec2dec38bddd009003"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/stl26.launch.py",
+      "sha256": "e121f83e35475d7ba608952ddea413c1c467c2d4496b98aebc45a9cada5d7427"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/stl27l.launch.py",
+      "sha256": "4717643c8b7e349ac0c0ee5cd941b81ec6ed25b4fcba86a8226533628428bdfe"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/viewer_ld06.launch.py",
+      "sha256": "b7bfc96dda4e74486bdb14af8f0a4163685d4ea749eca79900f07c1f8584ea78"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/viewer_ld19.launch.py",
+      "sha256": "b73ee506dff0e03bf795bb98ed6283264b720203d3b4fd7ed8f384326242a02f"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/viewer_stl06n.launch.py",
+      "sha256": "d26ea417623c97dcf7071da0886fb80a2ac11754b4e55a8ca69cb0205893243b"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/viewer_stl06p.launch.py",
+      "sha256": "d26ea417623c97dcf7071da0886fb80a2ac11754b4e55a8ca69cb0205893243b"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/viewer_stl26.launch.py",
+      "sha256": "1f7f67cab8a62b97a13d55156cd7d6bdcc797b1d940be8fee18d54c8ae753777"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/launch/viewer_stl27l.launch.py",
+      "sha256": "88446aefda70f91aa8bd20db8517975a8b614ff6a556777c3cc84d8f6afc0679"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/package.xml",
+      "sha256": "4099a2ff9d65d80a7c0f094fe9ecea102177ef7f4eced757f1a54ec032106803"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/rviz2/ldlidar.rviz",
+      "sha256": "e75bef67e4c73bb0c16e9afd67ad280fa14dc406d40c079d50338261b10bc6ef"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar/src/ros2_node/main.cpp",
+      "sha256": "5557bbda88c7ebccee23cbb2ee569c290935dae4bc075ee090994240543be3ed"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar_driver/include/core/ldlidar_datatype.h",
+      "sha256": "8634602db9bec4940984d4332e8825dc33346baeb3f573e1923885e8a6b9d6cf"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar_driver/include/core/ldlidar_driver.h",
+      "sha256": "5fed31dd79482d8d8963955ca9e4a0652be9492d6d0dd1a4d199bd36161efcac"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar_driver/include/dataprocess/lipkg.h",
+      "sha256": "204246ea0553529076ea07e215b37a326dbb2aa4af09cba3056c2c52e68ad255"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar_driver/include/filter/tofbf.h",
+      "sha256": "55c2c620b93e7c950f99ac8fe002e192928632fa05f22b0e80d5c1486d20c897"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar_driver/include/logger/log_module.h",
+      "sha256": "c619d1edf3ef140f016d651bc06931a2d8f969ccb64f47ce92ff92f3aaef4f1e"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar_driver/include/networkcom/cmd_net_interface_linux.h",
+      "sha256": "89f67c9ff3115450589f3ae64f10920e0c5cc238b66d5cc0a9490585084f954e"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar_driver/include/serialcom/serial_interface_linux.h",
+      "sha256": "d0d525bff797316e7b5077e865d316d2c8dcd25927959c030325060d18438187"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar_driver/src/core/ldlidar_driver.cpp",
+      "sha256": "a720f6e9e9ff83caeaf547297ba342689830f973e58e0b734e2092e3289e8f27"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar_driver/src/dataprocess/lipkg.cpp",
+      "sha256": "53376a8b57563ceb211d6e6d7715eb467973ca2ee35e07f2ab746b7e25f66323"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar_driver/src/filter/tofbf.cpp",
+      "sha256": "06460632ebf62b1341d7828930198b48b60d28fb80ce4ce0fcb9ff93ab3b0cf8"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar_driver/src/logger/log_module.cpp",
+      "sha256": "fc46e5d70cff42c590529ab51c7fc73b9a50cacc09e64a0aa705743cc3431b52"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar_driver/src/networkcom/cmd_net_interface_linux.cpp",
+      "sha256": "6b6b7f606c78c069fb446af429cb9e595859a51b6b31aed8d03256374000f0df"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar_driver/src/serialcom/serial_interface_linux.cpp",
+      "sha256": "1e22a373d8900afc19e0d41926cfc295c73c3f7b7473020cbdd18112cafe5f59"
+    },
+    {
+      "path": "ldlidar_ros2/ldlidar_udev.sh",
+      "sha256": "f0fccec7cd0c3e64b78ac2c57aef3c70b6f6aca8e7a5d6350dc9380867bddb99"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/CMakeLists.txt",
+      "sha256": "567b253d02a9896597fe4f5f3c3b9915982d1500af978ca02d3010350bcc8f01"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/README.md",
+      "sha256": "32483bbdcfaca6d87ae4970db68f2e373beeb05d59d7b80b30163eb634ff4e24"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/README_EN.md",
+      "sha256": "052eeb9b8dfbc8228b362579c2adcbe8ea2b114ed3e74da8b13097da9fa8f660"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/config/filter_angle.yaml",
+      "sha256": "bcef7a020da12e42f70a473abbb54d06cb392cc716e1a4003564fb7496210793"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/config/lslidar_ch.yaml",
+      "sha256": "288563676455013c944a9e02d05729eb1ac076abc8b9bbe3ee0779091bfce237"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/config/lslidar_cx.yaml",
+      "sha256": "d0453fbd2243ce9c5c92828f2e716e567d415410cda2667d37911678bc7d33e2"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/config/lslidar_cx_left.yaml",
+      "sha256": "b13c1dae563b2462f00ed317521e584c88df9e13b04d1e6967d75e7c986bddef"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/config/lslidar_cx_right.yaml",
+      "sha256": "53df0f3ad1c363cead13a0b67bf161d5ddf978340e9258701b06584d9a13104b"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/config/lslidar_ls.yaml",
+      "sha256": "7187c45911de16d5cd86e52e5ffb9a4741fb111cea00f82aefe5dee932a299bd"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/config/lslidar_m10p_left.yaml",
+      "sha256": "6529deb3f41bcab29f67d55e9fb32029a96247891a80231457dc6b380f151662"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/config/lslidar_m10p_right.yaml",
+      "sha256": "b55913332dbc24184da133f1d854d88973f6d7a317f70cb84407594408d89c26"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/config/lslidar_x10.yaml",
+      "sha256": "50f8243ee5a1874aadfb53d3c28f825ac5dee8fcbf1685b52d56ce7a0851b84f"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/config/network_setup.yaml",
+      "sha256": "ea5dfe5e8b0f23b9c8ade848ec97341c60ee4f6a26fcb2fea4625d4535d5bd12"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/include/lslidar_driver/ThreadPool.h",
+      "sha256": "39ed9b40268cb8b759794ea5b9e76072afa643a97b77810eaef7a9b671085702"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/include/lslidar_driver/data_acquisition_strategy.hpp",
+      "sha256": "7fdcb2f0c7945d3424e08158f3b14c8cee17fa75e6c94a0d6745f2e654934be1"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/include/lslidar_driver/input.hpp",
+      "sha256": "1a4ef6a0353bac11ed2ced31da038aec437e9d68e5a622ca7c926db1a650f6d5"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/include/lslidar_driver/lsiosr.hpp",
+      "sha256": "db0d4e24314405a4ce5e422c6ff5223b7def44dee29c471bb8d05c347e6ee181"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/include/lslidar_driver/lslidar_ch_driver.hpp",
+      "sha256": "19bdb8646f493c5cf6136d778b8cbbefcf9cb06c5517225f0c283762238c19ac"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/include/lslidar_driver/lslidar_cx_driver.hpp",
+      "sha256": "9821c3a00955503428855c1fecf1a8cd8e433e9cfdf8a90fa9dc15c93c3f156b"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/include/lslidar_driver/lslidar_device_info.hpp",
+      "sha256": "6839f930ad0af515e916af6181665671410090a1d9288279ba49faa665c3f19f"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/include/lslidar_driver/lslidar_driver.hpp",
+      "sha256": "b787f75aa787fc529f0c16327f7ffa0fb833f5c7256c1d4d08e0b358c3c146bc"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/include/lslidar_driver/lslidar_log.hpp",
+      "sha256": "e7de0d6112e4571aeed69070ecb75b949e70035f7898ac6148ca393e7d127fa1"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/include/lslidar_driver/lslidar_ls_driver.hpp",
+      "sha256": "bb1214fb9e2e07ff0d130ac503faf9b6b517b049a5c5deea70abc31c5d8e9ebe"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/include/lslidar_driver/lslidar_pointcloud.hpp",
+      "sha256": "8e4fcfc802c5b33825a37865a367a524c024400ee585fb585e016c426f1fe021"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/include/lslidar_driver/lslidar_services.hpp",
+      "sha256": "bf87cd724e46bdc400e880e739343faaa72019a428f505fec25bdd47dc2a57f2"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/include/lslidar_driver/lslidar_x10_driver.hpp",
+      "sha256": "f1ba383729b9735cbcf22a508c48d8bc7551fbd47c2cf062cb1da250c426fd45"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/include/lslidar_driver/pointcloud_transform.hpp",
+      "sha256": "6eb0f1fc48738dd69601f14e27a72e1d8f8e6b60a45d620dafac86fbe8f6055b"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/launch/lslidar_ch_launch.py",
+      "sha256": "f25645bbb5c36f70a8fe9451c691303b2dd0a3a7e19bdac48021c232b6733a7b"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/launch/lslidar_cx_launch.py",
+      "sha256": "21be04f2356097e5c8e575faf7dc1976477f7e176a3dce0517893b123c28e8b0"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/launch/lslidar_double_launch.py",
+      "sha256": "b0851cb5a6baa74f06ddc9b1f2ff857cce35a0667ec004e2c77d258505adab56"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/launch/lslidar_ls_launch.py",
+      "sha256": "8d75e0cbaab7e3d27e544e00391c5fc1c0fc8ddb63ac26943dfe57a95280ba23"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/launch/lslidar_m10p_double.launch.py",
+      "sha256": "028d7d05c0bf115ac3bab523e56f1eeef02ebb6bbb4bb49be34e1b70baeac9a5"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/launch/lslidar_x10_launch.py",
+      "sha256": "a1f94082413e10974f9b49fd67b285a4b90d3285e5865d0edbbdbce7409d3776"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/package.xml",
+      "sha256": "61075a31bcc5f9f4be36d94e6c510188516072ce8ed28fb2161b599d0ba6147b"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/rviz/lslidar_ch.rviz",
+      "sha256": "587d80c6f54aa05bdc96537fd9088276b4f8e12423e4dbce9795653b8d4d11f7"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/rviz/lslidar_cx.rviz",
+      "sha256": "3f70e462075ec8b071ab3e786810ce2f12f1635a34a114e7a50111235053a51e"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/rviz/lslidar_ls.rviz",
+      "sha256": "51f5d1a40ca5e4fc35f32c99ec6b61975a47d5c719f2eaba6216a58abe8eacb3"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/rviz/lslidar_x10.rviz",
+      "sha256": "b8524a255506958cf08f82661127129945c26b3f04f9394c45189624f4f0bd35"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/src/input.cpp",
+      "sha256": "7c1d770beb33ce346cfac82e3976931fdbc43af77bdf589771a7b6fb27b40bc8"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/src/lsiosr.cpp",
+      "sha256": "8ba2ca4ecdc88c00f6ebcbc873abb751e2278c2df78b054e4f923f551133596a"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/src/lslidar_ch_driver.cpp",
+      "sha256": "f7e1c261e792399a33b81aa9b60035fab41f6325ad3fd5fdb46f89dff19e3db4"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/src/lslidar_cx_driver.cpp",
+      "sha256": "c37cf04ee9167487d5e4dffa8df10c723fadc7bd651857fc391f6862fcd3a76c"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/src/lslidar_device_info.cpp",
+      "sha256": "b69953a0799f9b7e48c6954bda41ccf87c88149c1965c61b9a2619117ff715fe"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/src/lslidar_driver_node.cpp",
+      "sha256": "ad4932c777a94cfd50d44f5a3b542d9f1a2421ed86ebf859c7eb957d2cbb6919"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/src/lslidar_ls_driver.cpp",
+      "sha256": "cc42d9b18456b6b57c0c80130f6c8681043b6be6c4ff7a863501c6739ab68040"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/src/lslidar_services.cpp",
+      "sha256": "f9063103ee257a26d75039dd60119ef496c15218db8e764ed1db13cb0cf5de2d"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/src/lslidar_x10_driver.cpp",
+      "sha256": "c1ba073b29c8621ce74f28734811f9d8bcca686e01d1c24913c87df214a5bcae"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_msgs/CMakeLists.txt",
+      "sha256": "d26dba3398020eaa519fff553ad0326684f665790606b0e887ebbef20160019b"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_msgs/msg/LslidarInformation.msg",
+      "sha256": "ec7aee2f1bd134e3965ffe16ee0841406ede1f4d731738926f6fc7111f897aeb"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_msgs/msg/LslidarPacket.msg",
+      "sha256": "dab59b87ad186114864dc150d2d8cb6cb4fac81b8c259ff64b3351798f034e7c"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_msgs/package.xml",
+      "sha256": "708217820d8163b90394177ec3fb05adbf8016e615fd1a2c2d4d77770e2d54f1"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_msgs/srv/AngleDistortionCorrection.srv",
+      "sha256": "f1c7a5955b7b77484537388948baa6f2e12394e2914c43f7f45464c52e0e2e10"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_msgs/srv/FrameRate.srv",
+      "sha256": "561056310b6c13d013a09b55b7f87f2e18a2cdc9219be5cb6f427b0635c837a9"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_msgs/srv/InvalidData.srv",
+      "sha256": "29d9aafa39988271cadef69e66ddea3435fca2b658b6752835bcd81d718f72d7"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_msgs/srv/IpAndPort.srv",
+      "sha256": "d44b7b748af701493063c1f07bdc8812972c1096802a2df3d709694af2a3143e"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_msgs/srv/MotorControl.srv",
+      "sha256": "ebff6cbabb43892e69582e7ab57510d1d29a14bf454fbf508553f01932c13400"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_msgs/srv/MotorSpeed.srv",
+      "sha256": "e33eb24b8bb56e44158ca0bb95f1e4883c6617e5d47ef1f9b0ef1aa2a1d5d33d"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_msgs/srv/PowerControl.srv",
+      "sha256": "54bcce21dcc0d594c54ba6157adf0950b3b0a19bc369776619e666fd2aa82a51"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_msgs/srv/RfdRemoval.srv",
+      "sha256": "562865285f9fe681792bdebe55b80e210b216d2e3489cba83a29910ec60a0313"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_msgs/srv/StandbyMode.srv",
+      "sha256": "85bfa19ffa4356dc6ce40fd867ff6da68906e2b84f9285917d76f96c60940455"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_msgs/srv/TailRemoval.srv",
+      "sha256": "16f838c09e493f677f054c5220f81e39e989785a6e52454473946bc56f5911f9"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_msgs/srv/TimeMode.srv",
+      "sha256": "2d7f90f37cb6dcb1cc4730cff6db431a47fd680615062ab089480ae076b4d251"
+    },
+    {
+      "path": "pointcloud_to_laserscan-humble/CHANGELOG.rst",
+      "sha256": "ec7a03672e81ca302eff45eb0825da4d62fa5339779788a1e55e602fa467e2a3"
+    },
+    {
+      "path": "pointcloud_to_laserscan-humble/CMakeLists.txt",
+      "sha256": "bb7563b3f0549483abec1eb7c8520cd13abd3a03d5ec0a9bca14cc3dbfb68bf6"
+    },
+    {
+      "path": "pointcloud_to_laserscan-humble/LICENSE",
+      "sha256": "6273b9e0f2e944f7c3f024205dab05f907ba0489fdf42c8caa61e0ddcf63be47"
+    },
+    {
+      "path": "pointcloud_to_laserscan-humble/README.md",
+      "sha256": "5c005900ce3f58855c3fec57addf4735ff68467fd242d95bd81246b9b6e99f1e"
+    },
+    {
+      "path": "pointcloud_to_laserscan-humble/include/pointcloud_to_laserscan/laserscan_to_pointcloud_node.hpp",
+      "sha256": "bf0b05dfc80fcb67b52f46a502593c2bd5b4a9db0a4f32a964f8c696dc586924"
+    },
+    {
+      "path": "pointcloud_to_laserscan-humble/include/pointcloud_to_laserscan/pointcloud_to_laserscan_node.hpp",
+      "sha256": "480d7e01f224ca1c8ec1fcb913404b1e891e9afe375f1177eaebcfdb78eae3c2"
+    },
+    {
+      "path": "pointcloud_to_laserscan-humble/include/pointcloud_to_laserscan/visibility_control.h",
+      "sha256": "feb3319264011bb6964b97ae392f837cad98dc6079d6d8d44102ae00bab39409"
+    },
+    {
+      "path": "pointcloud_to_laserscan-humble/launch/pointcloud_to_laserscan_launch.py",
+      "sha256": "f3e211bffcd10ff0aa27e476770b747a50ee9251465819f244e31171b981fbb4"
+    },
+    {
+      "path": "pointcloud_to_laserscan-humble/launch/sample_laserscan_to_pointcloud_launch.py",
+      "sha256": "4802e8ea5264e0b273167d9e506bb8ba336d166653903d2540a9f7e541c711db"
+    },
+    {
+      "path": "pointcloud_to_laserscan-humble/launch/sample_pointcloud_to_laserscan_launch.py",
+      "sha256": "d45fe2ab2ff1dfbf6dc63131a94306770ae08bb564a2f53c2d695989f6b8546a"
+    },
+    {
+      "path": "pointcloud_to_laserscan-humble/package.xml",
+      "sha256": "e7b9c0f1a688db3b51237ee16fff9a0ecf30e3f0cf1c8e202796bcce120401c7"
+    },
+    {
+      "path": "pointcloud_to_laserscan-humble/src/dummy_pointcloud_publisher.cpp",
+      "sha256": "eece1e62fb3d21a7e63c38897e75869ef6bfe25fba978a5fa2532845bbe94e0b"
+    },
+    {
+      "path": "pointcloud_to_laserscan-humble/src/laserscan_to_pointcloud_node.cpp",
+      "sha256": "ec70a970d22c8058cb77015c0eed11a0156054ab232e469aea1003a104a6b6d5"
+    },
+    {
+      "path": "pointcloud_to_laserscan-humble/src/pointcloud_to_laserscan_node.cpp",
+      "sha256": "ff9b28db0eb9444873498b2a82c08a165eefe31635e87cb9e857cd6b9595971d"
+    },
+    {
+      "path": "rplidar_ros/CHANGELOG.rst",
+      "sha256": "e3ccdc4db6fbc594d2db00b6b571285135974b6d3dcc7e76073c46080ca0e8cf"
+    },
+    {
+      "path": "rplidar_ros/CMakeLists.txt",
+      "sha256": "b5e94ce742984bebf2d5d8480168c3db02dae13a49ce279ff049bf07941fcb4a"
+    },
+    {
+      "path": "rplidar_ros/LICENSE",
+      "sha256": "3475642aaf47837729092f181f151866abb6e63b624cf504a9229d7641d2eaf7"
+    },
+    {
+      "path": "rplidar_ros/README.md",
+      "sha256": "e01dc3dddd758c867434af45a4c677e3674f7d4f716698e4a2cb4e4654f3fdff"
+    },
+    {
+      "path": "rplidar_ros/debian/udev",
+      "sha256": "13b4a0c576c2e52be49f8bf2849c3622a938589b4a92b480bb38ff549c410460"
+    },
+    {
+      "path": "rplidar_ros/include/rplidar_node.hpp",
+      "sha256": "4c82b2658ac1f319a205d391aaefa3056ab59250848695c44bf1d2afd88d81f1"
+    },
+    {
+      "path": "rplidar_ros/include/visibility.h",
+      "sha256": "9882056996878d962cddf432002d8515d1ca80f650c4b37ccb0aa6929fff57e0"
+    },
+    {
+      "path": "rplidar_ros/launch/rplidar_a1_launch.py",
+      "sha256": "1d302c52ed8eed86186d7c3f110304cc5361e4fb95593e89be0f570a1389a6e1"
+    },
+    {
+      "path": "rplidar_ros/launch/rplidar_a2m12_launch.py",
+      "sha256": "44af01938c3efe3d7e851fbdba73946a375470e22da6a62ca1d62e87fad01973"
+    },
+    {
+      "path": "rplidar_ros/launch/rplidar_a2m7_launch.py",
+      "sha256": "44af01938c3efe3d7e851fbdba73946a375470e22da6a62ca1d62e87fad01973"
+    },
+    {
+      "path": "rplidar_ros/launch/rplidar_a2m8_launch.py",
+      "sha256": "1d302c52ed8eed86186d7c3f110304cc5361e4fb95593e89be0f570a1389a6e1"
+    },
+    {
+      "path": "rplidar_ros/launch/rplidar_a3_launch.py",
+      "sha256": "04e0b04ab66d7ca7fd21abd2163fc0435ecd0434987842c512d260f38b3e768f"
+    },
+    {
+      "path": "rplidar_ros/launch/rplidar_c1_launch.py",
+      "sha256": "6c7b68df224de36503bf99728baf3040f09ecce1de730e0ac9e881d9d48df430"
+    },
+    {
+      "path": "rplidar_ros/launch/rplidar_s1_launch.py",
+      "sha256": "5558bc7f8170eccbe91c532fb1a5aa21dc141e4d8ef4ea076a22b4de05fff191"
+    },
+    {
+      "path": "rplidar_ros/launch/rplidar_s1_tcp_launch.py",
+      "sha256": "2cb1f08e5e78042a116c5ec3d85bdd16d4a7815c6c04296d7310da508a441354"
+    },
+    {
+      "path": "rplidar_ros/launch/rplidar_s2_launch.py",
+      "sha256": "68a1b66ae2842c778695860e73e1dfc3c43d244dce7bbeae6ff1ce96580bec4e"
+    },
+    {
+      "path": "rplidar_ros/launch/rplidar_s2e_launch.py",
+      "sha256": "522413b8f7956146e6ae06da95ef7f6beb8ea4119edd1a6831f0b5e58220ce37"
+    },
+    {
+      "path": "rplidar_ros/launch/rplidar_s3_launch.py",
+      "sha256": "2c3a172f058dc800b791a210bbfd1b8c25d8a115b430db6334bfc361579f6a9c"
+    },
+    {
+      "path": "rplidar_ros/launch/rplidar_t1_launch.py",
+      "sha256": "b81bfd9be42bc791c5a5e72dd51ab552706ee094e864c3d12caea975fdf56497"
+    },
+    {
+      "path": "rplidar_ros/launch/view_rplidar_a1_launch.py",
+      "sha256": "1b9ee04d2a2d619810a14e393f46de2c00b7a0eb46711ad8314a7abd8516310e"
+    },
+    {
+      "path": "rplidar_ros/launch/view_rplidar_a2m12_launch.py",
+      "sha256": "ed984b8ee84820bb0d09aab81d7331a30c4930fea6ffa75a3c54eb60a3949a88"
+    },
+    {
+      "path": "rplidar_ros/launch/view_rplidar_a2m7_launch.py",
+      "sha256": "ed984b8ee84820bb0d09aab81d7331a30c4930fea6ffa75a3c54eb60a3949a88"
+    },
+    {
+      "path": "rplidar_ros/launch/view_rplidar_a2m8_launch.py",
+      "sha256": "1b9ee04d2a2d619810a14e393f46de2c00b7a0eb46711ad8314a7abd8516310e"
+    },
+    {
+      "path": "rplidar_ros/launch/view_rplidar_a3_launch.py",
+      "sha256": "443d66951f90c93ded2ef2909f693de39ff72135e344184c12eb14c29578a1b7"
+    },
+    {
+      "path": "rplidar_ros/launch/view_rplidar_c1_launch.py",
+      "sha256": "5e770f5886820d8b3ae780e150ef2371799a88ed788389fa08c167e1a6a76b36"
+    },
+    {
+      "path": "rplidar_ros/launch/view_rplidar_s1_launch.py",
+      "sha256": "fb6f551b7bd0f82969a5f0e8db9d7956299c86c33ad5635cc71ca600e33fbb59"
+    },
+    {
+      "path": "rplidar_ros/launch/view_rplidar_s1_tcp_launch.py",
+      "sha256": "33771633036091c7a02657eddf2fabb88e6cb41822d5f0b60978925388b2c106"
+    },
+    {
+      "path": "rplidar_ros/launch/view_rplidar_s2_launch.py",
+      "sha256": "187a7aba8bb72ea879e48249dd6aef5741a5e49c137277634f8f8087eaad5150"
+    },
+    {
+      "path": "rplidar_ros/launch/view_rplidar_s2e_launch.py",
+      "sha256": "3195853d35dc6943df2117f01bc79793f83c8382162c126aeb9bf365f677db50"
+    },
+    {
+      "path": "rplidar_ros/launch/view_rplidar_s3_launch.py",
+      "sha256": "88ea14942cc8eff04de9d0e9a2ddeb9740e19c2af621614590daaae4c87e9e23"
+    },
+    {
+      "path": "rplidar_ros/launch/view_rplidar_t1_launch.py",
+      "sha256": "95f0a83d1ec6ff711470b1783f0fb5362d787c6bfedecf91a66ce29d6a4007c7"
+    },
+    {
+      "path": "rplidar_ros/package.xml",
+      "sha256": "2023eb052f55380da96dfd60c9cc42bf4f3b87fecccccd7ad5c83b65c35b6c74"
+    },
+    {
+      "path": "rplidar_ros/rplidar_A1.png",
+      "sha256": "20a0a87fe0938095532007079ceb489755293eb7ee1fc2d41409b4d832ca7280"
+    },
+    {
+      "path": "rplidar_ros/rplidar_A2.png",
+      "sha256": "58e3399cc01acb6759462e9983800a63756856f7c914d8d925fc011b2c29a3f7"
+    },
+    {
+      "path": "rplidar_ros/rviz/rplidar_ros.rviz",
+      "sha256": "0b55f459a0d7ab2d34476d9c45578c85ef5a229957e3590640f6f1e6517b34b9"
+    },
+    {
+      "path": "rplidar_ros/scripts/create_udev_rules.sh",
+      "sha256": "451f1c5040e69a7c26b010d1ef1f04c7a6528a6f1ada0731a4f6a53a1b2d1aef"
+    },
+    {
+      "path": "rplidar_ros/scripts/delete_udev_rules.sh",
+      "sha256": "7d9938d9ad8df5d8e860a4404b03e744e826d1772270caeaff5fe875e94b60e3"
+    },
+    {
+      "path": "rplidar_ros/scripts/rplidar.rules",
+      "sha256": "c1d0cd1954bfa5974015a3dd0607db59a1dac8722780aea219ac2651e01079d4"
+    },
+    {
+      "path": "rplidar_ros/sdk/Makefile",
+      "sha256": "5289425408f280feebbc3cd0d0d02ad3162c7b91d8d89ee0043d92139bc32155"
+    },
+    {
+      "path": "rplidar_ros/sdk/include/rplidar.h",
+      "sha256": "ff60e6ee3f8aa8d061506c15600852d7ecd35530b97ba8b93f2d3cd4251a2aa0"
+    },
+    {
+      "path": "rplidar_ros/sdk/include/rplidar_cmd.h",
+      "sha256": "4ef9ef03d6ee182acc74eba043880fa43ff098b81e66bf612b989f079c2b4836"
+    },
+    {
+      "path": "rplidar_ros/sdk/include/rplidar_driver.h",
+      "sha256": "ba924a2549c565455639db9ac8fac34514eaa0d078f60ad3d985095d18704815"
+    },
+    {
+      "path": "rplidar_ros/sdk/include/rplidar_protocol.h",
+      "sha256": "822ae2a80c3007b813213c5db797865308096a0c3d83a5732ad81ee18443f725"
+    },
+    {
+      "path": "rplidar_ros/sdk/include/rptypes.h",
+      "sha256": "b34bbc79208c333601129b0c52387a872293a6338045a64f22a8e895733ef042"
+    },
+    {
+      "path": "rplidar_ros/sdk/include/sl_crc.h",
+      "sha256": "9b0b9fd5e89f1ed8a47cd9492ecd5dde3f6a32be92b67a7ef903dea279a1c1d5"
+    },
+    {
+      "path": "rplidar_ros/sdk/include/sl_lidar.h",
+      "sha256": "955fa29756c5ceb79b541818bc5a2bad838702140652cd6346e6ddcf00376811"
+    },
+    {
+      "path": "rplidar_ros/sdk/include/sl_lidar_cmd.h",
+      "sha256": "985657d0bc532bd6f0948dd5c586b170616bba3841d73f2a89d0aaa0bc9c2eb2"
+    },
+    {
+      "path": "rplidar_ros/sdk/include/sl_lidar_driver.h",
+      "sha256": "8610bf438629f756b124a1f42a2e153537de41db60a4971288b061df030a9973"
+    },
+    {
+      "path": "rplidar_ros/sdk/include/sl_lidar_driver_impl.h",
+      "sha256": "899f74cb09aa90019e69f90b401d4ff3d372842af4813ff13476ceb9bd1a3c1b"
+    },
+    {
+      "path": "rplidar_ros/sdk/include/sl_lidar_protocol.h",
+      "sha256": "ccde66d13b7ba271667cd10b7f040d9fea353d8720a5da525083d4dda627c526"
+    },
+    {
+      "path": "rplidar_ros/sdk/include/sl_types.h",
+      "sha256": "40a3a48573b13f6f88e2f3cc3b2e3b0b1835406b006be7735be97244be81fb5b"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/linux/arch_linux.h",
+      "sha256": "c3f81a6edeffc0af440206e06c80a637b68d6df29f1265c4eab4f5027d6fbba1"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/linux/net_serial.cpp",
+      "sha256": "9959e5ebfbbce005a86a35975812c685b87f989b8b07e0975843de72082aa7d5"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/linux/net_serial.h",
+      "sha256": "bf7fec8efd970e0d342670fa08a634a9a14b426e44f3765d12661a8317ad1694"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/linux/net_socket.cpp",
+      "sha256": "8849fe635241800f35d913e12ef464b3489bd8877cbc9d7736859222609e2e45"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/linux/thread.hpp",
+      "sha256": "077b08674c6098545e71b16687d9f055109749fe6e3afa8d0005d4d2e5e5bc0a"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/linux/timer.cpp",
+      "sha256": "8d0d140cab6b260dd7abbd238e48e629f346f0052a052b50cfc19fdb31f14195"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/linux/timer.h",
+      "sha256": "87f9552131eb004cf7d0bbc32f12f3371b4b10501cc5b39f1e2b03dfdef93e83"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/macOS/arch_macOS.h",
+      "sha256": "8f25adef71f2b2ea07ec98c73d82351477ef5df096be22fbe51696e6f665778a"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/macOS/net_serial.cpp",
+      "sha256": "c0c1a3456013f537fe72376a6ade37a3bed4b249c522b1e0e3ff0894364517d4"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/macOS/net_serial.h",
+      "sha256": "770261f18730e9d729438d8aa2092e2668206472f1ad53641c22a3e3e416e0fe"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/macOS/net_socket.cpp",
+      "sha256": "dc89574fa102c12ca4f5379542dfadf6a6bafa657584e0c6c530b7278df7585e"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/macOS/thread.hpp",
+      "sha256": "7fbbb9a9d260dfcd8128826b75d2669c492f174b4a8dfa29c4a8cf461b79cfdb"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/macOS/timer.cpp",
+      "sha256": "cf3495bd93f2ed4d3098a97a3f1efb5df8619edbbd2f91f8ca48061bdfba2f2c"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/macOS/timer.h",
+      "sha256": "0cfafbe40a4d3d6e20da30bbd97ece6eb70444f3d3af1eaad652964a83b40af8"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/win32/arch_win32.h",
+      "sha256": "b3d27209189419cd831d3a54f943c75aec32fcef56adfbc19643e9ea33409e88"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/win32/net_serial.cpp",
+      "sha256": "44d6f0735b60225a15acf11dd5d88b9fa50b96a0f8d4d555b46990088bd9db18"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/win32/net_serial.h",
+      "sha256": "16f6431eb0d35f4ceea46e72f00017f952a42c5ea21d42277002182a114fdb25"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/win32/net_socket.cpp",
+      "sha256": "80546fa8484c938f31811ed84578d2f06b9044bc118467998b52a75ec6620b56"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/win32/timer.cpp",
+      "sha256": "b729c1c020f3875f21b6cd2f8adfb6ed53efe27485ecd4782ebe8b42e7f05c73"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/win32/timer.h",
+      "sha256": "c734c8f7efae02d7f931811f8621af0cd73c1f89f13cae1c1ebd785d6b6d1e2f"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/arch/win32/winthread.hpp",
+      "sha256": "2150476ec4ea4a6fb83ee8b68023f84c268c01edffb693e41b3fe8cf82cd0b2c"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/dataunpacker/dataunnpacker_commondef.h",
+      "sha256": "6031133ccc762a9bd96cdf1f311041997f6f3ef72c95c8f4fd8a25dacfff933b"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/dataunpacker/dataunnpacker_internal.h",
+      "sha256": "edb58ceb98567b34b3a845a5a570ccc130ac2cbc30f984749846f657bdd7bd29"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/dataunpacker/dataunpacker.cpp",
+      "sha256": "c18e6075146dc026de48f28f81c8a1f7ef995d7ea636325feef7ae92436e0249"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/dataunpacker/dataunpacker.h",
+      "sha256": "9b7112ef532c326d2140f42f944f88cd10ae3d08115317706609c87e60052023"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/dataunpacker/dataupacker_namespace.h",
+      "sha256": "641f5bf540099ae14a918bf1d86c9127dd7e5dc8c88af2d4bc54572a8c94ae79"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/dataunpacker/unpacker/handler_capsules.cpp",
+      "sha256": "56bdc6d40aa864f74b166ff143e34914b14a183588a60c3702804b46c4eb36f0"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/dataunpacker/unpacker/handler_capsules.h",
+      "sha256": "328c02288a872b6607075707b03723c6aab91ff075b586185b8d1fcd6f3a5677"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/dataunpacker/unpacker/handler_hqnode.cpp",
+      "sha256": "36c27998285faeba843eede396b32d290d883276a4830f0ecabaf028990bf7e4"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/dataunpacker/unpacker/handler_hqnode.h",
+      "sha256": "00185841f84cf9e78558b1501b8b3d2c1b69dabd7f5bd41ff01fae05d64a16cb"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/dataunpacker/unpacker/handler_normalnode.cpp",
+      "sha256": "e6f5f0d8200ef10ca50cb8c002c145f1228f64877c6e1f68824ff1e788943e48"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/dataunpacker/unpacker/handler_normalnode.h",
+      "sha256": "8edc84bd807bd76a1a98423ed7f66ffb59df5aace77fcc8e58fac13054998dce"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/hal/abs_rxtx.h",
+      "sha256": "9cc4c1314d3a33125b5c633a90feb519a53a573805554153ff488c2f06fb5bd7"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/hal/assert.h",
+      "sha256": "7de5afc2e59d5383299641a30fe461036a8a9cd6ca5c0c69cb9933e9dc1743ba"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/hal/byteops.h",
+      "sha256": "98ba6ae1a271767450764d1fbe77963c685345a5a933056e8b2fa6fb73af3a68"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/hal/byteorder.h",
+      "sha256": "729be7ac71bcced6f671537d89a2c7e86d8abaf8e1efa473b01dd46a194f558d"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/hal/event.h",
+      "sha256": "564371eeca0e4fe384d96e5027db559931a00657816fe9dc585dd98624f2e061"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/hal/locker.h",
+      "sha256": "14a1ac6713c84eaaa63eebea0380f638a43a17c9a4b2dfd5e290413a69bfceaa"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/hal/socket.h",
+      "sha256": "e47d694ec450a9bcae422c85abcddf497f93ef683b3fa205d1172e5307abefc3"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/hal/thread.cpp",
+      "sha256": "7ddfaeed179addfa65e5d6e441918a4fd9def26183859d8e6186c326c957d4d4"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/hal/thread.h",
+      "sha256": "3799b9bfb4665ac92cd7a7d929e9051b67edf224279f8bd01593cff65a74e892"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/hal/types.h",
+      "sha256": "1408f1a6b832392b9df21dcf65c1ac9db2ce17bbd31b0b99147fe3723b360ae1"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/hal/util.h",
+      "sha256": "dd9148e3c3e49987c97aff8b31be9469db3c8d06a420d35b3cb0ceab6a681b84"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/hal/waiter.h",
+      "sha256": "2bd5db0e9d71a625d4f5e4ad9ffc0da2ddeac97e88dbd5ef062bdc065ca65c98"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/rplidar_driver.cpp",
+      "sha256": "122a8cf7ce43d9f7811be2c24f75ca0751bfad8a33d7fbac039acf6ac26ce8c5"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/sdkcommon.h",
+      "sha256": "d47792c6c1ff53ee5e746d8505fac0c7c7eef1995136503107348b0b8beb6d68"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/sl_async_transceiver.cpp",
+      "sha256": "0f1acab812daec1c1b4929a306fc595b79c8208eabf12451fdad7a71248a082b"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/sl_async_transceiver.h",
+      "sha256": "ebc610200ca7e1b5700acc9e8b91abeeb837a605d2906406a3e74ad7dc558ea0"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/sl_crc.cpp",
+      "sha256": "3e3d6556159c52df027ca6591ecfeacac89e7135e08b3401ec3c446045874502"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/sl_lidar_driver.cpp",
+      "sha256": "668806b85a365e823db4247992ac559f20ea66dbba30fdd3ec4f8071ee672b2a"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/sl_lidarprotocol_codec.cpp",
+      "sha256": "8117a03daf7b966617ed199e4d9a968242693114c7c7a7fc5d73df4e8ddb798f"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/sl_lidarprotocol_codec.h",
+      "sha256": "aa9aa3e5e7e3c389b1ca81328bdfe94c9356debf8c409f1ac2ff323859485fc2"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/sl_serial_channel.cpp",
+      "sha256": "7233e2da4e70213413939132f0603b42cdad11302dcf36c44a930751feffb2da"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/sl_tcp_channel.cpp",
+      "sha256": "8b86fd44aff8edc029bc7de3ad18e98683eff376b76914c3fcceb76a91415c43"
+    },
+    {
+      "path": "rplidar_ros/sdk/src/sl_udp_channel.cpp",
+      "sha256": "fd99924954936eaca4bcff247c111b83cf50cc8349fb903e5851b030dc4ca34c"
+    },
+    {
+      "path": "rplidar_ros/src/rplidar_client.cpp",
+      "sha256": "197938c4a2fef7bbac2a004a0d2efae038337c8b007ad8936c4d9c61082a3a9e"
+    },
+    {
+      "path": "rplidar_ros/src/rplidar_node.cpp",
+      "sha256": "da2bc209b9a0f5e016fc8a9b9f1593dc2f2d8fdc47e2065900f105dcb7a3b32b"
+    },
+    {
+      "path": "wheeltec_radar/CMakeLists.txt",
+      "sha256": "eb31011e95a738206a850b672de274e50b498fc72dc183cee28047dad310889a"
+    },
+    {
+      "path": "wheeltec_radar/include/wheeltec_radar/wheeltec_radar.hpp",
+      "sha256": "f576d10d189863e631a109081854a09fd36685a8c9d9fc27001fb41e10b5914b"
+    },
+    {
+      "path": "wheeltec_radar/include/wheeltec_radar/wheeltec_radar_net.hpp",
+      "sha256": "77bfdd486797ec1bc67de866ae70da0e84af7031c114a51ef0f31477a0703d2b"
+    },
+    {
+      "path": "wheeltec_radar/launch/wheeltec_radar.launch.py",
+      "sha256": "11bc5c68931f5d9fb0a21c3fa7c75e07f62781a2f6d0427fac63d37aaebb239a"
+    },
+    {
+      "path": "wheeltec_radar/launch/wheeltec_radar_net.launch.py",
+      "sha256": "7a9b7ec86271aef476007f1aef96a197dad7f05d168bbeb0109cf489d635679f"
+    },
+    {
+      "path": "wheeltec_radar/package.xml",
+      "sha256": "0b850bfb3146286116d8402ddc1fcdaf4d7fdc1bb64fd48509d871e4349e8b24"
+    },
+    {
+      "path": "wheeltec_radar/radar_udev.sh",
+      "sha256": "b638f7c84deaa56502ffb198cb5d37e44ccbec8b0b623f6b34fc649dffb4e289"
+    },
+    {
+      "path": "wheeltec_radar/scripts/transform_scan.py",
+      "sha256": "c79f0762c401e5ecb9e104f4b54b5da0dae8619d20e664ac14072072b84bf6a4"
+    },
+    {
+      "path": "wheeltec_radar/src/wheeltec_radar.cpp",
+      "sha256": "50557605b6ff6b1ccfff611acc9da60e6e485660f6e966cd7181cec02c4e90da"
+    },
+    {
+      "path": "wheeltec_radar/src/wheeltec_radar_net.cpp",
+      "sha256": "56fca7690ca9aba10617daca12ab6a60217f30f6753e1ab1c22433271def3f14"
+    }
+  ],
+  "local_modifications": [
+    {
+      "path": "README.md",
+      "sha256": "6f468de41f8d3adb89cab1e4fd65e55904a66979811bf1cdea294de3810b1dbb",
+      "date": "2026-09-20",
+      "reason": "记录 N10P ROS 接入及验证边界"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/src/lslidar_x10_driver.cpp",
+      "sha256": "98f7cc87ef3a0b5b624a1e74995c5bd95a827a6369dbd38b550a823a04d02d91",
+      "date": "2026-09-20",
+      "reason": "统一同坐标系 LaserScan 与点云的 Y 方向，伪串口非对称场景验证"
+    }
+  ]
+}

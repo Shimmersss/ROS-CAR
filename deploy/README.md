@@ -32,3 +32,15 @@ Jetson 的实际 CUDA、TensorRT、相机依赖应根据 JetPack 版本安装。
 默认 A runner 与仓库 systemd 模板改为 `run_red_foxglove.sh`，不再启动 bodyreader，串口、运动、深度配准确认默认 false。原骨架组合脚本保留。新配置不会自行改变小车已安装的服务；现场切换前先核对旧服务及串口占用。
 
 可选串口使用 `scripts/build_chassis.sh` 构建到 `ros2_ws/chassis_install`；不要移除原始包的 COLCON_IGNORE。Ubuntu Humble 构建所需额外依赖由 `deploy/humble-test.Dockerfile` 列出；本机测试容器已安装。完整配置及实机待验收项见 [红色方案 A](../docs/方案A红色物体跟随.md)。
+
+N10P 本机验证运行 `bash scripts/test_radar_container.sh`；Linux/Jetson 独立构建 `bash scripts/build_radar.sh`，启动 `bash scripts/run_radar.sh serial_port:=/dev/wheeltec_lidar`。先按 `docs/N10P雷达接入.md` 核对实物串口。默认感知不启雷达，未安装自启；本轮没有部署远端。
+
+受保护跟随入口为 `ros2 launch motion_guard follow.launch.py`，默认仅感知，不启动底盘或雷达；已有带底盘红色路线也接入 guard。`motion_enabled=true` 不等于已授权，须先填写确认 safety.yaml，再调用 `/control/arm`。停止用 `/control/stop`。本地源码更新未部署到在线服务；部署前阅读 motion_guard/README.md 的接口迁移和停车模型限制。
+
+可选导航环境：安装 `ros-humble-navigation2 ros-humble-nav2-bringup ros-humble-slam-toolbox`，再构建主动工作区。`deploy/navigation-test.Dockerfile` 与 `scripts/test_navigation_container.sh` 提供本机 ARM64 Humble 的真实导航节点测试。未自动部署或新增自启动，设备启动、标定及 Foxglove 说明见 `docs/导航与自动绕障.md`。
+
+### 2026-09-20 本机审查修复验证
+
+`bash scripts/test_container.sh` 包含控制来源/时效、GPIO 假设备及 A 启动互斥测试。随后可运行 `bash scripts/test_chassis_container.sh`，补齐独立容器依赖并在临时副本编译串口三包、运行串口字节检查；不移除工作区 COLCON_IGNORE、不访问串口。
+
+`route_a.sh` 发现 systemd 服务已安装时不再启动手动副本，包括自动重启退避期。已停止/失败服务应使用 `sudo systemctl start roscar-route-a.service`；手动模式生命周期通过 Linux `flock` 互斥。

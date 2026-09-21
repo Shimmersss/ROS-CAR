@@ -2,7 +2,9 @@
 # Foreground Route A supervisor. RGB-D comes from an independently configured driver.
 set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
 source /opt/ros/humble/setup.bash
+# shellcheck disable=SC1091
 source "$ROOT/ros2_ws/install/setup.bash"
 # Optional chassis overlay is built explicitly; its defaults never arm motion.
 if [[ "${WITH_CHASSIS:-false}" == true ]]; then
@@ -42,7 +44,12 @@ launch_args=(
   "camera_info_topic:=${CAMERA_INFO_TOPIC:-/camera/color/camera_info}"
   "with_chassis:=${WITH_CHASSIS:-false}"
   "motion_enabled:=${MOTION_ENABLED:-false}"
+  "target_frame:=${TARGET_FRAME:-camera_color_optical_frame}"
 )
+if [[ -n "${SAFETY_CONFIG:-}" ]]; then
+  launch_args+=("safety_config:=$SAFETY_CONFIG")
+fi
+launch_args+=("target_distance_m:=${TARGET_DISTANCE_M:-1.0}")
 if [[ "${WITH_CHASSIS:-false}" == true ]]; then
   if [[ -z "${SERIAL_PORT:-}" || -z "${CAR_MODE:-}" ]]; then
     echo '开启底盘需要非空 SERIAL_PORT 和 CAR_MODE。' >&2

@@ -23,7 +23,7 @@ def main():
     root = Path(__file__).resolve().parents[1]
     paths = ['README.md', 'AGENTS.md', 'WORKLOG.md', '人体跟随感知方案.md',
              'ros2_ws/src', 'scripts', 'tests', 'docs', 'foxglove',
-             'deploy/README.md', 'deploy/humble-test.Dockerfile', 'deploy/systemd',
+             'deploy/README.md', 'deploy/humble-test.Dockerfile', 'deploy/radar-test.Dockerfile', 'deploy/navigation-test.Dockerfile', 'deploy/chassis-test.Dockerfile', 'deploy/systemd',
              'models/manifest.json', 'models/weights/README.md',
              'data/catalog', 'data/recordings/README.md']
     cmd = ['rsync', '-azR', '--itemize-changes',

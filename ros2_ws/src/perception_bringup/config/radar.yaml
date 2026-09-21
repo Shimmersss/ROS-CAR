@@ -1,0 +1,17 @@
+# User identified N10P; vendor driver calls this N10Plus.
+model: n10p_uart
+serial_port: /dev/wheeltec_lidar
+frame_id: laser
+scan_topic: /scan
+pointcloud_topic: /radar/points
+# Network variants only; replace with actual sensor settings.
+device_ip: 192.168.1.200
+msop_port: 2368
+difop_port: 2369
+# No placeholder transform is published by default.
+publish_mount_tf: false
+mount_calibrated: false
+parent_frame: base_link
+translation: [0.0, 0.0, 0.0]
+rotation_rpy: [0.0, 0.0, 0.0]
+max_age_s: 1.0

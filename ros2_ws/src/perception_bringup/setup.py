@@ -18,5 +18,6 @@ setup(
     maintainer_email='maintainer@example.invalid',
     description='Launch and explicit synthetic demo for ROSCAR perception.',
     license='Proprietary',
-    entry_points={'console_scripts': ['demo = perception_bringup.demo:main']},
+    entry_points={'console_scripts': ['demo = perception_bringup.demo:main',
+        'radar_health = perception_bringup.radar_health:main']},
 )

@@ -12,9 +12,11 @@
 | Mac → Jetson 同步脚本、模型清单、测试脚本 | 已建立 |
 | 讯飞流式 ASR/TTS → DeepSeek 语音助手 | Orin 真人语音 → 讯飞 IAT → DeepSeek 回答 → 讯飞 TTS 扬声器播报已跑通 |
 | DeepSeek 蜂鸣器工具链 | 白名单路由已建立；蜂鸣器属于下位机，协议适配延后 |
-| 相机、骨架与测距 | A 已在 Jetson 真人验收；YOLO 路线待实现，SDK 授权提示待厂商解释 |
+| 相机、骨架与测距 | A 已在 Jetson 真人验收；B 已本机接入 YOLO26s/ByteTrack，待相机及 Jetson 验收，SDK 授权提示待厂商解释 |
 | 下位机串口驱动及两个依赖包 | 已迁入 chassis_vendor，默认跳过构建，未启动、未实机验证 |
 | Foxglove | A 路线布局已验收，Wi-Fi 直连 `ws://192.168.1.240:8765` |
+
+B 当前选用官方预训练 **YOLO26s 检测版 + ByteTrack**，默认免 NMS 推理；目标 Jetson 加速使用 TensorRT FP16（引擎尚未在板端构建）。权重准备、本机测试和导出命令见 [B 方案实现与验收](docs/方案B实现与验收.md)。
 
 具体测试结果见 [工作记录](WORKLOG.md)。容器编译通过不等于 Jetson 相机或 GPU 已验证。
 
@@ -142,3 +144,13 @@ bash scripts/start_project.sh
 统一启动 Astra 彩色/深度相机、红色方案 A、Foxglove 与语音助手；Ctrl-C 停止整组。日志在 `artifacts/project/`。语音需要私有凭据，默认开启 TTS 扬声器播报；可用 `VOICE_TTS_ENABLED=false` 仅保留文本，或用 `WITH_VOICE=false bash scripts/start_project.sh` 完全禁用语音。底盘默认关闭，通过 `WITH_CHASSIS=true SERIAL_PORT=实际串口 CAR_MODE=实际车型` 启用收发；运动另需 `MOTION_ENABLED=true` 和已验证的 `DEPTH_REGISTERED=true`。查看全部选项：`bash scripts/start_project.sh --help`。
 
 总入口在小车本机运行，依赖已构建的项目与厂商相机包；不自动部署。若现有 A systemd 服务运行，先停止该服务以释放相机。默认相机原始彩色流可用于检测可视化；控制测距仍要求实际校正/配准输入，通过 COLOR_TOPIC、DEPTH_TOPIC、CAMERA_INFO_TOPIC 指定，不能把启动驱动当作配准验证。
+
+### N10P 雷达
+
+已接入雷神 N10Plus 驱动的独立构建和启动入口：`bash scripts/build_radar.sh`、`bash scripts/run_radar.sh`。与感知组合使用 `with_radar:=true`（默认关闭），输出 `/scan`、`/radar/points` 和 `/radar/status`；不启动底盘。端口、标定与本机测试见 [N10P 雷达接入](docs/N10P雷达接入.md)。
+
+### 受保护跟随
+
+跟随节点现仅发 `/control/cmd_vel_request`，最终速度由 `motion_guard` 审查后发布。`ros2 launch motion_guard follow.launch.py` 默认仅感知模式，不启动底盘/传感器或自动授权；尺寸、安装 TF、停车模型未确认时禁止运动。启动、服务和故障边界见 [motion_guard](ros2_ws/src/motion_guard/README.md)。记录与隔离回放分别使用 `scripts/record_follow.sh`、`scripts/replay_follow.sh`。
+
+导航与自动绕障代码入口：`scripts/run_navigation.sh`，支持 SLAM 建图、AMCL 地图定位、Nav2 人体目标跟随及 Foxglove 地图/路径布局。默认不启用运动。详见 [导航与自动绕障](docs/导航与自动绕障.md)。
