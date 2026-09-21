@@ -8,7 +8,10 @@ source /opt/ros/humble/setup.bash
 source "$ROOT/ros2_ws/install/setup.bash"
 # Optional chassis overlay is built explicitly; its defaults never arm motion.
 if [[ "${WITH_CHASSIS:-false}" == true ]]; then
-  # shellcheck disable=SC1091
+  if [[ -z "${SERIAL_PORT:-}" || -z "${CAR_MODE:-}" ]]; then
+    echo '开启底盘需要非空的 SERIAL_PORT 和 CAR_MODE。' >&2
+    exit 2
+  fi
   source "$ROOT/ros2_ws/chassis_install/setup.bash"
 fi
 set -u
@@ -52,9 +55,11 @@ if [[ "${WITH_CHASSIS:-false}" == true ]]; then
     echo '开启底盘需要非空 SERIAL_PORT 和 CAR_MODE。' >&2
     exit 2
   fi
-  launch_args+=("serial_port:=$SERIAL_PORT"
-                "serial_baud_rate:=${SERIAL_BAUD_RATE:-115200}"
-                "car_mode:=$CAR_MODE")
+  launch_args+=(
+    "serial_port:=${SERIAL_PORT}"
+    "car_mode:=${CAR_MODE}"
+    "serial_baud_rate:=${SERIAL_BAUD_RATE:-115200}"
+  )
 fi
 setsid ros2 launch perception_bringup route_a.launch.py "${launch_args[@]}" &
 PIDS+=("$!")

@@ -123,11 +123,18 @@ class XfyunAsrNode(Node):
     @staticmethod
     def _receive_one(ws, assembler, timeout):
         import websocket
-        ws.settimeout(timeout)
+        previous_timeout = ws.gettimeout()
         try:
-            raw = ws.recv()
-        except websocket.WebSocketTimeoutException:
-            return False
+            ws.settimeout(timeout)
+            try:
+                raw = ws.recv()
+            except websocket.WebSocketTimeoutException:
+                return False
+        finally:
+            # A 1 ms polling timeout must never leak into the next audio send.
+            # On a real Wi-Fi link that turns harmless receive polling into
+            # intermittent ``write operation timed out`` failures.
+            ws.settimeout(previous_timeout)
         if not raw:
             return False
         if isinstance(raw, bytes):
