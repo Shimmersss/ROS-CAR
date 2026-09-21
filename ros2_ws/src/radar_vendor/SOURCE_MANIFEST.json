@@ -957,5 +957,19 @@
       "path": "wheeltec_radar/src/wheeltec_radar_net.cpp",
       "sha256": "56fca7690ca9aba10617daca12ab6a60217f30f6753e1ab1c22433271def3f14"
     }
+  ],
+  "local_modifications": [
+    {
+      "path": "README.md",
+      "sha256": "6f468de41f8d3adb89cab1e4fd65e55904a66979811bf1cdea294de3810b1dbb",
+      "date": "2026-09-20",
+      "reason": "记录 N10P ROS 接入及验证边界"
+    },
+    {
+      "path": "lslidar_ros2/lslidar_driver/src/lslidar_x10_driver.cpp",
+      "sha256": "98f7cc87ef3a0b5b624a1e74995c5bd95a827a6369dbd38b550a823a04d02d91",
+      "date": "2026-09-20",
+      "reason": "统一同坐标系 LaserScan 与点云的 Y 方向，伪串口非对称场景验证"
+    }
   ]
 }

@@ -142,3 +142,13 @@ bash scripts/start_project.sh
 统一启动 Astra 彩色/深度相机、红色方案 A、Foxglove 与语音助手；Ctrl-C 停止整组。日志在 `artifacts/project/`。语音需要私有凭据，不需要语音时使用 `WITH_VOICE=false bash scripts/start_project.sh`。底盘默认关闭，通过 `WITH_CHASSIS=true SERIAL_PORT=实际串口 CAR_MODE=实际车型` 启用收发；运动另需 `MOTION_ENABLED=true` 和已验证的 `DEPTH_REGISTERED=true`。查看全部选项：`bash scripts/start_project.sh --help`。
 
 总入口在小车本机运行，依赖已构建的项目与厂商相机包；不自动部署。若现有 A systemd 服务运行，先停止该服务以释放相机。默认相机原始彩色流可用于检测可视化；控制测距仍要求实际校正/配准输入，通过 COLOR_TOPIC、DEPTH_TOPIC、CAMERA_INFO_TOPIC 指定，不能把启动驱动当作配准验证。
+
+### N10P 雷达
+
+已接入雷神 N10Plus 驱动的独立构建和启动入口：`bash scripts/build_radar.sh`、`bash scripts/run_radar.sh`。与感知组合使用 `with_radar:=true`（默认关闭），输出 `/scan`、`/radar/points` 和 `/radar/status`；不启动底盘。端口、标定与本机测试见 [N10P 雷达接入](docs/N10P雷达接入.md)。
+
+### 受保护跟随
+
+跟随节点现仅发 `/control/cmd_vel_request`，最终速度由 `motion_guard` 审查后发布。`ros2 launch motion_guard follow.launch.py` 默认仅感知模式，不启动底盘/传感器或自动授权；尺寸、安装 TF、停车模型未确认时禁止运动。启动、服务和故障边界见 [motion_guard](ros2_ws/src/motion_guard/README.md)。记录与隔离回放分别使用 `scripts/record_follow.sh`、`scripts/replay_follow.sh`。
+
+导航与自动绕障代码入口：`scripts/run_navigation.sh`，支持 SLAM 建图、AMCL 地图定位、Nav2 人体目标跟随及 Foxglove 地图/路径布局。默认不启用运动。详见 [导航与自动绕障](docs/导航与自动绕障.md)。

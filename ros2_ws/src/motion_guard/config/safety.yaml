@@ -1,0 +1,23 @@
+/**:
+  ros__parameters:
+    # Placeholders: sensing works without these confirmations; motion does not.
+    motion_enabled: false
+    geometry_confirmed: false
+    stopping_model_confirmed: false
+    mount_calibrated: false
+    expected_source: astra
+    target_frame: astra_depth_optical_frame
+    base_frame: base_link
+    scan_frame: laser
+    length_m: 0.5
+    width_m: 0.4
+    margin_m: 0.15
+    max_linear_mps: 0.15
+    max_angular_rps: 0.5
+    reaction_s: 1.0
+    deceleration_mps2: 0.3
+    scan_timeout_s: 0.3
+    request_timeout_s: 0.2
+    target_timeout_s: 0.5
+    sampling_margin_m: 0.02
+    allow_infinite_clear: false

@@ -1,0 +1,15 @@
+navigation_follow_goal:
+  ros__parameters:
+    camera_calibrated: false
+    odometry_confirmed: false
+    allow_unstamped_astra: false
+    expected_source: yolo
+    target_frame: camera_color_optical_frame
+    base_frame: base_footprint
+    follow_distance_m: 1.0
+    target_timeout_s: 0.5
+    odom_timeout_s: 0.5
+    goal_update_s: 1.0
+    goal_shift_m: 0.3
+    # Briefly wait at zero velocity for odometry/TF to catch up with camera timestamps.
+    tf_wait_timeout_s: 0.15

@@ -440,3 +440,46 @@
 - 用户再次要求将雷达源码移入工作目录。检查确认 `ros2_ws/src/radar_vendor/` 已包含 wheeltec_radar、lslidar_ros2、ldlidar_ros2、rplidar_ros、pointcloud_to_laserscan-humble 和 double_lidar_fusion 六组目录，共7个ROS包，无需重复复制。
 - 对照厂商 wheeltec_radar 与 wheeltec_lidar_ros2，排除Git/Python缓存和.DS_Store后，238个文件全部存在且逐字节一致；SOURCE_MANIFEST.json的239项（含本地README）SHA-256均匹配。
 - 最小审查确认COLCON_IGNORE存在，默认构建继续跳过雷达目录；未修改启动入口，未连接小车、编译或进行硬件验证。git diff --check通过。
+
+## 2026-09-20 N10P 雷达接入 ROS
+
+- 用户确认 N10P，本次聚焦已迁入雷神 N10Plus 驱动，串口配置依据厂商源码 460800/10 Hz；其他雷达包继续暂存。
+- 新增独立 radar_src/build/install/log 覆盖工作区构建，不取消源目录 COLCON_IGNORE；补齐 PCL、pcap、yaml-cpp、Boost 等 ARM64 Humble 测试环境依赖。
+- 新增 radar.launch.py、run_radar.sh 和现有 perception.launch.py 的 with_radar（默认 false），提供 LaserScan、点云和只读 JSON 健康状态。默认不发布安装占位 TF、不改感知目标、不启动底盘或避障。
+- 检查发现厂商扫描对 Y 取反而点云未取反；修复为同 frame 一致，并用左右不对称的合成串口回归覆盖。原始迁入哈希保留，本地补丁单独记录。
+- 9 主动包及 lslidar_msgs/lslidar_driver 构建通过，真实驱动 PTY 解码 108 字节合成协议通过，1m 左侧/2m 其余、扫描和点云 frame 检查通过。健康节点 ROS 收发、过期/空回波/错误几何和未标定 TF 拒绝，以及 A/B/red/demo/非法路由回归通过，日志 artifacts/radar-test.log。不是实物测距/安装标定验收。
+- 新增 N10P 接入说明、Foxglove 雷达布局和接口文档，更新同步白名单。最小审查：构建隔离、默认启动行为、扫描坐标方向、无 cmd_vel、ShellCheck、结构检查和 git diff --check；客户端布局未实测。
+- 本轮无 SSH、远端部署或硬件访问；实际串口别名、扫描方向、帧率、TF 和拔线 STALE 需现场验收。
+
+## 2026-09-20 跟随控制保护与故障回归
+
+- 新增 motion_guard 主动包及配置、启动、说明；请求 TwistStamped 与最终 Twist 分离。已有红色组合启动接入 guard，单独跟随节点不能再直接向底盘发速度。纯感知默认行为保留。
+- 实现 PERCEPTION_ONLY/STANDBY/ARMED/FAULT，arm/stop/disarm 服务，故障锁存和重启未授权。检查唯一发布者、源/帧/有效性、发布/观测/接收时效、速度分量及限幅、时刻 TF 和扫描覆盖；配置占位必须显式确认后方能授权。
+- 采用保守全方向车体圆形停车包络，考虑速度上限、反应期、制动、几何和采样余量；反应参数至少覆盖扫描最大年龄+底盘0.5秒命令超时+保护0.05秒周期。不实现绕障，不代替 STM32 失联停车。
+- 新增录包/隔离回放脚本，真实 rosbag 测试验证最终速度只发 /replay/cmd_vel，非白名单话题不回放。
+- 10 个主动包、3 个底盘包在本机 Linux ARM64 Humble 编译通过；新增 6 项纯逻辑及服务/TF/故障/重启测试通过，并连接真实 C++ 底盘驱动的 PTY 检查运动和停车帧。记录 artifacts/motion-guard-test.log。
+- 测试修正：TF Buffer.clear 保留静态 TF，改以空缓冲区注入 TF 丢失；串口检查改为最新帧已零，避免以故障前的固定三帧历史误判停车失败。新增测试与旧感知/串口回归分开验证，未把测试专用桥用于生产。
+- 最小审查覆盖默认未授权、配置只读、源时间兼容、停止/故障恢复、发布者唯一性、无绕过启动、回放隔离；结构检查、ShellCheck/Bash 语法和 git diff --check 通过。本轮无远端或硬件操作。
+- 最终完整容器回归通过：新增保护/录包回放专项之外，原性能、RGB 视频、Route A 启动、真实驱动串口协议、红色合成闭环、A/B 逻辑及合成状态、14 项语音逻辑、A/B/red/demo/非法路由均通过；容器脚本退出码 0。
+
+## 2026-09-20 SLAM、Nav2、自动绕障与 Foxglove
+
+- 新增 navigation_bringup：mapping/localization/external 模式、SLAM Toolbox、AMCL、NavFn 全局规划和 DWB 局部控制；自定义无倒车恢复行为树，Nav2 原始速度经授权状态与时效检查进入 motion_guard，不直发底盘。
+- 新增观测时刻相机/车体 TF 到地图的留距目标、目标更新先取消再发送、目标丢失/ID变化/里程计过期故障锁存；接近目标 HOLD 后允许目标重新远离时继续导航。默认标定确认与运动关闭；无 SSH 或硬件操作，原感知入口保持不变。
+- 新增 odom TF 桥（忽略厂商 position.z 航向），安装 TF 仅在显式确认后发布；保存地图脚本拒绝覆盖文件。Foxglove 布局和地图/路径/代价地图/导航状态录包已补充，回放新增 Nav2 原始速度隔离。
+- 环境安装时 Colima VM 退出导致镜像导出失败；清理失效 hostagent 并重启同一测试 VM 后，ARM64 Humble Nav2 1.1.20 与 SLAM Toolbox 2.6.10 安装成功。未删除其他项目资源。
+- 运行审查修复 ROS Node.handle 名称冲突、Nav2 through-poses 默认恢复服务依赖，以及 SIGINT 先关闭 ROS 上下文导致停车消息发布失败的问题；最后一项通过禁用 rclpy 自动信号关闭、在 finally 中先清理后 shutdown 处理。
+- 最终导航专项退出码 0：11 个主动包编译、3 项几何测试；真实 SLAM Toolbox 生成占用/空闲地图；真实 NavFn 生成 197 点绕障路径；BT/DWB 输出仅进入隔离 raw 话题、默认最终速度为零；真实 map_server/AMCL 激活并输出定位。ROS 桥接测试覆盖观测时刻 TF、平面 odom、留距、HOLD 后重新走远、目标丢失取消、ID变化、速度断流与里程计过期。日志 artifacts/navigation-test.log / navigation-run.log。
+- 完整原功能回归退出码 0：11 主动包与3底盘包编译，保护+真实 C++ 驱动 PTY、含 Nav2 原始速度的真实 rosbag 隔离回放、视频/性能/原A启动/红色串口闭环、A/B合成和语音及各路由回归通过，日志 artifacts/navigation-regression.log。
+- 最小审查通过：配置只读与默认未授权、目标序列化取消、车体/目标 frame 一致性、保护圆盘与 costmap 半径一致性、无自动恢复运动、启动无底盘串口、回放隔离；结构检查、YAML/XML/JSON 解析、ShellCheck 与 git diff --check 通过。未做实物雷达/相机/里程计标定、真实客户端展示或实车导航验收。
+
+## 2026-09-20 当天新增代码审查与修复
+
+- 覆盖 N10P、停车保护、Nav2/SLAM 桥、直接跟随整合、构建/同步/录包及 Foxglove 配置，具体问题、影响和修复见 docs/2026-09-20代码审查.md。
+- 核心修复：雷达近盲区覆盖；SIGTERM 发零并清理、重复停止信号不打断清理；跟随请求 base_frame 与红色 target_frame 显式传递；performance_enabled 保持透传；TF 最多等待0.15秒且期间零速度、持续缺失锁存；导航 JSON 严格类型检查；雷达健康 steady timer 与只读配置。
+- 配套：补 astra_body_adapter 的 rcl_interfaces 依赖、导航测试基础镜像构建、导航 Dockerfile 同步白名单，缩小雷达暂存 COLCON_IGNORE 删除范围。新增独立进程 SIGTERM/组合启动与 frame/指标测试、盲区和畸形状态单测、TF 短延迟/持续缺失与暂停时钟测试。
+- 初轮运行发现 ros2 launch 再次转发 SIGINT 会打断 guard.destroy_node；已补重复信号处理，并将组合退出日志中的 Traceback 纳入失败判定，随后执行最终回归。
+- 最终导航专项通过（退出码0）：11包构建、4项单测、真实SLAM/NavFn/BT/DWB/map_server/AMCL，以及TF短延迟零速等待/持续缺失锁存、目标停走/丢失/ID变化和过期输入测试。日志 artifacts/review-navigation-final.log。
+- 最终原功能回归通过（退出码0）：11主动包+3底盘包构建，7项保护逻辑、独立进程SIGTERM最终零速/自定义frame/组合指标开关、真实驱动PTY停车与协议、rosbag隔离回放、A/B/red/demo/非法路由及视频/性能/语音等回归；最终组合退出日志无Traceback。日志 artifacts/review-regression-final.log。
+- 雷达最终专项通过（退出码0）：11主动包及 lslidar_msgs/lslidar_driver 构建，雷达健康状态/暂停ROS时钟仍持续发布、安装确认、真实N10Plus驱动伪串口解码和扫描/点云方向，以及各路线回归通过。日志 artifacts/review-radar.log；PCL输出可选pcap功能警告，N10P UART链路测试通过，未验证pcap回放。
+- 最小复审：结构检查（11包/165个Python文件）、YAML/XML/Foxglove JSON解析、ShellCheck、同步3项单测与 git diff --check 通过。AGENTS.md、WORKLOG.md、导航/保护说明与独立审查清单已更新。所有结果均为本机软件测试；未部署、未启真实底盘。

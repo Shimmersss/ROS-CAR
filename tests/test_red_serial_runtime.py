@@ -13,7 +13,7 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, TwistStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import CameraInfo, Image, Imu
 from std_msgs.msg import Float32
@@ -120,6 +120,11 @@ def main():
         print('PASS PTY driver: signed frames/BCC, limits, telemetry, bad/fragmented frames, timeouts, duplicate ownership',flush=True)
 
         command=None;probe.destroy_publisher(command_pub);pump(.5)
+        # Test-only bridge for this legacy follower/serial unit integration.
+        # Production uses motion_guard; its independent fault suite is mandatory.
+        relay_pub=probe.create_publisher(Twist,'/cmd_vel',1)
+        relay_sub=probe.create_subscription(TwistStamped,'/control/cmd_vel_request',
+                                            lambda m: relay_pub.publish(m.twist),1)
         red=RedTrackerNode(namespace='perception',parameter_overrides=[Parameter('depth_registered',value=True)])
         executor.add_node(red)
         follower=PersonFollowerNode(parameter_overrides=[Parameter('enabled',value=True),

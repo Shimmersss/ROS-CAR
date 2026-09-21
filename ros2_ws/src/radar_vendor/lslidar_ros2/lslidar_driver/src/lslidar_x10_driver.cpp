@@ -413,7 +413,8 @@ namespace lslidar_driver {
                 continue;
             }
 
-            double angle = atan2(-(*iter_y), *iter_x);
+            // LaserScan and PointCloud2 share frame_id: preserve the same XY axes.
+            double angle = atan2(*iter_y, *iter_x);
             if (angle < output_scan.angle_min || angle > output_scan.angle_max) {
                 RCLCPP_DEBUG(node_->get_logger(), "rejected for angle %f not in range (%f, %f)\n", angle,
                              output_scan.angle_min, output_scan.angle_max);
