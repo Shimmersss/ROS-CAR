@@ -16,6 +16,10 @@ docker run --rm --platform linux/arm64 -e ROS_DOMAIN_ID=182 \
     source install/setup.bash
     bash /workspace/scripts/build_chassis.sh
     source chassis_install/setup.bash
+    python3 -m unittest discover -s src/motion_guard/test -v
+    ROS_DOMAIN_ID=169 python3 /workspace/tests/test_control_entrypoints.py
+    ROS_DOMAIN_ID=173 python3 /workspace/tests/test_motion_guard_runtime.py
+    ROS_DOMAIN_ID=174 ROS_LOCALHOST_ONLY=1 python3 /workspace/tests/test_follow_replay.py
     python3 -m unittest discover -s src/red_object_tracker/test -v
     ROS_DOMAIN_ID=176 python3 /workspace/tests/test_performance_runtime.py
     ROS_DOMAIN_ID=177 python3 /workspace/tests/test_red_video_runtime.py

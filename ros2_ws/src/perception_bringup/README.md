@@ -12,3 +12,7 @@ with_foxglove:=true 时需要另行安装 ros-humble-foxglove-bridge。
 astra route 暴露 `akimbo_hand_above_base_min_mm`、`akimbo_hand_shoulder_max_dx_mm`、`akimbo_shoulder_above_hand_min_mm`、`akimbo_window_frames` 和 `akimbo_min_votes`，默认恢复为 50、100、50 mm、1 帧和 1 票。
 
 B route 参数与验收步骤见 `docs/方案B实现与验收.md`，不自动启动相机或切换方案 A。
+
+雷达入口 `radar.launch.py` 使用 N10P/N10Plus 驱动和只读健康监测；`perception.launch.py with_radar:=true` 可组合启动。先构建并 source `radar_install`。`start_driver:=false` 仅监听已有扫描，不启动雷达驱动；安装 TF 默认关闭，配置见 `config/radar.yaml`。
+
+带底盘的红色路线现使用 motion_guard 统一速度出口。`motion_enabled=true` 只允许进入待命，不会自动运动；还需实测配置通过及显式 `/control/arm`。可传 `safety_config` 和 `target_distance_m`（新组合入口默认 1 m）。默认 with_chassis=false 的纯感知路径不受影响。

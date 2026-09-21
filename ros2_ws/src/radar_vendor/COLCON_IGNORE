@@ -1,0 +1,2 @@
+# Radar and lidar vendor packages are staged for later hardware-specific integration.
+# Remove this file only after selecting hardware and validating dependencies on Jetson.

@@ -36,16 +36,21 @@ def start(context):
                      usart_port_name=get('serial_port'), serial_baud_rate=int(get('serial_baud_rate')),
                      car_mode=get('car_mode'), command_timeout_s=.5, feedback_timeout_s=.5,
                      max_linear_mps=.15, max_angular_rps=.5)]),
-            Node(package='astra_body_adapter', executable='person_follower',
-                 output='screen', parameters=[dict(enabled=motion, expected_source='red_object',
-                                                 performance_enabled=get('performance_enabled') == 'true')]),
+            IncludeLaunchDescription(PythonLaunchDescriptionSource(os.path.join(
+                get_package_share_directory('motion_guard'),'launch','follow.launch.py')),
+                launch_arguments={'motion_enabled':get('motion_enabled'),
+                                  'performance_enabled':get('performance_enabled'),
+                                  'expected_source':'red_object','target_frame':get('target_frame'),
+                                  'safety_config':get('safety_config'),
+                                  'target_distance_m':get('target_distance_m')}.items()),
         ]
     return actions
 
 
 def generate_launch_description():
     defaults = dict(performance_enabled='true', with_chassis='false', motion_enabled='false', car_mode='', serial_port='',
-                    serial_baud_rate='115200', depth_registered='false',
+                    target_frame='camera_color_optical_frame', serial_baud_rate='115200', depth_registered='false', target_distance_m='1.0',
+                    safety_config=os.path.join(get_package_share_directory('motion_guard'),'config','safety.yaml'),
                     color_topic='/camera/color/image_rect',
                     depth_topic='/camera/aligned_depth_to_color/image_raw',
                     camera_info_topic='/camera/color/camera_info', sync_slop_s='0.06', max_age_s='0.5',

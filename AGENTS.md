@@ -90,3 +90,20 @@
 
 - 2026-09-16 用户进一步要求30cm跟随：共享FollowConfig默认目标距离改为0.30m（距离死区仍0），在线ROSCAR-red原生构建完成并重启至tmux roscar-red-30cm；读回0.3/0.0及初始disabled后恢复enabled=true。cmd_vel抽样前进0.15m/s、转向0，仅证明指令输出。启动默认运动仍关闭，测距偏差未校正。
 - 本机Linux ARM64 Humble完整回归通过：9个主动包与3个底盘包编译、真实驱动PTY和红色RGB-D闭环、A/B/red/demo/非法路由、视频/性能及语音测试，日志artifacts/follow-30cm-test.log。最小审查和git diff --check通过。
+- 2026-09-16：新增 `ros2_ws/src/radar_vendor/`，暂存厂商毫米波/激光雷达包；默认 `COLCON_IGNORE`，依赖、型号、串口和实机行为尚未验证。
+
+- 2026-09-16 雷达迁入复核：`ros2_ws/src/radar_vendor/` 已完整包含厂商 `wheeltec_radar/` 与 `wheeltec_lidar_ros2/` 下六组目录、7个ROS包；238个厂商文件逐一比对一致，现有239项清单（含本地README）哈希通过。无需重复复制，保留默认COLCON_IGNORE；本轮未编译、部署或启动。
+
+- 2026-09-20 用户要求雷达实际融入 ROS，并确认型号 N10P。本机接入 lslidar_driver 的 N10Plus 配置（串口 460800、10 Hz），新增 build_radar.sh 独立覆盖工作区、run_radar.sh、radar.launch.py 和 with_radar:=true 组合入口；默认现有感知不启用雷达。输出 /scan、/radar/points、/radar/status；安装 TF 默认关闭，只有确认实测外参才发布。未融合避障或车辆控制。
+- 本轮 9 个主动包与 lslidar_msgs/lslidar_driver 两包在 Linux ARM64 Humble 编译通过；真实驱动读取伪串口 N10Plus 108 字节合成帧，扫描/点云及左侧 1m、其余 2m 方向检查通过，健康状态、未标定 TF 拒绝及 A/B/red/demo/非法路由回归通过。修复厂商 X10 扫描 atan2(-y,x) 与同 frame 点云不一致问题，原始哈希保留，local_modifications 记补丁。日志 artifacts/radar-test.log；COLCON_IGNORE 保留，其他雷达包未启用。未 SSH/部署或读取实物，默认 /dev/wheeltec_lidar 仍需现场确认；详见 docs/N10P雷达接入.md。
+
+- 2026-09-20 用户要求补齐控制保护代码：新增主动包 motion_guard，person_follower 改发带时间戳的 /control/cmd_vel_request，由 guard 作为正式链路唯一 /cmd_vel 出口。默认 PERCEPTION_ONLY；尺寸、雷达安装和停车模型均有独立确认开关，未确认仅阻止运动，不改变感知。显式 arm 后方可动作，近障/目标或扫描或请求失效/TF 缺失/重复发布者触发 FAULT，恢复数据与重启均不自动续动。stop/disarm 服务发零回待命。
+- 保护采用包围车体并增加反应/刹车距离的全方向保守圆形包络，覆盖转弯和指令突变；默认未知回波不作为通行证。雷达 TF 按扫描时刻查询、仅支持水平二维安装；A 观测时间未知保持兼容。现有底盘命令与反馈超时继续保留。新的受保护组合入口默认跟随距离 1m，旧 FollowConfig 默认值未修改。
+- 新增 record_follow.sh / replay_follow.sh，回放域174、本机且仅白名单话题，速度重映射到 /replay/cmd_vel。新增 6 项纯保护测试、ROS 服务/故障锁存+真实 C++ 底盘伪串口测试、真实 rosbag 隔离回放测试。10 个主动包与 3 个底盘包本机构建通过，新增专项均通过，详见 artifacts/motion-guard-test.log。测试中的 legacy 红色跟随/串口回归使用明确标记的测试专用桥，正式启动只能经 guard。未 SSH/部署/启动车辆；停车模型和传感器覆盖仍需实车验收。
+
+- 2026-09-20 用户要求接入 SLAM、Nav2、自动绕障及 Foxglove。本机新增 navigation_bringup（第11个主动包），提供 SLAM Toolbox 建图、AMCL 已有地图定位、NavFn/DWB、观测时刻 TF 人体留距目标和串行取消/更新；模式互斥，速度统一经 motion_guard，默认不运动、不启底盘、不部署。
+- 新增 odom_tf 平面桥修正厂商 odom.position.z 存航向的问题（只影响 TF，不改原消息）；有 EKF 时必须禁用该桥。外参占位不发布，未确认标定不进入导航跟随。原 A/B 感知默认入口不变。Foxglove 地图/代价地图/路径/导航状态布局与录包隔离回放已补齐；实际客户端和实车导航仍待验收。完整启动与标定边界见 docs/导航与自动绕障.md。
+- 导航最终本机验收：11 主动包构建，真实 SLAM 地图、NavFn 障碍绕行路径、BT/DWB 原始速度、map_server/AMCL 定位输出以及导航桥故障/目标ID/停走状态测试通过；完整旧功能与真实驱动 PTY、rosbag 隔离回放回归通过。日志 artifacts/navigation-test.log、artifacts/navigation-regression.log；均为合成输入软件测试，不是实车自主导航成功。
+
+- 2026-09-20 用户要求审查当天新增代码并修复：已修复 SIGTERM/重复信号停车清理、跟随请求 frame 写死与红色目标 frame 未透传、性能开关漏传、短暂 TF 到达延迟误锁存、导航状态类型校验、雷达健康计时暂停，以及构建/同步遗漏。保护新增最小量程盲区必须位于车体内的校验；未确认参数仍不影响原感知。审查清单见 docs/2026-09-20代码审查.md；本轮仅本机，无远端/硬件操作。
+- 本轮修复最终验证：导航、原功能完整回归、雷达专项全部退出码0；11主动包、3底盘包、2雷达包构建及真实驱动PTY验证通过。新增SIGTERM最终零速/重复信号清理、TF短延迟与持续缺失、盲区、错误状态类型、暂停ROS时钟等回归通过。日志 artifacts/review-navigation-final.log、review-regression-final.log、review-radar.log；结构/配置/ShellCheck/同步单测及最小复审通过。

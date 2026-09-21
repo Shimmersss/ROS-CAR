@@ -6,6 +6,7 @@
   <license>Proprietary</license>
   <buildtool_depend>ament_python</buildtool_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>person_interfaces</exec_depend>
   <exec_depend>bodyreader_msg</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>

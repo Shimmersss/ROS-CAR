@@ -58,3 +58,17 @@ Foxglove 导入 `foxglove/red-layout.json`（仓库根目录下）后，上方�
 ## RuntimeMetrics 性能接口
 
 `/perception/performance`（source=red_object）和 `/control/performance`（source=follower），类型 person_interfaces/RuntimeMetrics，默认 1 Hz。包含真实窗口秒数、输入/输出计数及 FPS、processing/rgbd/observation_age/control_latency 四组平均与 P95 毫秒值。无样本为 NaN，空窗口计数和 FPS 为零。控制模块未启动则不存在控制性能话题。完整测量边界见方案 A 红色物体跟随文档的“性能统计”。
+
+## N10P 雷达接口
+
+`/scan` 为 sensor_msgs/LaserScan，`/radar/points` 为 sensor_msgs/PointCloud2，均在 laser 坐标系；`/radar/status` 为 std_msgs/String JSON，包含 status、frame_id、hz、valid_points、nearest_m、observation_age_s、detail。状态为 WAITING/OK/NO_RETURNS/INVALID/STALE。最近回波只用于数据检查，不表示机器人净空或允许运动；尚未融合到目标状态、导航或 `/cmd_vel`。安装 TF 仅在明确标定并启用时发布。
+
+## 受保护跟随控制
+
+跟随节点输出 `/control/cmd_vel_request`：geometry_msgs/TwistStamped，header 为计算/发布时间、frame_id=base_link，仅 linear.x 和 angular.z。`motion_guard` 是正式链路唯一 `/cmd_vel`（Twist）发布者；请求、目标、扫描均必须唯一发布者，旧请求和无效目标无法授权运动。
+
+`/control/state` 为 JSON String（mode、ready、reason、last_fault、motion_enabled）。mode 为 PERCEPTION_ONLY/STANDBY/ARMED/FAULT；`/control/arm`、`/control/stop`、`/control/disarm` 均为 std_srvs/Trigger。故障恢复、重新看到目标和节点重启均不自动恢复运动。详情见 motion_guard 包 README。
+
+## 导航接口
+
+`/navigation/follow_goal` 为 map 下 PoseStamped；`/navigation/state` 为 String JSON（stamp_ns、active、fault、ready、allow_motion、reason、distance_remaining）；`/navigation/cmd_vel_raw` 为 Nav2 Twist，仅经 velocity_adapter 转为现有 TwistStamped 请求。`/navigation/start_follow`、`/navigation/stop_follow` 均为 Trigger，不直接绕过 /control/arm。地图与代价地图是 OccupancyGrid，/plan 和 /local_plan 是 Path；/initialpose 为 AMCL PoseWithCovarianceStamped。所有导航速度仍须经过 motion_guard。

@@ -76,10 +76,22 @@ def launch_bridge(context):
     return [IncludeLaunchDescription(AnyLaunchDescriptionSource(bridge))]
 
 
+def launch_radar(context):
+    if LaunchConfiguration('with_radar').perform(context) != 'true':
+        return []
+    path = os.path.join(get_package_share_directory('perception_bringup'), 'launch', 'radar.launch.py')
+    return [IncludeLaunchDescription(AnyLaunchDescriptionSource(path), launch_arguments={
+        'radar_config': LaunchConfiguration('radar_config').perform(context),
+    }.items())]
+
+
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('route', default_value='yolo', choices=['astra', 'yolo', 'red', 'demo']),
         DeclareLaunchArgument('performance_enabled', default_value='true', choices=['true', 'false']),
+        DeclareLaunchArgument('with_radar', default_value='false', choices=['true', 'false']),
+        DeclareLaunchArgument('radar_config', default_value=os.path.join(
+            get_package_share_directory('perception_bringup'), 'config', 'radar.yaml')),
         DeclareLaunchArgument('with_foxglove', default_value='false', choices=['true', 'false']),
         DeclareLaunchArgument('akimbo_hand_above_base_min_mm', default_value='50.0'),
         DeclareLaunchArgument('akimbo_hand_shoulder_max_dx_mm', default_value='100.0'),
@@ -105,4 +117,5 @@ def generate_launch_description():
         DeclareLaunchArgument('lost_timeout_s', default_value='1.0'),
         OpaqueFunction(function=launch_route),
         OpaqueFunction(function=launch_bridge),
+        OpaqueFunction(function=launch_radar),
     ])

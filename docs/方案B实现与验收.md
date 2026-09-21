@@ -102,3 +102,5 @@ launch 不启动相机。A/B 不能同时争用相机或共同向同一目标话
 - Linux ARM64 Humble：8 个主动包编译完成（8.58 秒）。A/B 各 7 项逻辑测试、B 合成 RGB-D/锁定服务/Marker 测试、A 合成状态机、14 项语音逻辑和 A/B/demo/非法 route 回归全部通过。
 - Mac Python 3.12.13：36 项依赖兼容性检查通过；torch 2.6.0、torchvision 0.21.0、Ultralytics 8.3.203、OpenCV 4.10.0.84。校验厂商权重 SHA-256 后，实际 CPU 模型完成两帧空白图推理与 ByteTrack reset。
 - 日志保存于 `artifacts/route-b-humble-test.log` 与 `artifacts/route-b-model-smoke.log`。合成消息及空白图没有验证真人识别、空间配准或 Jetson GPU 性能。
+
+新增可选导航层：SLAM Toolbox / AMCL + Nav2 路径规划和局部绕障，默认运动关闭；不替换现有检测、ByteTrack、深度与目标锁定。启动、外参和里程计前置以及 Foxglove 布局见 导航与自动绕障.md。本轮仅本机软件验证，未切换小车在线路线。

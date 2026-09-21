@@ -1,0 +1,42 @@
+{
+  "configById": {
+    "3D!radar": {
+      "fixedFrame": "laser",
+      "followTf": "laser",
+      "topics": {
+        "/scan": {
+          "visible": true
+        },
+        "/radar/points": {
+          "visible": false
+        }
+      },
+      "foxglovePanelTitle": "N10P 扫描（laser 坐标）"
+    },
+    "RawMessages!status": {
+      "topicPath": "/radar/status",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "雷达数据状态"
+    },
+    "RawMessages!scan": {
+      "topicPath": "/scan",
+      "foxglovePanelTitle": "原始 LaserScan"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "linkedGlobalVariables": [],
+  "playbackConfig": {
+    "speed": 1,
+    "messageOrder": "receiveTime"
+  },
+  "layout": {
+    "direction": "row",
+    "first": "3D!radar",
+    "second": {
+      "direction": "column",
+      "first": "RawMessages!status",
+      "second": "RawMessages!scan"
+    }
+  }
+}

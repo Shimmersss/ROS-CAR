@@ -74,3 +74,7 @@ Foxglove 导入 `foxglove/red-layout.json`（仓库根目录下）后，上方�
 视频仅依赖配置的 `color_topic`，无需深度或配准确认即可显示与检测；缺少深度时 TargetState 仍为 NOT_READY，不会因此允许运动。必须有真实相机发布彩色话题才能看到实时画面。本轮完成本机代码和布局，未修改小车或在线 Foxglove 配置。
 
 性能图表已加入 red-layout 底部：输入/输出 FPS、检测平均/P95 耗时，以及观测年龄与有效控制延迟。来源为节点每秒汇总的 RuntimeMetrics，而非 Mac 接收视频速率；没有测量样本时曲线为空，不能解释为零延迟。需要重新编译 person_interfaces 和节点包后运行；旧布局需重新导入。
+
+N10P 雷达布局：导入 `radar-layout.json`，在现有 Bridge 连接查看 `/scan`、`/radar/points` 和 `/radar/status`。默认固定坐标 laser，不需要未标定的 base_link TF；布局文件已生成，客户端显示仍待实际连接验收。
+
+导航布局：导入 `navigation-layout.json`，查看 `/map`、`/scan`、`/plan`、`/local_plan`、`/local_costmap/costmap`、`/navigation/follow_goal` 与导航/保护状态。沿用现有 Bridge；map/odom TF 缺失时需补齐真实定位和安装标定。布局客户端展示尚待现场验收，详见 `docs/导航与自动绕障.md`。
