@@ -1,0 +1,54 @@
+{
+  "configById": {
+    "Image!detections": {
+      "topic": "/perception/detections_image",
+      "imageMode": {"imageTopic": "/perception/detections_image"},
+      "foxglovePanelTitle": "B 人体检测（320×240 / 10 FPS）"
+    },
+    "RawMessages!target": {
+      "topicPath": "/perception/target_state",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "B 目标状态"
+    },
+    "Plot!distance": {
+      "paths": [{"value": "/perception/target_state.horizontal_distance_m", "enabled": true, "timestampMethod": "receiveTime"}],
+      "xAxisVal": "timestamp",
+      "isSynced": true,
+      "foxglovePanelTitle": "目标距离 m"
+    },
+    "3D!radar": {
+      "fixedFrame": "laser",
+      "followTf": "laser",
+      "topics": {
+        "/scan": {"visible": true},
+        "/radar/points": {"visible": false}
+      },
+      "foxglovePanelTitle": "N10P 扫描"
+    },
+    "RawMessages!radar": {
+      "topicPath": "/radar/status",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "N10P 状态"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "linkedGlobalVariables": [],
+  "playbackConfig": {"speed": 1, "messageOrder": "receiveTime"},
+  "layout": {
+    "direction": "row",
+    "splitPercentage": 52,
+    "first": {
+      "direction": "column",
+      "splitPercentage": 68,
+      "first": "Image!detections",
+      "second": {"direction": "row", "first": "RawMessages!target", "second": "Plot!distance"}
+    },
+    "second": {
+      "direction": "column",
+      "splitPercentage": 72,
+      "first": "3D!radar",
+      "second": "RawMessages!radar"
+    }
+  }
+}

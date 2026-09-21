@@ -43,6 +43,7 @@ class TrackerNode(Node):
             'depth_topic': '/camera/aligned_depth_to_color/image_raw',
             'camera_info_topic': '/camera/color/camera_info',
             'depth_registered': False, 'sync_slop_s': .06, 'max_age_s': .5,
+            'visualization_fps': 10.0, 'visualization_scale': 0.5,
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -51,6 +52,12 @@ class TrackerNode(Node):
             raise ValueError('Require 0 < sync_slop_s < max_age_s')
         if self.cfg['image_size'] < 32:
             raise ValueError('image_size must be at least 32')
+        if (not math.isfinite(self.cfg['visualization_fps'])
+                or not 0 <= self.cfg['visualization_fps'] <= 30):
+            raise ValueError('visualization_fps must be finite and in [0, 30]')
+        if (not math.isfinite(self.cfg['visualization_scale'])
+                or not 0 < self.cfg['visualization_scale'] <= 1):
+            raise ValueError('visualization_scale must be finite and in (0, 1]')
         self.state_lock = RLock()
         self.input_group = MutuallyExclusiveCallbackGroup()
         self.state_group = MutuallyExclusiveCallbackGroup()
@@ -64,6 +71,7 @@ class TrackerNode(Node):
         self.last_stamp = None
         self.last_input_at = -math.inf
         self.error = ''
+        self.last_visualization_at = -math.inf
         self.backend = backend
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='yolo')
         self.pub = self.create_publisher(TargetState, 'target_state', 10)
@@ -233,6 +241,11 @@ class TrackerNode(Node):
         self.marker_pub.publish(marker)
 
     def publish_image(self, color, image, detections):
+        now = time.monotonic()
+        fps = self.cfg['visualization_fps']
+        if fps == 0 or now-self.last_visualization_at < 1.0/fps:
+            return
+        self.last_visualization_at = now
         annotated = image.copy()
         for detection in detections:
             x1, y1, x2, y2 = map(int, detection.box)
@@ -242,6 +255,10 @@ class TrackerNode(Node):
                 label += ' LOCKED'
             cv2.putText(annotated, label, (x1,max(15,y1)), cv2.FONT_HERSHEY_SIMPLEX,
                         .5, (0,255,0), 1)
+        scale = self.cfg['visualization_scale']
+        if scale != 1:
+            annotated = cv2.resize(annotated, None, fx=scale, fy=scale,
+                                   interpolation=cv2.INTER_AREA)
         output = self.bridge.cv2_to_imgmsg(annotated, encoding='bgr8')
         output.header = copy.deepcopy(color.header)
         self.image_pub.publish(output)

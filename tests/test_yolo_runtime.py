@@ -114,6 +114,7 @@ def main():
         assert transform_node.broadcaster is None  # No placeholder overwrites the live TF tree.
         assert markers[-1].action == Marker.ADD
         assert images and images[-1].header.frame_id == 'camera_optical'
+        assert (images[-1].width, images[-1].height) == (50, 50)
         assert states[-1].observation_stamp.sec > 0
         assert not states[-1].is_simulated  # Injected test backend; never a deployable mode.
         assert abs(send('32FC1',1.5).position.z-1.5) < 1e-5

@@ -33,6 +33,8 @@ def launch_route(context):
             'image_size': int(LaunchConfiguration('image_size').perform(context)),
             'sync_slop_s': float(LaunchConfiguration('sync_slop_s').perform(context)),
             'max_age_s': float(LaunchConfiguration('max_age_s').perform(context)),
+            'visualization_fps': float(LaunchConfiguration('visualization_fps').perform(context)),
+            'visualization_scale': float(LaunchConfiguration('visualization_scale').perform(context)),
         })
         if route == 'red':
             parameters[0]['performance_enabled'] = LaunchConfiguration('performance_enabled').perform(context) == 'true'
@@ -118,6 +120,8 @@ def generate_launch_description():
         DeclareLaunchArgument('camera_info_topic', default_value='/camera/color/camera_info'),
         DeclareLaunchArgument('sync_slop_s', default_value='0.06'),
         DeclareLaunchArgument('max_age_s', default_value='0.5'),
+        DeclareLaunchArgument('visualization_fps', default_value='10.0'),
+        DeclareLaunchArgument('visualization_scale', default_value='0.5'),
         DeclareLaunchArgument('hue_low_max', default_value='10'),
         DeclareLaunchArgument('hue_high_min', default_value='170'),
         DeclareLaunchArgument('saturation_min', default_value='100'),
