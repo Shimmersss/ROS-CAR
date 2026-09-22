@@ -5,7 +5,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class Detection:
-    track_id: int
+    track_id: int | None
     box: tuple
     confidence: float
 
@@ -20,28 +20,31 @@ class YoloBackend:
             raise ValueError('TensorRT engine requires device=0 on its build Jetson')
         from ultralytics import YOLO
         self.model = YOLO(model_path, task='detect')
+        from ultralytics.trackers.byte_tracker import BYTETracker
+        from ultralytics.utils import YAML, ROOT, IterableSimpleNamespace
+        self.tracker = BYTETracker(IterableSimpleNamespace(**YAML.load(ROOT / 'cfg/trackers/bytetrack.yaml')))
         self.device = device
         self.image_size = image_size
         self.nms_free = nms_free
 
     def reset(self):
-        predictor = self.model.predictor
-        if predictor is not None:
-            for tracker in getattr(predictor, 'trackers', []):
-                tracker.reset()
+        self.tracker.reset()
 
     def infer(self, image):
-        result = self.model.track(
-            image, persist=True, tracker='bytetrack.yaml', classes=[0],
+        result = self.model.predict(
+            image, classes=[0],
             conf=0.1, iou=0.7, imgsz=self.image_size, device=self.device,
             nms=False if self.nms_free else None, rect=False, verbose=False)[0]
         if self.nms_free and not self.model.predictor.model.end2end:
             raise RuntimeError('Requested NMS-free inference but model has no end-to-end output; '
                                'use YOLO26 or export the engine with nms=False')
         boxes = result.boxes
-        if boxes is None or boxes.id is None:
-            return []
-        return [Detection(int(tid), tuple(map(float, box)), float(conf))
-                for tid, box, conf in zip(boxes.id.cpu().tolist(),
-                                         boxes.xyxy.cpu().tolist(),
-                                         boxes.conf.cpu().tolist())]
+        if boxes is None:
+            raise RuntimeError('Detection model returned no boxes container')
+        # ByteTrack returns the original detection index in its final column.
+        # Preserve every raw box, including tentative/unmatched low-score detections.
+        tracks = self.tracker.update(boxes.cpu().numpy(), image)
+        ids = {int(row[-1]): int(row[4]) for row in tracks}
+        return [Detection(ids.get(index), tuple(map(float, box)), float(conf))
+                for index, (box, conf) in enumerate(zip(boxes.xyxy.cpu().tolist(),
+                                                       boxes.conf.cpu().tolist()))]

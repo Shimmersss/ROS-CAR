@@ -28,3 +28,11 @@ class SelectionTest(unittest.TestCase):
         self.assertFalse(s.lock(now=1)[0])
         s.update([Detection(1,(0,0,20,90),.9)],100,1)
         self.assertFalse(s.lock(now=2)[0])
+
+
+class UntrackedSelectionTest(unittest.TestCase):
+    def test_untracked_cannot_lock(self):
+        selection = Selection()
+        selection.update([Detection(None, (10, 0, 90, 100), .8)], 100, 1.)
+        self.assertFalse(selection.lock(now=1.)[0])
+        self.assertIsNone(selection.selected())

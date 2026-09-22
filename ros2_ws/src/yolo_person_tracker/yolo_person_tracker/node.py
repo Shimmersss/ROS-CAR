@@ -19,6 +19,8 @@ from sensor_msgs.msg import Image, CameraInfo
 from std_srvs.srv import Trigger
 from visualization_msgs.msg import Marker
 from person_interfaces.msg import TargetState
+from vision_msgs.msg import Detection2DArray
+from astra_body_adapter.detections import detection_array
 from .backend import YoloBackend
 from .depth import measure
 from .state import Selection
@@ -76,6 +78,7 @@ class TrackerNode(Node):
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='yolo')
         self.pub = self.create_publisher(TargetState, 'target_state', 10)
         self.marker_pub = self.create_publisher(Marker, 'target_marker', 10)
+        self.detections_pub = self.create_publisher(Detection2DArray, 'detections', 10)
         self.image_pub = self.create_publisher(Image, 'detections_image', 2)
         self.create_service(Trigger, 'lock_target', self.lock_target, callback_group=self.state_group)
         self.create_service(Trigger, 'release_target', self.release_target, callback_group=self.state_group)
@@ -165,7 +168,7 @@ class TrackerNode(Node):
         if reset:
             self.backend.reset()
         detections = self.backend.infer(image)
-        positions = {d.track_id: measure(metres, d.box, intrinsics) for d in detections}
+        positions = {d.track_id: measure(metres, d.box, intrinsics) for d in detections if d.track_id is not None}
         return (color, metres, received_at, intrinsics, image, depth), detections, positions
 
     @serialized
@@ -183,6 +186,10 @@ class TrackerNode(Node):
                 self.snapshot, detections, self.positions = self.future.result()
                 self.selection.update(detections, self.snapshot[0].width, self.snapshot[2])
                 if self.fresh_snapshot():
+                    self.detections_pub.publish(detection_array(self.snapshot[0].header,
+                        [(d.box, 'person', d.confidence,
+                          '' if d.track_id is None else f'{self.selection.epoch}:{d.track_id}')
+                         for d in detections]))
                     self.publish_image(self.snapshot[0], self.snapshot[4], detections)
             except Exception as exc:
                 self.error = f'Inference failed: {type(exc).__name__}: {exc}'
@@ -250,7 +257,8 @@ class TrackerNode(Node):
         for detection in detections:
             x1, y1, x2, y2 = map(int, detection.box)
             cv2.rectangle(annotated, (x1,y1), (x2,y2), (0,255,0), 2)
-            label = f'{self.selection.epoch}:{detection.track_id} {detection.confidence:.2f}'
+            identity = 'person' if detection.track_id is None else f'{self.selection.epoch}:{detection.track_id}'
+            label = f'{identity} {detection.confidence:.2f}'
             if self.selection.target_id == (self.selection.epoch, detection.track_id):
                 label += ' LOCKED'
             cv2.putText(annotated, label, (x1,max(15,y1)), cv2.FONT_HERSHEY_SIMPLEX,

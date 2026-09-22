@@ -11,7 +11,7 @@ class Selection:
         self.width = 0
 
     def update(self, candidates, width, received_at):
-        self.candidates = candidates
+        self.candidates = [d for d in candidates if d.track_id is not None]
         self.width = width
         self.received_at = received_at
 

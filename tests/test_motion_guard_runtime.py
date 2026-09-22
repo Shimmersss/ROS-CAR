@@ -22,6 +22,7 @@ from std_srvs.srv import Trigger
 from tf2_ros import StaticTransformBroadcaster, Buffer
 from person_interfaces.msg import TargetState
 from motion_guard.node import MotionGuard
+from roscar_interfaces.srv import SetControlMode
 
 rclpy.init(); probe=Node('guard_test'); ex=SingleThreadedExecutor(); ex.add_node(probe)
 # Real C++ chassis driver on a PTY; recorded frames never reach hardware.
@@ -116,7 +117,23 @@ try:
     guard.buffer=old_buffer
     broadcaster.sendTransform(tr);pump(.3);stopped()
     enable();assert call(stop).success;pump(.2);assert states[-1]['mode']=='STANDBY';stopped()
-    enable();ex.remove_node(guard);guard.destroy_node()
+    # Same real driver PTY, now independently controlled without any visual target.
+    mode_client=probe.create_client(SetControlMode,'/control/set_mode')
+    assert mode_client.wait_for_service(timeout_sec=2)
+    mode_request=SetControlMode.Request();mode_request.mode='EXTERNAL'
+    future=mode_client.call_async(mode_request)
+    while not future.done():pump(.02)
+    assert future.result().success
+    pump(.15);stopped()
+    flags['target']=False
+    follow_req=req
+    req=probe.create_publisher(TwistStamped,'/chassis/cmd_vel',1)
+    enable()
+    flags['obstacle']=True;pump(.25);assert states[-1]['mode']=='FAULT';stopped()
+    flags['obstacle']=False;enable()
+    assert call(stop).success;pump(.2);stopped()
+    probe.destroy_publisher(req);req=follow_req;flags['target']=True
+    ex.remove_node(guard);guard.destroy_node()
     guard=MotionGuard(parameter_overrides=params);ex.add_node(guard)
     broadcaster.sendTransform(tr);pump(.5);assert states[-1]['mode']=='STANDBY';stopped()
     ex.remove_node(guard);guard.destroy_node()

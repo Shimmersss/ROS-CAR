@@ -21,6 +21,7 @@ def main():
     if '..' in dest.parts or len(dest.parts) < 4 or dest.name in {'.', '..'}:
         parser.error('请指定如 /home/user/ROSCAR 的专用项目子目录')
     root = Path(__file__).resolve().parents[1]
+    # ros2_ws/src includes roscar_interfaces/roscar_api; docs includes the public API manual.
     paths = ['README.md', 'AGENTS.md', 'WORKLOG.md', '人体跟随感知方案.md',
              'ros2_ws/src', 'scripts', 'tests', 'docs', 'foxglove',
              'deploy/README.md', 'deploy/humble-test.Dockerfile', 'deploy/radar-test.Dockerfile', 'deploy/navigation-test.Dockerfile', 'deploy/chassis-test.Dockerfile', 'deploy/systemd',

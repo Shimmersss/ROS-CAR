@@ -5,7 +5,7 @@ IMAGE="${ROSCAR_ROS_IMAGE:-ros:humble-ros-base-jammy}"
 mkdir -p "$ROOT/artifacts"
 docker build --platform linux/arm64 --build-arg "ROS_IMAGE=$IMAGE" \
   -f "$ROOT/deploy/humble-test.Dockerfile" -t roscar-humble-test "$ROOT/deploy"
-docker run --rm --platform linux/arm64 -e ROS_DOMAIN_ID=182 \
+docker run --rm --platform linux/arm64 -e ROS_DOMAIN_ID=182 -e ROS_LOCALHOST_ONLY=1 \
   -v "$ROOT/ros2_ws/src:/workspace/ros2_ws/src:ro" \
   -v "$ROOT/scripts:/workspace/scripts:ro" \
   -v "$ROOT/tests:/workspace/tests:ro" \
@@ -20,6 +20,9 @@ docker run --rm --platform linux/arm64 -e ROS_DOMAIN_ID=182 \
     python3 -m unittest discover -s src/motion_guard/test -v
     python3 -m unittest discover -s src/navigation_bringup/test -v
     ROS_DOMAIN_ID=169 python3 /workspace/tests/test_control_entrypoints.py
+    ROS_DOMAIN_ID=172 python3 /workspace/tests/test_api_control.py
+    ROS_DOMAIN_ID=175 python3 /workspace/tests/test_api_examples.py
+    ROS_DOMAIN_ID=175 python3 /workspace/tests/test_api_red.py
     ROS_DOMAIN_ID=173 python3 /workspace/tests/test_motion_guard_runtime.py
     ROS_DOMAIN_ID=174 ROS_LOCALHOST_ONLY=1 python3 /workspace/tests/test_follow_replay.py
     python3 -m unittest discover -s src/red_object_tracker/test -v
