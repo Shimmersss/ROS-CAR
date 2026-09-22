@@ -50,7 +50,7 @@ xfyun_tts:
   ros__parameters:
     endpoint: wss://tts-api.xfyun.cn/v2/tts
     input_topic: /voice/tts_text
-    playback_device: default
+    playback_device: plughw:CARD=Device,DEV=0
     sample_rate: 16000
     voice_name: xiaoyan
     speed: 50

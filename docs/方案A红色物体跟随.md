@@ -63,6 +63,15 @@ ros2 launch perception_bringup route_a.launch.py depth_registered:=true \
 
 底盘通过 `with_chassis:=true serial_port:=实际设备 car_mode:=核验后的车型` 单独开启，运动仍为关闭。确认有效目标与底盘后，使用 `motion_enabled:=true`，或对 `/person_follower` 设置 `enabled=true`。启动参数不允许在未开底盘时使能运动。不要直接复制厂商默认车型。
 
+首次实车应先绕过跟随器做受限串口检查。`chassis_motion_smoke_test.sh` 只启动加固后的底盘驱动，默认只等待 STM32 电压回传；加 `--move` 后才创建唯一一个 `/cmd_vel` 发布者，以不超过 0.08 m/s 的速度前进不超过 1 秒，随后持续发送零速度并关闭串口。脚本要求车型键与 `robot_model.yaml` 精确匹配，检测到已有底盘节点或速度发布者会拒绝运行：
+
+```bash
+bash scripts/build_chassis.sh
+bash scripts/chassis_motion_smoke_test.sh --car-mode 已核验车型 --check
+# 架空车轮或清空前方空间并准备断电后：
+bash scripts/chassis_motion_smoke_test.sh --car-mode 已核验车型 --move
+```
+
 管理入口 `scripts/route_a.sh` 和 `启动方案A.command` 默认调用 `run_red_foxglove.sh`。环境变量 `DEPTH_REGISTERED`、`COLOR_TOPIC`、`DEPTH_TOPIC`、`CAMERA_INFO_TOPIC`、`WITH_CHASSIS`、`MOTION_ENABLED`、`SERIAL_PORT`、`SERIAL_BAUD_RATE`、`CAR_MODE` 对应配置；默认配准、串口、运动均为 false。HSV 阈值、确认帧数、丢失超时和最小面积通过 ROS launch 参数调整。
 
 仓库 systemd 单元已改为红色感知入口且固定串口/运动关闭；**本轮未安装该单元到小车，现有在线服务不会自动变更。** 切换部署时应先停旧服务和旧控制实例，核对摄像头占用，再安装并启动新入口。
@@ -81,6 +90,8 @@ ros2 launch perception_bringup route_a.launch.py depth_registered:=true \
 运行 `bash scripts/test_container.sh` 在本机 Linux ARM64 Humble 环境构建并执行红色检测、控制新鲜度、伪终端真实驱动与合成闭环测试，同时回归 A/B、demo 和语音逻辑。日志写入 `artifacts/humble-test.log`。
 
 实机后续必须核验：彩色流可用、RGB-D 配准、真实串口与车型、真实回传及方向、停车行为、现场红色目标跟随。伪终端验证不替代这些项目，也不能证明 STM32 断线停车。
+
+2026-09-16 首轮底盘冒烟中，实物照片的 OLED 显示 `Akm`，且可见转向舵机，故使用 `mini_akm`。串口收到约 11.337 V 的有效 24 字节回传；0.08 m/s、1 秒直行命令期间 `/odom` 的线速度从零上升至约 0.088 m/s，结束后回到零，驱动退出且串口释放。这证明指令已进入带编码器反馈的底盘链路；远程没有肉眼观察车身位移，不能替代用户现场确认或方向验收。
 
 ## 原始视频与检测框视频（2026-09-16）
 

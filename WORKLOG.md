@@ -560,3 +560,34 @@
 - 最小审查完成：模式切换无旧请求复用、EXTERNAL 不绕过雷达、未跟踪框不能锁定、消息坐标不随显示缩放、失败不伪报空检测、默认入口无硬件/授权、包依赖和同步白名单完整。13 包结构检查、3 项模拟同步单测、ShellCheck、git diff --check 通过；同步单测拦截 subprocess，没有实际访问远端。
 - 验证证据：`artifacts/api-build.log`、`api-runtime.log`（包含初次单测 mock 修正前记录）、`api-examples-pty.log`、`api-final-vision.log`、`api-regression.log`（包含初次回放域号问题）、`api-regression-runtime.log`、`api-navigation.log`、`api-radar.log`、`api-model-smoke.log`。ROS 基础镜像 digest `sha256:1813d3c85d7f96ff7d3012d865204583255740182db5d0065f8f8cd029a83138`，完整镜像身份见 `api-test-environment.log`。
 - 本轮创建的容器、镜像和构建缓存已清理，Docker 显示 images/containers/volumes/build cache 全部为 0；保留既有 Colima 环境，回收其已释放块。源码、已有权重与验证日志保留。清理记录 `artifacts/api-cleanup.log`。
+## 2026-09-16：底盘串口与短距运动冒烟入口
+
+- 新增 `scripts/chassis_motion_smoke_test.sh`，只启动加固后的 `wheeltec_robot_node`，不启动 `person_follower`。运行前拒绝已有底盘节点或 `/cmd_vel` 发布者，避免双开串口或两个速度源触发驱动安全停车。
+- 脚本要求显式 `--car-mode` 且必须匹配 `robot_model.yaml`；默认 `--check` 只等待 `/PowerVoltage` 有效回传。只有显式 `--move` 才创建唯一发布者，以默认 0.05 m/s 前进 0.5 秒，随后连续 0.75 秒发零并关闭驱动；速度硬限制 0.08 m/s、时长硬限制 1 秒。
+- 当前板上已只读确认 `/dev/wheeltec_controller` 解析为 `/dev/ttyCH343USB0`。独立部署最初缺少 `chassis_vendor`，首次构建在复制前立即退出；补同步三套源码后，Jetson 原生 Humble 的 `serial`、`wheeltec_robot_msg`、`turn_on_wheeltec_robot` 全部构建成功，驱动可执行文件已安装。原厂 serial 仍有既存 signedness/unused 编译警告。
+- Jetson 上 Bash 语法、帮助、缺车型及非法车型拒绝检查通过；原在线 ROS 域 182 中没有 `/cmd_vel`，也没有已运行的 `wheeltec_robot` 节点。板上未安装 ShellCheck，因此未宣称通过该项。
+- 用户照片确认 OLED 为 `Akm`，底盘可见转向舵机，选择仓库键 `mini_akm`。照片同时显示约 11.37 V；ROS 驱动隔离测试收到 `/PowerVoltage=11.337`。直接只读串口还采到连续 24 字节 `0x7B...BCC...0x7D` 帧，抽查 BCC 正确。
+- 冒烟脚本修正 ROS 2 `topic echo --once` 参数位置，默认改用本机隔离域 183，并在 ROS 图检查之外增加 `fuser` 串口占用拒绝；运动发布者先持续 1 秒发送零速度，等待 DDS 双向发现后才允许非零命令。
+- 首次两轮 0.05 m/s、0.5 秒测试分别在加入零速握手前后执行，里程计都基本为零，未形成有效运动。没有直接提高到驱动 0.15 m/s 上限；第三轮使用冒烟脚本硬上限 0.08 m/s、1 秒，`/odom.twist.twist.linear.x` 出现连续正值，峰值约 0.088 m/s，随后逐级下降并最终回到 0.0。
+- 第三轮证明 ROS 指令、串口、下位机和编码器反馈链路产生了运动响应，但远程没有视觉观察车身是否在地面实际位移。测试结束后 `wheeltec_robot_node` 和测试发布器均退出，`fuser` 确认串口无人占用；`roscar-red` tmux 感知会话仍运行。后续需由用户现场确认实际位移和前进方向。
+- 版本收尾检查发现 Windows 工作区会将 Shell 脚本检出为 CRLF，直接 SCP 后 Jetson Bash 报 `\r` 语法错误；新增 `.gitattributes` 固定 `*.sh` 和 `*.command` 为 LF，并在提交前用暂存区内容重建、同步及复测相关脚本。该问题只影响后续从 Windows 再部署的文件，既有在线进程未因检查而中断。
+
+## 2026-09-16：分支 a 红色跟随真机部署
+
+- 用户要求将分支 `a` 的跟随功能部署到小车测试。Jetson 的旧 `/home/wheeltec/ROSCAR` 骨架服务自动启动并占用相机；按用户授权停止 `roscar-route-a.service`。旧服务仍为 enabled，停止后因旧脚本响应 TERM 的退出码显示 failed，但其进程已退出、相机已释放。
+- 核对 `/home/wheeltec/ROSCAR-red` 中总入口、相机、红色感知与底盘冒烟脚本和本地哈希一致，Bash 语法通过；所需红色跟踪、person_follower、底盘驱动和 Foxglove 可执行文件均存在。先以 `WITH_CHASSIS=false`、`MOTION_ENABLED=false` 运行相机预检，再以 `WITH_CHASSIS=true`、`SERIAL_PORT=/dev/wheeltec_controller`、`CAR_MODE=mini_akm`、`MOTION_ENABLED=false` 重新启动全链路。
+- Astra 启用 depth_registration 后，彩色和深度均为 640×480，彩色、深度与 CameraInfo 使用 `camera_color_optical_frame`；真实 `/perception/target_state` 来源为 `red_object`、`is_simulated=false`，观测年龄约 0.03 s。当前无红色目标，状态为 SEARCHING/Confirming largest red component。
+- 底盘串口成功打开，`/PowerVoltage` 实测约 12.03 V；`/cmd_vel` 恰有 person_follower 一个发布者和 wheeltec_robot 一个订阅者，禁用时消息全零。动态设置 `/person_follower.enabled=true` 成功，随后再次确认无目标时速度仍全零。
+- 当前 `tmux` 会话 `roscar-red` 保持运行，Foxglove Bridge 为 `ws://192.168.1.240:8765`。本轮证明真实相机、注册 RGB-D、红色状态、控制节点和底盘串口已组成在线链路；尚未由用户现场确认红色物体引导下的实际位移、方向和转向效果，不将其写为完整实车跟随验收。系统无避障，测试需清空场地并随时断电或将 enabled 设回 false。
+- 最小审查：检查五个 ROS 节点、唯一目标发布者、唯一速度发布/订阅对、真实来源标记、电压回传、跟随参数和零速度；未修改 B 或语音代码，未把本机未跟踪的根目录 `red-layout.json` 纳入版本。
+
+## 2026-09-16：恢复语音助手与 TTS 播报
+
+- 用户明确要求暂停跟随工作，只处理语音模块。检查发现当前项目以 `WITH_VOICE=false` 启动，因此只有相机、感知、底盘和 Foxglove 节点；语音私有配置仍存在且权限为 0600。
+- 在现有 tmux 会话中独立启动语音，不重启其他模块；在线节点包括 `wheeltec_mic_wake`、`xfyun_asr`、`voice_command_router`、`deepseek_chat`、`xfyun_tts`。麦克风串口成功打开，蜂鸣器保持禁用。
+- 初次注入 TTS 时状态虽为 `SPEAKING→IDLE`，用户未听到声音。检查发现默认 `playback_device=default` 被 PulseAudio 指向板载声卡；板上唯一 USB 播放端为 `plughw:CARD=Device,DEV=0`，与旧部署成功配置一致。USB PCM 已 100% 且未静音；用户确认 12 秒测试音和修复 DNS 后的讯飞中文 TTS 均可听。
+- 当前 Wi-Fi 从路由器取得的 DNS 一度无响应，公网 IP 可达但讯飞/DeepSeek 域名解析卡住。临时将当前接口 DNS 切到 223.5.5.5 和 119.29.29.29 后，两域名约 50 ms 解析，讯飞 TTS 恢复；这是运行时设置，Wi-Fi 重连后可能丢失。
+- 硬件唤醒已多次输出角度，但 ASR 报 `write operation timed out`。根因是 `_receive_one()` 为非阻塞轮询设置 1 ms WebSocket 超时后没有恢复，下一帧 `send()` 继承 1 ms；现保存并恢复原超时，避免网络轻微抖动造成发送失败。
+- 修复同步到 `/home/wheeltec/ROSCAR-red` 后，xfyun_speech 原生 Humble 构建成功，协议和 WebSocket 超时恢复共 5 项测试通过。为避免与他人正在调整的跟随会话耦合，语音改为独立 `roscar-voice` tmux 会话；未重启或修改跟随进程。
+- 真人连续完成两轮完整链路：“你是人类吗？”与“你好吗？”均收到硬件唤醒、LISTENING、ASR_TEXT、DeepSeek ANSWER、TTS `SPEAKING→IDLE`，用户现场听到播报，日志未再出现发送超时。中间两次只唤醒未发出超过阈值的语音被安全丢弃。
+- `scripts/run_voice_assistant.sh` 从硬编码 `enable_tts:=false` 改为默认开启，可用 `VOICE_TTS_ENABLED=false` 恢复纯文本模式；配置固定已验证 USB 播放设备。同步更新 README。未修改跟随代码或参数。
