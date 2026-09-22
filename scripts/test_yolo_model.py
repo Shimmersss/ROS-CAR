@@ -36,7 +36,7 @@ def main():
         start = time.perf_counter()
         detections = backend.infer(image)
         elapsed.append((time.perf_counter()-start)*1000)
-        tracks.append({d.track_id for d in detections})
+        tracks.append({d.track_id for d in detections if d.track_id is not None})
         assert detections and all(d.confidence > 0 for d in detections)
     assert set.intersection(*tracks), 'No persistent ID on repeated identical image'
     backend.reset()

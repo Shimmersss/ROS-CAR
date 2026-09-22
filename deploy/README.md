@@ -44,3 +44,7 @@ N10P 本机验证运行 `bash scripts/test_radar_container.sh`；Linux/Jetson �
 `bash scripts/test_container.sh` 包含控制来源/时效、GPIO 假设备及 A 启动互斥测试。随后可运行 `bash scripts/test_chassis_container.sh`，补齐独立容器依赖并在临时副本编译串口三包、运行串口字节检查；不移除工作区 COLCON_IGNORE、不访问串口。
 
 `route_a.sh` 发现 systemd 服务已安装时不再启动手动副本，包括自动重启退避期。已停止/失败服务应使用 `sudo systemctl start roscar-route-a.service`；手动模式生命周期通过 Linux `flock` 互斥。
+
+## 对外 API 构建清单
+
+主动工作区新增 `roscar_interfaces`（SetControlMode）和 `roscar_api`（统一入口与示例），总计 13 个主动包。`build_ros.sh` 使用 colcon 自动扫描；Humble 系统依赖新增 `ros-humble-vision-msgs`。`sync_to_jetson.py` 的 `ros2_ws/src`、`scripts`、`tests`、`docs` 白名单已覆盖新增包与手册，不新增权重/录像或代理配置同步。本轮仅本机验证，没有执行同步或部署。使用方法见 [ROS 接口使用文档](../docs/ROS接口使用文档.md)。

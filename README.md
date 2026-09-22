@@ -1,12 +1,16 @@
 # ROSCAR · 室内人体跟随感知
 
-当前目标：Orin Nano Super 8GB + Astra 深度相机，比较 A（原厂骨架）和 B（YOLO + 深度）路线，通过 Mac 上的 Foxglove / SSH 调试。当前不接下位机，不输出车辆控制指令。
+当前目标：Orin Nano Super 8GB + RGB-D 感知，通过 Foxglove / SSH 调试。默认感知与运动关闭入口保留；底盘、雷达及受保护控制均须显式启用。各路线本机/实车验证范围见 WORKLOG。
+
+## 对外 ROS 2 接口
+
+统一入口 `ros2 launch roscar_api api.launch.py` 默认 IDLE、运动关闭、不启动硬件。新增 `/chassis/cmd_vel`（TwistStamped）、`/control/set_mode`（IDLE/EXTERNAL/FOLLOW）和 RGB-D `/perception/detections`（全部二维候选框）；原 TargetState 保持不变。字段、QoS、中文 CLI/Python 示例见 [ROS 接口使用文档](docs/ROS接口使用文档.md)。不要与已有包含 motion_guard 的入口叠加启动。
 
 ## 框架状态
 
 | 内容 | 状态 |
 |---|---|
-| 公共 TargetState 消息、四个 ROS 2 包、A/B/demo 启动选择 | 已建立 |
+| 公共 TargetState/模式服务、13 个主动 ROS 2 包、A/B/demo 启动选择 | 已建立 |
 | A / B 节点 | A 已接真实骨架适配器；B 已有本地真实算法实现，待实机验收 |
 | demo | 显式模拟数据：9 秒目标可见、3 秒丢失，用于验证消息与展示 |
 | Mac → Jetson 同步脚本、模型清单、测试脚本 | 已建立 |
@@ -24,6 +28,8 @@ B 当前选用官方预训练 **YOLO26s 检测版 + ByteTrack**，默认免 NMS 
 
 ```text
 ros2_ws/src/
+  roscar_interfaces/    对外 SetControlMode 服务
+  roscar_api/           统一安全默认入口与四个 Python 示例
   person_interfaces/     公共目标观测消息
   astra_body_adapter/    A 路线真实 /bodylist 适配器
   yolo_person_tracker/   B 路线（YOLO/ByteTrack/配准深度）

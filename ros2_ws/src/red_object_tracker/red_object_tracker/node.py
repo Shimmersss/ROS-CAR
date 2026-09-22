@@ -12,6 +12,8 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, CameraInfo
 from visualization_msgs.msg import Marker
 from person_interfaces.msg import TargetState
+from vision_msgs.msg import Detection2DArray
+from astra_body_adapter.detections import detection_array
 from astra_body_adapter.performance import Performance
 from .vision import Selection, detect, measure
 
@@ -48,6 +50,7 @@ class RedTrackerNode(Node):
         self.error = ''
         self.pub = self.create_publisher(TargetState, 'target_state', 10)
         self.marker_pub = self.create_publisher(Marker, 'target_marker', 10)
+        self.detections_pub = self.create_publisher(Detection2DArray, 'detections', 10)
         self.image_pub = self.create_publisher(Image, 'detections_image', 2)
         self.raw_pub = self.create_publisher(Image, 'color_image', 2)
         self.mask_pub = self.create_publisher(Image, 'red_mask_image', 2)
@@ -160,6 +163,10 @@ class RedTrackerNode(Node):
             selected = self.selection.selected
             if selected is not None:
                 self.snapshot = (*self.snapshot[:3], measure(metres, selected.mask, intrinsics))
+            if self.fresh(color, depth, at):
+                self.detections_pub.publish(detection_array(color.header,
+                    [(c.box, 'red_object', math.nan,
+                      self.selection.target_id if c is selected else '') for c in components]))
             self.error = ''
             self.last_pair_at = at
         except (ValueError, TypeError, CvBridgeError, cv2.error) as exc:

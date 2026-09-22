@@ -1,5 +1,7 @@
 # TargetState 公共接口 v0.1
 
+完整对外接口、字段、QoS、失败语义与 Python 示例见 [ROS接口使用文档](ROS接口使用文档.md)。新增 `roscar_interfaces/srv/SetControlMode`、`/chassis/cmd_vel` 和 `/perception/detections`；本页 TargetState 结构不变。`/control/state` 新增 `command_mode`，切换来源总是停车并解除授权。
+
 > 方案 A 在分支 `a` 改为红色目标 + 配准深度；原 `route:=astra` 保留，B 不变。最新入口、串口与本机/实机边界见 [红色方案 A](方案A红色物体跟随.md)。本轮未部署小车。
 
 
@@ -11,7 +13,7 @@ A/B/demo 使用同一接口。输出描述观测状态，不是控制命令。
 | header.stamp | 本次状态发布时间，不冒充采集时间 |
 | header.frame_id | position 所属坐标系；没有有效坐标时可为空 |
 | observation_stamp | 最近用于本次有效观测的源采集时间；未知为零 |
-| source | astra / yolo / demo |
+| source | astra / yolo / red_object / demo |
 | is_simulated | 只有显式 demo 为 true；下游必须区分 |
 | status | 0 NOT_READY、1 SEARCHING、2 TRACKING、3 LOST、4 STALE |
 | detail | 可读状态原因，不用字符串代替状态机判断 |

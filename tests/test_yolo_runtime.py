@@ -12,6 +12,7 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.parameter import Parameter
 from sensor_msgs.msg import CameraInfo, Image
 from visualization_msgs.msg import Marker
+from vision_msgs.msg import Detection2DArray
 from std_srvs.srv import Trigger
 from person_interfaces.msg import TargetState
 from yolo_person_tracker.backend import Detection
@@ -52,6 +53,8 @@ def main():
     states = []
     markers = []
     images = []
+    detections = []
+    node.create_subscription(Detection2DArray, "detections", detections.append, 10)
     node.create_subscription(Image, 'detections_image', images.append, 10)
     node.create_subscription(TargetState, 'target_state', states.append, 10)
     node.create_subscription(Marker, 'target_marker', markers.append, 10)
@@ -100,7 +103,14 @@ def main():
         assert states[-1].status == TargetState.STALE
         assert set(probe.report()['missing_streams']) == {'color', 'depth', 'camera_info'}
         assert not probe.report()['metadata_pass']
+        backend.detections += [Detection(None, (1,2,8,20), .12), Detection(9, (60,5,95,95), .8)]
         assert send().status == TargetState.SEARCHING
+        assert len(detections[-1].detections) == 3
+        assert [d.id for d in detections[-1].detections] == ['0:7','','0:9']
+        d = detections[-1].detections[0]
+        assert d.bbox.center.position.x == 50 and d.bbox.size_x == 80
+        assert d.results[0].hypothesis.class_id == 'person'
+        assert detections[-1].header == images[-1].header
         report = probe.report()
         assert report['metadata_pass'] and not report['registration_verified']
         assert report['metrics']['depth_valid_fraction']['mean'] == 1.
@@ -136,16 +146,25 @@ def main():
         assert not call('lock_target').success
         assert send().status == TargetState.LOST  # reset epoch prevents ID reuse
         assert backend.resets > 0
+        assert detections[-1].detections[0].id == f'{node.selection.epoch}:7'
         assert call('lock_target').success
         spin()
         assert states[-1].position_valid
+        count = len(detections)
         backend.fail = True
         assert send().status == TargetState.NOT_READY
         assert not states[-1].position_valid
+        assert len(detections) == count  # Failure is not an empty detection event.
         backend.fail = False
         assert send().status == TargetState.LOST
         call('release_target')
         assert send().status == TargetState.SEARCHING
+        backend.detections = []
+        send()
+        assert detections[-1].detections == []
+        count = len(detections)
+        spin(1.1)
+        assert len(detections) == count  # Stalled input does not republish lists.
         pairs = probe.counts['pairs']
         send(skew_ns=-80000000)
         assert probe.counts['pairs'] == pairs  # Both streams arrive, but do not synchronize.

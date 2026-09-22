@@ -9,7 +9,7 @@ RUN sed -i -E '/^deb-src /d; s/ restricted//g; s/ multiverse//g; /^deb .* jammy(
     python3-numpy python3-opencv ros-humble-cv-bridge ros-humble-message-filters \
     ros-humble-nav-msgs ros-humble-nav2-msgs ros-humble-turtlesim \
     ros-humble-tf2-geometry-msgs ros-humble-tf2-ros ros-humble-tf2-ros-py \
-    ros-humble-sensor-msgs ros-humble-visualization-msgs \
+    ros-humble-sensor-msgs ros-humble-visualization-msgs ros-humble-vision-msgs \
     ros-humble-rclpy ros-humble-launch-ros ros-humble-std-srvs \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /workspace/ros2_ws

@@ -546,3 +546,17 @@
 - AGENTS.md 项目规则按用户明确约定统一为每次更新 WORKLOG、仅长期规则/入口变化更新 AGENTS，保留两分支已有上下文。
 - 验证：结构检查 11 包/176 Python 文件、同步 3 项测试、JSON/XML/Bash 解析、ShellCheck（忽略外部 source 路径 SC1091）、git diff --check 和真实串口回调 ASan/UBSan 已通过。合并后完整 ARM64 Humble 回归退出码0：11主动包（9.14秒）与3底盘包（14.5秒）编译通过；控制保护/故障锁存、SIGTERM最终零速、真实驱动PTY、红色合成闭环、真实rosbag隔离回放、B输入预检/TF/并发、GPIO/生命周期、A/B/red/demo/非法route及14项语音测试全部通过。日志 artifacts/merge-main-regression.log。导航4项逻辑测试通过；本轮未重复运行真实SLAM/Nav2栈和N10P驱动专项，沿用2026-09-20已记录的专项证据，不作为本次新增验收。
 - 本轮不访问小车、不部署或启动真实设备。测试镜像此前已清空，复用现有 Colima，下载前磁盘可用约38 GiB；测试容器自动删除，随后清理本轮新建测试镜像与其基础镜像，验证日志保留。
+
+## 2026-09-23：实施对外 ROS 2 接口计划（仅本机）
+
+- 依据用户指定 `PLAN (3).md` 实施；不访问 SSH、不部署或启动车辆。
+- 新增 `roscar_interfaces/SetControlMode` 和 `roscar_api`。统一入口默认 IDLE、运动关闭、不启动硬件；可显式组合现有感知/跟随/雷达/底盘，只有一套 guard。四个安装后的 Python 示例涵盖底盘、检测、锁定/释放和雷达。
+- motion_guard 增加 EXTERNAL/FOLLOW 来源选择，保留旧 FOLLOW 默认值；切换模式立即停车、清缓存、解除授权，拒绝切换前的排队旧请求。EXTERNAL 不要求视觉，但保留雷达/TF/尺寸/停车模型/新鲜度/重复发布者保护，只接受 base_link 的前进和 yaw。状态 JSON 增加 command_mode；故障不自动续动。
+- YOLO/red 沿用同步 RGB-D 增加 Detection2DArray。YOLO 单次 predict 后由 ByteTrack 原检测索引映射身份，保留未跟踪框，未跟踪框不能锁定；原始图像坐标和 header 不随显示缩放。红色全部候选输出，score=NaN，不虚构概率或身份。空检测发布空数组，异常/断流不伪装空检测，原 TargetState 结构不变，未新增 RGB-only 流水线。
+- 新增中文 `docs/ROS接口使用文档.md`；同步 README、接口索引、构建/同步说明、结构检查与测试入口，AGENTS 仅补长期 API 入口。
+- 已完成：Linux ARM64 Humble 13 包编译（9.70s）；服务/模式互斥/非法速度/时效/TF/障碍/故障锁存专项、四个已安装示例与默认 launch、真实 C++ 底盘伪串口 EXTERNAL 运动及停车帧；YOLO/red 同步 RGB-D 多框、未跟踪、空检测、ID epoch、缩放坐标与原三维回归；Mac CPU 真实 YOLO26s 权重空图及 bus.jpg 连续帧推理成功。
+- 旧 A/B/red/demo/非法路由、TF、并发、控制退出、性能、语音、真实驱动 PTY、隔离 rosbag 回放回归通过。回放首次批量执行错用域号，改按脚本约定 ROS_DOMAIN_ID=174 后通过；示例测试首次仅向 ros2 run 父进程发信号，修正测试为进程组信号后退出检查通过。均非实车验收。
+- 导航最终通过：真实 SLAM Toolbox 地图、NavFn 绕障路径、BT/DWB 速度、map_server/AMCL，以及观测时刻 TF、目标切换/丢失和故障不自动续动。雷达 2 包编译 44.9s，健康/时效/标定拒绝及真实 N10Plus 驱动伪串口的扫描/点云方向和距离一致性通过。都只使用合成输入，不计为硬件验收。
+- 最小审查完成：模式切换无旧请求复用、EXTERNAL 不绕过雷达、未跟踪框不能锁定、消息坐标不随显示缩放、失败不伪报空检测、默认入口无硬件/授权、包依赖和同步白名单完整。13 包结构检查、3 项模拟同步单测、ShellCheck、git diff --check 通过；同步单测拦截 subprocess，没有实际访问远端。
+- 验证证据：`artifacts/api-build.log`、`api-runtime.log`（包含初次单测 mock 修正前记录）、`api-examples-pty.log`、`api-final-vision.log`、`api-regression.log`（包含初次回放域号问题）、`api-regression-runtime.log`、`api-navigation.log`、`api-radar.log`、`api-model-smoke.log`。ROS 基础镜像 digest `sha256:1813d3c85d7f96ff7d3012d865204583255740182db5d0065f8f8cd029a83138`，完整镜像身份见 `api-test-environment.log`。
+- 本轮创建的容器、镜像和构建缓存已清理，Docker 显示 images/containers/volumes/build cache 全部为 0；保留既有 Colima 环境，回收其已释放块。源码、已有权重与验证日志保留。清理记录 `artifacts/api-cleanup.log`。
