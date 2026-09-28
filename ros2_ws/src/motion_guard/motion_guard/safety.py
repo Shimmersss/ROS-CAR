@@ -9,6 +9,7 @@ class SafetyConfig:
     width_m: float = .4
     margin_m: float = .15
     max_linear_mps: float = .15
+    max_reverse_mps: float = .15
     max_angular_rps: float = .5
     reaction_s: float = 1.0
     deceleration_mps2: float = .3
@@ -26,7 +27,7 @@ class SafetyConfig:
                 raise ValueError(key+' must be finite and positive')
         if self.reaction_s < self.scan_timeout_s + .55:
             raise ValueError('reaction_s must cover scan age + 0.5s driver timeout + 0.05s gate period')
-        if self.max_linear_mps > 1 or self.max_angular_rps > 2:
+        if self.max_linear_mps > 1 or self.max_reverse_mps > 1 or self.max_angular_rps > 2:
             raise ValueError('Configured velocity exceeds project gate limits')
         if self.sampling_margin_m > .05:
             raise ValueError('sampling_margin_m must be <= .05')
@@ -39,7 +40,9 @@ def clearance(scan, transform, v, w, c):
     unless the operator explicitly opts into the sensor's +inf free-space contract.
     transform = planar laser->base (x,y,yaw), from timestamped TF.
     """
-    if not all(map(math.isfinite,(v,w))) or not 0 <= v <= c.max_linear_mps or abs(w)>c.max_angular_rps:
+    if (not all(map(math.isfinite,(v,w)))
+            or not -c.max_reverse_mps <= v <= c.max_linear_mps
+            or abs(w)>c.max_angular_rps):
         return False, 'invalid_velocity_request'
     fields = (scan.angle_min, scan.angle_max, scan.angle_increment, scan.range_min, scan.range_max)
     if (not all(math.isfinite(x) for x in fields) or scan.angle_increment <= 0
@@ -60,7 +63,8 @@ def clearance(scan, transform, v, w, c):
     radius = math.hypot(c.length_m, c.width_m)/2 + c.margin_m
     # Always cover stopping distance for the configured maximum speed. This also
     # protects a zero request while the vehicle is still decelerating.
-    travel = c.max_linear_mps*c.reaction_s + c.max_linear_mps**2/(2*c.deceleration_mps2)
+    speed = max(c.max_linear_mps, c.max_reverse_mps)
+    travel = speed*c.reaction_s + speed**2/(2*c.deceleration_mps2)
     # A disk enlarged by the maximum stopping path covers *any* steering
     # direction, including a command change while the old motion decelerates.
     radius += travel + c.sampling_margin_m + travel*scan.angle_increment

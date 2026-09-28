@@ -11,7 +11,9 @@ export CAMERA_INFO_TOPIC="${CAMERA_INFO_TOPIC:-/camera/color/camera_info}"
 export AUTO_LOCK_SINGLE="${AUTO_LOCK_SINGLE:-true}"
 WITH_VOICE="${WITH_VOICE:-true}"
 WITH_CHASSIS="${WITH_CHASSIS:-false}"
-WITH_RADAR="${WITH_RADAR:-false}"
+export WITH_RADAR="${WITH_RADAR:-false}"
+WITH_FOLLOWER="${WITH_FOLLOWER:-false}"
+MOTION_ENABLED="${MOTION_ENABLED:-false}"
 MODEL_PATH="${MODEL_PATH:-$ROOT/models/weights/yolo26s.pt}"
 YOLO_PYTHON="${YOLO_PYTHON:-$ROOT/.venv-yolo/bin/python3}"
 case "${1:-}" in
@@ -20,7 +22,7 @@ case "${1:-}" in
 用法：bash scripts/start_project.sh
     启动 Astra RGB-D、B 人体检测/ByteTrack、Foxglove 和语音。
 WITH_VOICE=false 关闭语音；WITH_CHASSIS=true 开启底盘串口收发。
-底盘要求 SERIAL_PORT 和 CAR_MODE；本入口不启动跟随或发布运动指令。
+底盘要求 SERIAL_PORT 和 CAR_MODE；WITH_FOLLOWER=true 时跟随器通过 motion_guard 受保护输出。
 DEPTH_REGISTERED=true 使用驱动当前 RGB-D 配准；坐标精度仍须现场量距验证。
 MODEL_PATH、YOLO_PYTHON、YOLO_DEVICE 可覆盖模型和推理环境。
 Ctrl-C 或任一子模块退出时停止本入口启动的全部模块。
@@ -30,13 +32,16 @@ HELP
   *) echo '未知参数，使用 --help 查看用法。' >&2; exit 2;;
 esac
 set -u
-for value in "$WITH_VOICE" "$WITH_CHASSIS" "$WITH_RADAR" "${DEPTH_REGISTERED:-false}" "$AUTO_LOCK_SINGLE"; do
+for value in "$WITH_VOICE" "$WITH_CHASSIS" "$WITH_RADAR" "$WITH_FOLLOWER" "$MOTION_ENABLED" "${DEPTH_REGISTERED:-false}" "$AUTO_LOCK_SINGLE"; do
   [[ "$value" == true || "$value" == false ]] || { echo '开关必须为 true/false' >&2; exit 2; }
 done
-[[ "${MOTION_ENABLED:-false}" == false ]] || { echo 'B 入口尚未接入安全运动控制，拒绝 MOTION_ENABLED=true。' >&2; exit 2; }
+if [[ "$WITH_FOLLOWER" == true && "$MOTION_ENABLED" != true ]]; then
+  echo 'WITH_FOLLOWER=true 时必须显式 MOTION_ENABLED=true。' >&2
+  exit 2
+fi
 [[ -f "$MODEL_PATH" && -x "$YOLO_PYTHON" ]] || { echo '缺少 B 模型或 Python 环境。' >&2; exit 1; }
 for file in /opt/ros/humble/setup.bash /home/wheeltec/wheeltec_ros2/install/setup.bash \
-  "$ROOT/ros2_ws/install/setup.bash" "$ROOT/ros2_ws/radar_install/setup.bash"; do
+  "$ROOT/install/setup.bash"; do
   [[ -f "$file" ]] || { echo "缺少环境：$file" >&2; exit 1; }
 done
 if [[ "$WITH_CHASSIS" == true ]]; then
@@ -56,16 +61,21 @@ set +u
 source /opt/ros/humble/setup.bash
 # shellcheck disable=SC1091
 source /home/wheeltec/wheeltec_ros2/install/setup.bash
+if [[ "$WITH_RADAR" == true ]]; then
+  [[ -f "$ROOT/ros2_ws/radar_install/setup.bash" ]] || { echo "缺少雷达环境" >&2; exit 1; }
+  # shellcheck disable=SC1091
+  source "$ROOT/ros2_ws/radar_install/setup.bash"
+fi
 # shellcheck disable=SC1091
-source "$ROOT/ros2_ws/radar_install/setup.bash"
-# shellcheck disable=SC1091
-source "$ROOT/ros2_ws/install/setup.bash"
+source "$ROOT/install/setup.bash"
 if [[ "$WITH_CHASSIS" == true ]]; then
   # shellcheck disable=SC1091
   source "$ROOT/ros2_ws/chassis_install/setup.bash"
 fi
 set -u
-for package in astra_camera yolo_person_tracker perception_bringup lslidar_driver; do
+packages=(astra_camera yolo_person_tracker perception_bringup)
+[[ "$WITH_RADAR" == true ]] && packages+=(lslidar_driver)
+for package in "${packages[@]}"; do
   ros2 pkg prefix "$package" >/dev/null || { echo "未构建 ROS 包：$package" >&2; exit 1; }
 done
 mkdir -p "$ROOT/artifacts/project"
@@ -94,15 +104,18 @@ start_module() {
 }
 start_module camera bash "$ROOT/scripts/run_astra_camera.sh"
 start_module perception bash "$ROOT/scripts/run_b_radar_foxglove.sh"
+if [[ "$WITH_FOLLOWER" == true ]]; then
+  start_module follower bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch motion_guard follow.launch.py motion_enabled:=true expected_source:=yolo target_frame:=camera_color_optical_frame radar_required:=false auto_arm:=true geometry_confirmed:='${FOLLOW_GEOMETRY_CONFIRMED:-false}' mount_calibrated:='${FOLLOW_MOUNT_CALIBRATED:-false}' stopping_model_confirmed:='${FOLLOW_STOPPING_MODEL_CONFIRMED:-false}' target_distance_m:=1.0"
+fi
 if [[ "$WITH_CHASSIS" == true ]]; then
   start_module chassis bash "$ROOT/scripts/run_chassis_io.sh"
 fi
 if [[ "$WITH_VOICE" == true ]]; then
   start_module voice bash "$ROOT/scripts/run_voice_assistant.sh"
 fi
-printf 'B 感知已派发；N10P=%s，底盘串口=%s，运动=false，语音=%s，配准确认=%s\n' \
+printf 'B 感知已派发；N10P=%s，底盘串口=%s，直接跟随=%s，语音=%s，配准确认=%s\n' \
   "${WITH_RADAR:-false}" \
-  "$WITH_CHASSIS" "$WITH_VOICE" "${DEPTH_REGISTERED:-false}"
+  "$WITH_CHASSIS" "$WITH_FOLLOWER" "$WITH_VOICE" "${DEPTH_REGISTERED:-false}"
 printf 'Foxglove 网口：ws://192.168.100.2:8765；布局 foxglove/b-radar-layout.json\n'
 set +e
 wait -n "${PIDS[@]}"

@@ -12,6 +12,7 @@ def scan(value=3.):
 class SafetyTest(unittest.TestCase):
     def test_clear(self):
         self.assertTrue(clearance(scan(),(0,0,0),.15,.5,SafetyConfig())[0])
+        self.assertTrue(clearance(scan(),(0,0,0),-.15,0.,SafetyConfig())[0])
 
     def test_all_sides_and_stopped_request(self):
         for i in (0,90,180,270):
@@ -44,7 +45,7 @@ class SafetyTest(unittest.TestCase):
 
     def test_configuration(self):
         for kwargs in ({'length_m':0.},{'deceleration_mps2':math.nan},{'request_timeout_s':-1.},
-                       {'max_linear_mps':2.}):
+                       {'max_linear_mps':2.},{'max_reverse_mps':2.}):
             with self.assertRaises(ValueError): SafetyConfig(**kwargs)
 
 if __name__=='__main__':unittest.main()

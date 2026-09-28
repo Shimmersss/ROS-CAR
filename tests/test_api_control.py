@@ -20,7 +20,7 @@ rclpy.init()
 p = Node('api_test'); ex=SingleThreadedExecutor(); ex.add_node(p)
 g=MotionGuard(parameter_overrides=[Parameter(k,value=v) for k,v in dict(
     command_mode='IDLE',motion_enabled=True,geometry_confirmed=True,
-    stopping_model_confirmed=True,mount_calibrated=True).items()]); ex.add_node(g)
+    stopping_model_confirmed=True,mount_calibrated=True,radar_required=True).items()]); ex.add_node(g)
 ext=p.create_publisher(TwistStamped,'/chassis/cmd_vel',1)
 follow=p.create_publisher(TwistStamped,'/control/cmd_vel_request',1)
 scan=p.create_publisher(LaserScan,'/scan',qos_profile_sensor_data)
@@ -72,7 +72,7 @@ try:
     assert not call(arm,Trigger.Request()).success # Unselected FOLLOW cannot fill request.
     flags['send']=True; flags['old']=True;pump(.2);assert g.request is None
     flags['old']=False;enable()
-    for field,value in [('linear.x',-.01),('linear.x',.16),('linear.y',.01),('linear.z',.01),('angular.x',.01),('angular.y',.01),('angular.z',.51),('angular.z',math.nan),('linear.x',math.inf)]:
+    for field,value in [('linear.x',-.16),('linear.x',.16),('linear.y',.01),('linear.z',.01),('angular.x',.01),('angular.y',.01),('angular.z',.51),('angular.z',math.nan),('linear.x',math.inf)]:
         flags['field']=field;flags['value']=value;pump(.15);assert g.mode=='FAULT';stopped()
         assert not call(arm,Trigger.Request()).success
         flags['field']=None;pump(.2);assert g.mode=='FAULT';enable()

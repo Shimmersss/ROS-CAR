@@ -143,6 +143,21 @@
       "topicPath": "/voice/tts_state",
       "defaultExpanded": true,
       "foxglovePanelTitle": "语音播报运行状态（1 Hz）"
+    },
+    "RawMessages!voicewords": {
+      "topicPath": "/voice_words",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "唤醒事件"
+    },
+    "RawMessages!voicechat": {
+      "topicPath": "/voice/chat_state",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "DeepSeek 对话状态"
+    },
+    "RawMessages!voiceresult": {
+      "topicPath": "/voice/command_result",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "语音控制执行结果"
     }
   },
   "globalVariables": {},

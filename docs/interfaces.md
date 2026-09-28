@@ -71,6 +71,12 @@ Foxglove 导入 `foxglove/red-layout.json`（仓库根目录下）后，上方�
 
 `/control/state` 为 JSON String（mode、ready、reason、last_fault、motion_enabled）。mode 为 PERCEPTION_ONLY/STANDBY/ARMED/FAULT；`/control/arm`、`/control/stop`、`/control/disarm` 均为 std_srvs/Trigger。故障恢复、重新看到目标和节点重启均不自动恢复运动。详情见 motion_guard 包 README。
 
+语音控制使用 `roscar_interfaces/msg/VoiceCommand` `/voice/command` 和
+`VoiceCommandResult` `/voice/command_result`。路由器只在 `EXTERNAL` 模式发布
+`/chassis/cmd_vel` 请求，并通过上述模式/授权服务进入保护链路；手动语音速度支持
+[-0.15, 0.15] m/s，跟随与导航生产者仍可保持不倒车约束。常用中文命令优先本地解析，
+复杂表达才交给 DeepSeek 工具调用。
+
 ## 导航接口
 
 `/navigation/follow_goal` 为 map 下 PoseStamped；`/navigation/state` 为 String JSON（stamp_ns、active、fault、ready、allow_motion、reason、distance_remaining）；`/navigation/cmd_vel_raw` 为 Nav2 Twist，仅经 velocity_adapter 转为现有 TwistStamped 请求。`/navigation/start_follow`、`/navigation/stop_follow` 均为 Trigger，不直接绕过 /control/arm。地图与代价地图是 OccupancyGrid，/plan 和 /local_plan 是 Path；/initialpose 为 AMCL PoseWithCovarianceStamped。所有导航速度仍须经过 motion_guard。

@@ -693,3 +693,162 @@
 - 纯角速度 `linear.x=0` 的左/右转只验证了指令输出，`mini_akm` 不会原地旋转，里程计姿态无变化。随后改用实际转向车动作：左弧线 `linear.x=0.08 m/s, angular.z=+0.20 rad/s, 2 s`，右弧线 `linear.x=0.08 m/s, angular.z=-0.20 rad/s, 2 s`，两段之间持续零速。
 - 正式无雷达 guard 两段均 arm/stop 成功，各收到 40 条 guard 输出。里程计：起点约 `(x=0.0854,y=-0.0061,yaw=-0.0273)`；左弧线后约 `(0.2001,0.0063,0.2018)`；右弧线后约 `(0.3563,0.0012,-0.2144)`，已观察到前进和左右转向姿态变化。
 - 测试结束后临时 guard 清理，`/cmd_vel` 恢复 0 个发布者，底盘保留唯一订阅者。
+
+## 2026-09-28：语音 ROS 控制与模式编排源码改造
+
+- 新增 `roscar_interfaces/msg/VoiceCommand` 与 `VoiceCommandResult`，语音动作可通过类型化 ROS 消息进入统一路由；保留旧 `/voice/tool_call` 蜂鸣器 JSON 兼容入口。
+- `voice_command_router` 改为本地中文规则优先、DeepSeek 未识别文本兜底的控制状态机，支持手动/跟随/待机切换、前进/倒车/左右转、停止、状态查询和蜂鸣器；手动请求仅发布 `/chassis/cmd_vel`，最终 `/cmd_vel` 仍由 `motion_guard` 独占。连续 2 秒没有新的运动命令会归零并撤销授权，启动不自动 arm。
+- DeepSeek 工具扩展为 drive、set_control_mode、arm、stop、query_status、buzz，严格校验结构化参数并等待 `VoiceCommandResult`；语音配置和文档已同步更新。
+- `motion_guard`/`SafetyConfig` 增加 `max_reverse_mps`，默认允许手动负线速度 `-0.15..0.15 m/s`；跟随和导航生产者仍可保持不倒车策略，纯安全测试增加负速度边界。
+- 本机已完成 Python 编译、XML/YAML 解析、git diff --check 和本地解析/倒车边界检查；通过 Colima 启动的 ARM64 ROS 2 Humble 容器完成消息生成、主动包构建及既有控制/导航/底盘回归。第三次全量回归在既有 `test_api_examples.py` 的目标服务示例出现一次时序性断言失败，随后单独重跑该测试通过；语音专属 pytest 在容器中执行，未部署 Jetson 或执行实车语音控制。
+- 新增 `docs/语音控制交接文档.md`，记录接口、启动顺序、安全状态机、DeepSeek 工具约束、验证证据和现场验收边界，供后续部署与实车测试使用。
+## 2026-09-28：自启动跟随门禁按用户要求关闭
+
+- 自启动入口 `start_robot.sh` 现在启用 `WITH_FOLLOWER=true`、`MOTION_ENABLED=true`、`auto_arm=true`、`radar_required=false`，并仅在该入口传入 `geometry_confirmed=true`、`mount_calibrated=true`、`stopping_model_confirmed=true`；安全配置文件默认值仍不改。
+- `follow.launch.py` 新增三个确认参数并传给 guard。Jetson 服务重启后 `motion_guard`、`person_follower`、YOLO 和底盘均在线；参数读回 geometry/mount/stopping/auto_arm 均为 true。当前无人/无有效目标时状态为 `STANDBY`、`target_invalid`、速度保持零，等待有效 YOLO 目标后自动 arm。
+## 2026-09-28：自启动跟随现场诊断
+
+- 用户站到相机前后，YOLO 确实检测到人（例如 ID `1:32`，置信度约 0.84），但 `/perception/target_state` 连续返回 `TRACKING / Tracked; torso depth rejected`，`position_valid=false`。10 秒采样 168 帧中仅 3 帧有有效三维位置，跟随请求保持零速。
+- `motion_guard` 因 `target_invalid` 进入 FAULT；调用 `/control/stop` 后，目标深度仍无效，自动 arm 不能恢复。当前问题是注册深度的躯干 ROI 质量不足，不是跟随节点未启动或门禁参数未生效。
+## 2026-09-28：自启动跟随目标重锁并自动 arm
+
+- 用户现场开始跟随后，初始目标因 RGB-D 深度拒绝和 ByteTrack 流重置进入 `target_invalid`/`Selected track absent`；调用 `/perception/lock_target` 成功锁定 `1:116`。
+- 重锁后目标状态为真实 `TRACKING`、`position_valid=true`、`detail=Tracked; registered torso depth`，示例坐标 `(0.198,0.020,0.934)m`、水平距离约 `0.954m`。`motion_guard` 自动进入 `ARMED`，`ready=true`、`reason=ready_without_radar`，跟随链路已具备运动条件。
+## 2026-09-28：跟随运行中目标轨迹丢失
+
+- 用户反馈开机跟随不动作。在线状态为 `motion_guard=FAULT`、`reason=target_invalid`；`person_follower` 仍 enabled，但 `/control/cmd_vel_request` 和 `/cmd_vel` 均为零。
+- `/perception/target_state` 返回 `Selected track absent; explicit relock required after stream reset`，当前目标 ID 已变化到 `1:268`/`1:270`；调用 `/perception/lock_target` 时返回 `No fresh tracked candidates`。原因是 YOLO/深度轨迹在运行中重置，自动跟随不会在故障后自动换人续动，需目标稳定后重新锁定。
+## 2026-09-28 完全移除 motion_guard 运行门禁
+
+- 按用户要求，跟随启动链路改为 `person_follower → /cmd_vel → wheeltec_robot`，`follow.launch.py` 不再启动 `motion_guard`。
+- `person_follower` 新增 `direct_cmd_vel` 参数；直接模式发布 `geometry_msgs/Twist`，仍保留真实目标、观测时效、唯一目标发布者检查、跟随速度上限和退出归零。
+- Jetson `/home/wheeltec/ROSCAR-current` 已重建 `astra_body_adapter`、`motion_guard` 并重启自启动。在线核对无 `/motion_guard`，`/cmd_vel` 仅有 `person_follower` 一个发布者和底盘一个订阅者。
+- 本轮本机 Python/Bash 语法检查、`git diff --check` 通过；Jetson 原生构建通过。已明确失去 motion_guard 的请求 watchdog、故障锁存、雷达/障碍检查和单出口保护。
+## 2026-09-28 Foxglove 可视化恢复
+
+- 在线检查确认 `foxglove_bridge` 正在 `0.0.0.0:8765` 监听，ROS `/perception/target_state`、检测框和压缩图像话题均有数据。
+- Foxglove 原连接的发送队列因旧原始图像面板持续出现 `outbox full`，导致图像面板等待消息；重启 B/Foxglove 子模块、重新连接 `ws://192.168.1.240:8765` 后，压缩检测图像主题恢复订阅。
+- 当前 Foxglove 仍会显示目标状态；目标是否有效由 YOLO 跟踪状态决定，与 Bridge 连接问题分开。
+## 2026-09-28 Foxglove 队列问题复核
+
+- 截图所示状态确认为客户端数据流卡住：ROS 话题与 Bridge 频道存在，客户端也成功订阅了 `/perception/color_preview/compressed`、`/perception/target_state` 和 Marker，但 Bridge 随后持续报告该客户端 `outbox full`。
+- 重启 Foxglove 客户端和 Bridge 后可重新建立订阅，约 20 秒后队列再次填满；当前未将其误判为相机或 YOLO 节点停止。需要降低 Foxglove 图像流负载或进一步调整 Bridge/客户端队列策略。
+
+## 2026-09-28 Foxglove 网络诊断补充
+
+- 更正此前将 `outbox full` 直接归因于客户端或原始图像的判断：该日志仅证明发送积压，不能单独确定根因。
+- 本轮 `ss -tin` 实测 Foxglove 连接 bytes_sent=916754、bytes_retrans=273672、Send-Q=92672，delivery_rate=13976bps、cwnd=1；ping 16–422ms，SSH 偶发连接超时。证据支持网络传输受阻，尚未确定具体无线干扰来源。
+- Jetson 无线接口 wlP1p1s0 使用 2412MHz、信号 -65dBm、收发协商速率 6Mbps、Power save on；有线 enP8p1s0 DOWN。尝试关闭无线省电被 sudo 密码要求阻止，未修改该设置。本轮未重启运行栈。
+## 2026-09-28 Astra 深度躯干测距容错调整
+
+- 在线采样确认深度为 640×480 `16UC1`，全图有效深度约 52%–56%；躯干 ROI 有效率常在 27%–31%，原 `measure()` 的 30% 门槛和 IQR 阈值会频繁触发 `Tracked; torso depth rejected`。
+- `yolo_person_tracker/depth.py` 将最低有效比例由 0.30 调为 0.15，并将离散度上限调整为 `max(0.35, 0.3*z)`；仍保留 0.2–8m 范围、中位数和最少样本检查，避免把全背景/稀疏噪声当作距离。
+- 本机 3 项深度单测通过；Jetson 原生重建 `yolo_person_tracker` 成功。重启后在线连续采样已恢复 `Tracked; registered torso depth`。
+## 2026-09-28 YOLO 人体框多区域深度测距
+
+- 按用户要求，`yolo_person_tracker` 不再只依赖躯干 ROI；同一 YOLO 人体框内依次尝试躯干、头肩、下身、左侧和右侧区域，选择有效深度支持率最高的稳定区域。
+- 每个候选区域仍限制在对应 YOLO 框内，并保留 0.2–8m 范围、最少样本、深度离散度和中位数过滤，避免跨目标或背景深度混入。
+- TargetState 细节改为 `Tracked; registered body-part depth` / `Tracked; body-part depth rejected`，明确不再声称一定来自躯干。
+- 本机深度单测和语法检查通过；Jetson 原生 `yolo_person_tracker` 构建成功并已重启。重启后在线当时无人/未形成稳定候选，尚未完成真人多部位深度实测。
+## 2026-09-28 背对相机跟随优化
+
+- 多区域测距进一步改为在同一 YOLO 框内优先选择“最近的稳定深度区域”，降低背景墙/地面有效像素较多时抢占人体距离的风险，适合背部、肩部或腿部部分深度可见的情况。
+- 新增深度单测：躯干区域为空时，能从同一人体框的下身区域恢复距离；4 项深度单测通过。
+- Jetson 已原生重建并重启 `yolo_person_tracker`。当前目标已释放，现场没有稳定目标可作真人背对相机验收；需要用户站到相机前重新锁定后验证跟随轨迹。
+## 2026-09-28 数据集与 DJI Neo 方案评估
+
+- 检索并核对 Bonn RGB-D Dynamic Dataset：单个 `rgbd_bonn_crowd` 约 515.9 MB，RGB/深度已配准；本机可用空间约 31 GB，但官方 ZIP 下载速度低于约 20 KB/s，无法在本轮合理完成，已清理未完成的部分文件。
+- DJI Neo 官方规格/手册确认：原版 Neo 的跟随主要是视觉人体跟踪，只有向下视觉定位，明确不支持避障；Follow Me 丢失目标时悬停，目标接近时不后退。它可借鉴目标保持、丢失悬停和从后方跟随策略，不能直接替代当前 RGB-D 深度方案。
+- 公开 RGB-D 数据集可用于算法回放，但不同相机的深度空洞和标定分布与 Astra S 不同；针对当前问题，优先录制 Astra S 的真实背对相机 ROS bag 更有价值。
+
+## 2026-09-28 Mac 端 Astra RGB-D 录制入口
+
+- 新增 `scripts/mac_record_rgbd.py` 与 `docs/Mac端Astra RGB-D录制.md`。脚本使用 OpenNI2 同步采集彩色/深度，硬性要求深度到彩色配准，保存 16 位毫米深度 PNG、彩色 PNG、帧时间戳和元数据；缺少 SDK、相机或配准能力时明确退出，不把 RGB-only 视频冒充 RGB-D 数据。
+- 本机已确认 Pillow/numpy 可用，但当前 USB 列表没有 Astra S，Python 也没有 OpenNI2 绑定，因此只完成脚本语法/帮助检查，尚未进行实机录制。插入相机并准备对应 OpenNI2 动态库后再做现场采集。
+
+## 2026-09-28 拓展坞识别 Astra S
+
+- Mac 通过 `ioreg -p IOUSB` 已识别 `ORBBEC ASTRA S`，说明拓展坞 USB 透传正常；`system_profiler SPUSBDataType` 未显示完整条目只是枚举工具差异。
+- 已创建本地 `.venv-mac-rgbd`/`.venv-mac-rgbd39` 并安装 `openni`、Pillow、numpy。Python 3.14 的 `openni` 绑定不兼容，Python 3.9 可导入，但因缺少 `libOpenNI2.dylib` 尚不能初始化；官方 OpenNI_SDK 当前发布资产没有 macOS 二进制包。
+- 尝试从上游源码构建 OpenNI2：补齐 Homebrew `libusb` 后，编译阶段通过，链接阶段因上游旧 Makefile 默认包含已废弃 i386 架构且 macOS CoreFoundation/IOKit 链接配置过时失败。临时源码和构建目录已清理；未把未验证二进制放入项目。
+
+## 2026-09-28 找到 Astra S 的 macOS 适配库
+
+- 从官方 OrbbecSDK v1.10.16 macOS ARM64/x86 发布包验证 `libOrbbecSDK.1.10.16.dylib`：Mac 实际识别并创建 `Astra S`，PID `0x0402`，固件 `RD109Y-007`，列出 IR/Color/Depth 三个传感器。该库内部兼容 Astra S 的传统 OpenNI 协议，绕过了缺少 macOS `libOpenNI2.dylib` 的问题。
+- 新增 `scripts/mac_record_orbbec_rgbd.cpp` 与 `scripts/mac_record_orbbec_rgbd.sh`：使用 Orbbec SDK v1 的硬件 D2C 对齐和 `waitForFrames` 成对取帧，保存 RGB8/16 位毫米深度原始帧、时间戳和元数据。实测确认 Astra S 不支持新版 SDK 的显式 `enableFrameSync`，已移除该硬失败条件；项目录制器尚未完成一段正式数据采集。
+- 录制器短测发现 Astra S 在当前拓展坞/USB2.0 链路下，SDK 能枚举并创建设备，但启动彩色流时报 `Match openni video mode failed`；尝试硬件/软件/关闭 D2C、320×240 与 640×480 配置均未形成帧。官方枚举与设备打开已验证，正式录制仍需调整 USB 直连/供电或使用 SDK 支持的确切模式。
+
+## 2026-09-28 Astra OpenNI Viewer 实机验证
+
+- Mac 已安装 `/Applications/Astra OpenNI Viewer.app`。通过拓展坞连接的 Astra S 已在该应用中显示实时深度伪彩色画面，底部状态显示 `Capture Formats - Depth: Lossless | Image: Lossy | IR: Lossless`，证明 Viewer 的旧 OpenNI 适配链路能实际取流。
+- 当前 Viewer 画面显示 `Image registration is off`；它适合先做深度/彩色流与录制验证，但要用于人体框深度测距仍需打开配准或保存原始流后按标定离线配准。其 File 菜单提供 Save/Save As，尚未把保存动作当作 RGB-D 数据录制完成。
+- 已通过 Viewer 快捷键 `i` 打开配准，状态栏确认 `Image registration is on`；再用 `s` 开始、`x` 停止录制约 10 秒，生成约 87 MB 的 `Captured.oni`。日志显示彩色/深度约 30 FPS，已归档到 `data/rgbd-recordings/astra-viewer-20260928-152549/`，附带录制说明，可用于后续 ONI 原始流回放。
+- 覆盖行为已实测：再次按 `s` 录制约 3 秒、按 `x` 停止后，固定路径 `~/Library/Orbbec/OpenNI-MacOSX-x64-2.3/Tools/Captured.oni` inode 未变、mtime 更新、大小由 91,036,130 变为 74,888,746 字节，确认新录制会原地覆盖旧文件。后续必须先归档再开始下一次录制。
+
+## 2026-09-28 语音交接续办与本版本无雷达入口
+
+- 用户明确本版本不启动雷达。start_robot.sh 固定 WITH_RADAR=false；start_project.sh 与 B/Foxglove 脚本仅在显式启用时加载 radar_install、检查 lslidar_driver，关闭时不再依赖雷达构建环境。运行 guard 保持 radar_required=false，交接文档同步说明无雷达障碍保护。
+- 最小审查发现既有 guard 故障注入测试依赖旧默认值：未启用雷达却断言障碍 FAULT；已只为合成测试显式设置 radar_required=true，保留障碍/TF 故障覆盖，不影响实际启动配置。此前将该失败描述为时序问题不准确，现予更正。
+- ARM64 Humble 容器主动包与底盘包构建、guard/真实 C++ 驱动伪串口专项及语音 pytest 通过，证据 artifacts/voice-targeted-verification.log。全量回归另在 API 示例模式切换时失败，未声明全量通过，日志 artifacts/voice-follow-regression-final.log。
+- Bash 语法、ShellCheck、git diff --check 通过。复用原有镜像，临时容器及内部构建输出随 --rm 清理。Wi-Fi SSH 连接超时，未部署、未启动实物雷达或执行实车运动；远端最新控制架构仍需在线核对。
+
+## 2026-09-28 Astra Viewer 自动归档
+
+- 修改 `/Applications/Astra OpenNI Viewer.app/Contents/MacOS/launcher`：启动时先归档遗留 `Captured.oni`；Viewer 运行期间轮询文件，检测到录制停止且大小/mtime 稳定 3 秒后自动复制到 `data/rgbd-recordings/astra-viewer-auto-YYYYMMDD-HHMMSS/`。
+- 已实测一轮 `s` 录制约 5 秒、`x` 停止，自动生成一份约 125 MB 的归档；启动初始化产生的两份旧测试归档已清理。`zsh -n` 与 `git diff --check` 通过。
+
+## 2026-09-28 Astra Viewer 完整录制可用性检查
+
+- 用户刚完成的一段自动归档录制位于 `data/rgbd-recordings/astra-viewer-auto-20260928-155338/Captured.oni`，文件大小 131,013,270 bytes（约 125 MiB），伴随自动归档 README。
+- ONI 内容包含 `Astra`、`Depth`、`Image`、`oniPixelFormat`、`RegistrationType` 等容器/流元数据；文件不是空文件或截断到零长度。对应 Astra Viewer 会话约 104 秒，稳定区间 RGB/Depth 约 29.5–30 FPS。
+- 会话日志有两段短暂 USB 帧损坏/序号跳变告警，主要集中在启动早期和约 92 秒处；约 90 秒处 FPS 短降至 26–27，随后恢复约 30 FPS。结论：录制可用于 ONI 回放和离线算法验证，但不视为逐帧无损数据；若训练需要连续无缺帧，建议改用直连 USB、避免扩展坞并分段录制。
+- 本轮只读检查，未修改录制文件；`git diff --check` 通过。
+
+- 2026-09-28 15:53 录制回放：为 Astra Viewer 启动器增加可选 `ASTRA_VIEWER_URI`，可通过应用方式加载指定 ONI 文件；已打开 `astra-viewer-auto-20260928-155338/Captured.oni`，画面同时显示深度伪彩与 RGB，确认该段可直接回放。`git diff --check` 通过。
+
+- 2026-09-28 最新录制复核：归档中最新文件为 `astra-viewer-auto-20260928-160126/Captured.oni`，584,212,592 bytes；15:59:02、15:59:31、16:00:13、16:01:26 四个归档内容 SHA-1 相同，属于同一段录制的重复归档。已加载 16:01:26 回放，Astra Viewer 正常显示深度与 RGB。
+
+- 2026-09-28 16:01 录制归档清理：用户确认保留 `astra-viewer-auto-20260928-160126`；删除 15:59:02、15:59:31、16:00:13 三个经 SHA-1 确认完全相同的重复目录，15:35 和 15:53 两段独立录制保留。
+
+- 2026-09-28 录制归档去重：启动器增加 SHA-1 标记，重复启动/回放同一 `Captured.oni` 时跳过重复复制；文档同步说明。清理后保留四段不同内容（15:25、15:35、15:53、16:01），`git diff --check` 通过。
+
+- 2026-09-28 配准状态核对：日志确认最新 16:01 录制会话曾成功设置 `Depth.Registration=1`（约会话 30.22–32.48 秒、33.20–33.68 秒），但随后又切回 0；因此该录制不是全程配准。回放状态栏显示 off 与文件实际曾短时开启并不矛盾。
+
+- 2026-09-28 Astra Viewer 启动修复：回放请求清除后发现启动器 heredoc 终止符缩进导致 zsh parse error，已修正并用 `zsh -n`、实际启动和 Astra 实时画面验证；应用恢复正常打开，URI 为 `(NULL)`。
+
+## 2026-09-28 网口部署语音版本（未完成最终语音验收）
+
+- 用户接入网口后授权实际部署。通过 `roscar-ethernet` 同步白名单到 Jetson `/home/wheeltec/ROSCAR-current`，未同步凭据、权重或录制文件；远端 13 个主动包原生 Humble 构建成功。
+- 重启后的项目栈确认相机、YOLO、person_follower、mini_akm 底盘、ASR/TTS 和 `motion_guard(radar_required=false)` 启动，未发现 `/scan` 或 `/radar/*`，无雷达节点。
+- 现场语音启动暴露远端旧 overlay 的 Python 路径问题：`voice_command_router` 与 `deepseek_chat` 导入 `roscar_interfaces.msg` 失败并退出，ASR/TTS 仍在。当前已在本地源码加入活动工作区接口路径优先导入，并准备重新同步/重建。
+- 修复同步过程中网口 SSH 被 `192.168.100.2` 主动断开，后续连接仍失败；因此本轮不能声称语音控制已在车上可用，也未发出任何运动指令。待 SSH 恢复后只需重新同步语音两个节点、重建并验收 `/voice/command`、`/voice/command_result` 和 `/chassis/cmd_vel`。
+
+- 2026-09-28 16:27 新录制核对：Astra Viewer 会话先保持 `Depth.Registration=0`，约 11.67 秒成功切换为 `1`，之后至关闭保持开启；因关闭过快未触发自动归档，已从 `Tools/Captured.oni` 补归档并保留原始文件。
+
+## 2026-09-28 网口语音部署完成
+
+- 网口 SSH 恢复后，将接口路径和启动脚本修复同步到 `/home/wheeltec/ROSCAR-current`；远端清理旧 build/install 后重建语音接口、路由和 DeepSeek 包成功。
+- 修复两处部署问题：语音脚本改用项目根 `install/`（不再误用 `ros2_ws/install`），并显式设置当前 `roscar_interfaces` Python/C 库路径；总入口同步改用项目根 install。
+- 最终在线核对：`/motion_guard`、`/person_follower`、`/voice_command_router`、`/deepseek_chat`、ASR、TTS 和 `wheeltec_robot` 均运行；`/cmd_vel` 1 个发布者、1 个底盘订阅者；`/voice/command` 与 `/voice/command_result` 各 1 发布者/1 订阅者；`radar_required=false`。
+- `/scan` 仅有 motion_guard 订阅者、无发布者；未启动 lslidar/radar 进程。未发送语音运动命令，未执行实车动作。
+
+## 2026-09-28 Foxglove 语音状态面板补齐
+
+- 网口核对确认 Jetson Foxglove Bridge 仍监听 `0.0.0.0:8765`，客户端已建立连接并订阅语音相关话题；桥接进程未失效。
+- 当前语音失败点在唤醒后的 ASR 音频发送：日志出现 `WebSocketTimeoutException during SENDING_AUDIO`，随后本地 VAD 报未检测到超过能量阈值的语音；这不是 Foxglove 显示层故障。
+- 为 `foxglove/b-radar-layout.json` 增加 `/voice_words`、`/voice/chat_state`、`/voice/command_result` Raw Messages 配置，并同步到 `/home/wheeltec/ROSCAR-current`。未启动雷达，未发送底盘运动指令。
+- JSON 校验通过；尚未重新加载用户当前 Foxglove 窗口布局。
+
+- 2026-09-28 16:53 新录制检查：最新归档 `astra-viewer-auto-20260928-165254/Captured.oni`，849,448,902 bytes，约 112 秒；会话约 1.46 秒处为 `Depth.Registration=0`，5.20 秒成功切换为 `1`，之后至关闭未再切回 0；RGB/Depth 长段约 29–30 FPS。该段后半程可用于配准 RGB-D 跟随优化，开头约 5 秒需单独标记为未配准。
+
+- 2026-09-28 跟随锁定连续性优化首轮：YOLO 选择器新增默认 0.35 秒短时锁定保持窗口，选中轨迹短暂漏检时保留身份但没有当前深度位置，控制层仍因 `position_valid=false` 保持停车；轨迹恢复可继续使用同一锁定。新增 `track_hold_s` launch 参数，完善丢失状态测试。Python 编译及 yolo_person_tracker 18 项逻辑测试通过；未接入车辆、未宣称录制回放已完成识别率验收。
+
+- 2026-09-28 跟随连续性优化第二轮：新增按 ByteTrack ID 的 XYZ 时间滤波（默认 alpha=0.35），大于 0.8 m 的跳变重置；深度无效不延续为有效位置。新增 `depth_smoothing_alpha`、`depth_jump_reset_m` launch 参数。YOLO 包 Python 编译及 20 项逻辑测试通过，未实机部署。
+
+- 2026-09-28 跟随连续性优化第三轮：新增短窗口轨迹换 ID 重捕获，要求新框与上一目标中心距离（默认不超过 max(30 px, 25% 图像宽度)）及面积比 0.35–2.8 合理；远处或尺寸不符目标不继承锁定。新增 `reacquire_s`、`reacquire_center_fraction` 参数。22 项 YOLO/深度/状态逻辑测试通过，未实机部署。
+
+## 2026-09-28 本版本取消雷达控制门禁
+
+- 按用户要求，将语音交接文档、ROS 接口文档和 `motion_guard` 说明明确为：本版本不启动雷达，`radar_required` 固定为 `false`，模式切换、arm 和故障判定不等待 `/scan`、雷达 TF 或雷达净空结果。
+- 保留模式、请求/目标时效、重复发布者、底盘自身停车和人工急停要求；未修改雷达驱动代码，也未启动雷达。
+- 文档改动通过 `git diff --check` 审查。

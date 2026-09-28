@@ -20,8 +20,8 @@ def main():
     parser.add_argument('--duration', type=float, default=2.0)
     args, ros_args = parser.parse_known_args()
     if not (all(map(math.isfinite, (args.speed,args.turn,args.duration)))
-            and 0 <= args.speed <= .15 and abs(args.turn) <= .5 and 0 < args.duration <= 30):
-        parser.error('Require speed 0..0.15, turn -0.5..0.5, duration (0,30]')
+            and -.15 <= args.speed <= .15 and abs(args.turn) <= .5 and 0 < args.duration <= 30):
+        parser.error('Require speed -0.15..0.15, turn -0.5..0.5, duration (0,30]')
     def terminate(signum, frame):
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         signal.signal(signal.SIGTERM, signal.SIG_IGN)

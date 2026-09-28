@@ -22,7 +22,7 @@ from person_interfaces.msg import TargetState
 from vision_msgs.msg import Detection2DArray
 from astra_body_adapter.detections import detection_array
 from .backend import YoloBackend
-from .depth import measure
+from .depth import DepthTrackFilter, measure
 from .state import Selection
 from .input_contract import stamp_seconds, validate_pair
 
@@ -47,6 +47,11 @@ class TrackerNode(Node):
             'depth_registered': False, 'sync_slop_s': .06, 'max_age_s': .5,
             'visualization_fps': 10.0, 'visualization_scale': 0.5,
             'auto_lock_single': False,
+            'track_hold_s': .35,
+            'reacquire_s': .8,
+            'reacquire_center_fraction': .25,
+            'depth_smoothing_alpha': .35,
+            'depth_jump_reset_m': .8,
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -55,6 +60,19 @@ class TrackerNode(Node):
             raise ValueError('Require 0 < sync_slop_s < max_age_s')
         if self.cfg['image_size'] < 32:
             raise ValueError('image_size must be at least 32')
+        if not math.isfinite(self.cfg['track_hold_s']) or self.cfg['track_hold_s'] < 0:
+            raise ValueError('track_hold_s must be finite and non-negative')
+        if not math.isfinite(self.cfg['reacquire_s']) or self.cfg['reacquire_s'] < 0:
+            raise ValueError('reacquire_s must be finite and non-negative')
+        if (not math.isfinite(self.cfg['reacquire_center_fraction'])
+                or self.cfg['reacquire_center_fraction'] <= 0):
+            raise ValueError('reacquire_center_fraction must be finite and positive')
+        if (not math.isfinite(self.cfg['depth_smoothing_alpha'])
+                or not 0 < self.cfg['depth_smoothing_alpha'] <= 1):
+            raise ValueError('depth_smoothing_alpha must be finite and in (0, 1]')
+        if (not math.isfinite(self.cfg['depth_jump_reset_m'])
+                or self.cfg['depth_jump_reset_m'] <= 0):
+            raise ValueError('depth_jump_reset_m must be finite and positive')
         if (not math.isfinite(self.cfg['visualization_fps'])
                 or not 0 <= self.cfg['visualization_fps'] <= 30):
             raise ValueError('visualization_fps must be finite and in [0, 30]')
@@ -65,8 +83,12 @@ class TrackerNode(Node):
         self.input_group = MutuallyExclusiveCallbackGroup()
         self.state_group = MutuallyExclusiveCallbackGroup()
         self.positions = {}
+        self.depth_filters = {}
         self.bridge = CvBridge()
-        self.selection = Selection()
+        self.selection = Selection(
+            hold_s=self.cfg['track_hold_s'],
+            reacquire_s=self.cfg['reacquire_s'],
+            reacquire_center_fraction=self.cfg['reacquire_center_fraction'])
         self.auto_lock_suppressed = False
         self.info = None
         self.snapshot = None
@@ -157,6 +179,7 @@ class TrackerNode(Node):
                 or received_at-self.last_input_at > self.cfg['max_age_s'])
             if reset:
                 self.selection.reset_stream()
+                self.depth_filters.clear()
             self.last_key, self.last_stamp, self.last_input_at = key, stamp, received_at
             self.error = ''
             self.future = self.pool.submit(self.process_pair, color, depth, received_at, intrinsics, reset)
@@ -175,9 +198,19 @@ class TrackerNode(Node):
         if reset:
             self.backend.reset()
         detections = self.backend.infer(image)
-        positions = ({d.track_id: measure(metres, d.box, intrinsics)
-                      for d in detections if d.track_id is not None}
-                     if self.cfg['depth_registered'] else {})
+        positions = {}
+        if self.cfg['depth_registered']:
+            observation_stamp = stamp_seconds(color.header.stamp)
+            for d in detections:
+                if d.track_id is None:
+                    continue
+                filt = self.depth_filters.setdefault(
+                    d.track_id,
+                    DepthTrackFilter(self.cfg['depth_smoothing_alpha'],
+                                      self.cfg['depth_jump_reset_m']))
+                xyz = filt.update(measure(metres, d.box, intrinsics), observation_stamp)
+                if xyz is not None:
+                    positions[d.track_id] = xyz
         return (color, metres, received_at, intrinsics, image, depth), detections, positions
 
     @serialized
@@ -245,7 +278,12 @@ class TrackerNode(Node):
                 msg.status = TargetState.TRACKING
                 msg.confidence = chosen.confidence
                 xyz = self.positions.get(chosen.track_id)
-                msg.detail = 'Tracked; torso depth rejected' if xyz is None else 'Tracked; registered torso depth'
+                if xyz is None:
+                    msg.detail = ('Tracked; waiting for current body-part depth'
+                                  if chosen not in self.selection.candidates
+                                  else 'Tracked; body-part depth rejected')
+                else:
+                    msg.detail = 'Tracked; registered body-part depth'
                 if xyz is not None:
                     msg.position_valid = True
                     msg.position.x, msg.position.y, msg.position.z = xyz

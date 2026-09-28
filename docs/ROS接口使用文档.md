@@ -60,11 +60,11 @@ ros2 launch roscar_api api.launch.py with_perception:=true route:=yolo \
 |---|---|
 | `header.stamp` | 当前 ROS 时间；零、未来、切换模式前或超时的请求不能驱动 |
 | `header.frame_id` | 必须 `base_link`；EXTERNAL 同时要求 guard 的 base_frame 为 base_link |
-| `twist.linear.x` | m/s，前进，默认允许 [0, 0.15] |
+| `twist.linear.x` | m/s，前进/倒车，默认允许 [-0.15, 0.15]；语音手动模式允许受限倒车 |
 | `twist.angular.z` | rad/s，左转正，默认允许 [-0.5, 0.5] |
-| 其他 linear/angular 分量 | 必须为零；拒绝横移、倒车及非有限值 |
+| 其他 linear/angular 分量 | 必须为零；拒绝横移和非有限值 |
 
-默认 QoS 为 reliable / volatile / keep_last(1)。推荐 20 Hz 持续发布；默认请求有效期 0.2 s，同时检查消息时间与单调接收时间。超出限速直接拒绝，不在 API 层悄悄裁剪。合法零速度也必须定期发送。
+默认 QoS 为 reliable / volatile / keep_last(1)。推荐 20 Hz 持续发布；默认请求有效期 0.2 s，同时检查消息时间与单调接收时间。超出限速直接拒绝，不在 API 层悄悄裁剪。合法零速度也必须定期发送。跟随和导航请求可由各自生产者继续保持不倒车策略。
 
 ### 2.2 模式服务与授权
 
@@ -85,7 +85,7 @@ string message
 
 区分大小写。非法字符串返回 `success=false`，保留当前模式。合法切换（包括重复设置当前模式）立即发零、清空旧请求、解除授权；之后必须收到时间戳晚于切换时刻的新模式请求，再显式 arm。非选中来源不填充请求缓存。旧入口默认 FOLLOW，新 API 入口强制从 IDLE 开始。`command_mode` ROS 参数只表示启动值，运行期模式以 `/control/state` 为准。
 
-两种运动模式均要求尺寸、安装与停车模型确认，雷达新鲜有效、扫描时刻 TF 可用、包络通行、发布者数量正确。EXTERNAL 不会因没有视觉目标而拒绝，但绝不绕过雷达保护。
+本版本两种运动模式均不要求雷达新鲜度、扫描时刻 TF、雷达包络或 `/scan`；`radar_required` 固定为 `false`，雷达不参与任何模式切换、arm 或故障门禁。仍要求尺寸、安装与停车模型确认、请求/目标时效和发布者数量正确。EXTERNAL 不要求视觉目标。
 
 | 服务 | 类型 | 成功 / 失败含义 |
 |---|---|---|
@@ -93,7 +93,7 @@ string message
 | `/control/stop` | std_srvs/srv/Trigger | 立即发零并解除授权；需要再次显式 arm 才能恢复 |
 | `/control/disarm` | std_srvs/srv/Trigger | 与 stop 相同 |
 
-缺请求/雷达/TF、障碍、目标失效（FOLLOW）、重复发布者等会使已授权状态进入 FAULT 并发零；数据恢复或节点重启不会自动恢复运动。服务用 ROS 默认可靠服务 QoS，无固定频率。
+缺请求、目标失效（FOLLOW）或重复发布者等会使已授权状态进入 FAULT 并发零；本版本不因缺少雷达、雷达 TF、扫描或雷达障碍结果触发 FAULT。数据恢复或节点重启不会自动恢复运动。服务用 ROS 默认可靠服务 QoS，无固定频率。
 
 ```bash
 ros2 service call /control/set_mode roscar_interfaces/srv/SetControlMode "{mode: EXTERNAL}"
@@ -143,6 +143,19 @@ publisher.publish(msg)
 标准消息的完整字段可用 `ros2 interface show nav_msgs/msg/Odometry`、`ros2 interface show sensor_msgs/msg/Imu` 查看；pose/twist covariance 与 IMU covariance 是相应量的协方差，未校验的厂商估计不能视为实测精度。
 
 反馈采用驱动 reliable/volatile/keep_last：odom 与 IMU 为 2，电压为 1（可用 `ros2 topic info -v` 查看）；读取方可用 sensor_data QoS。没有反馈可能是未启动、串口故障或失联，不能把“未收到”当零速度/正常电压。驱动另保留命令及反馈超时停车。
+
+### 2.4 语音控制接口
+
+语音链路先在本地解析常用中文操控词，无法确定时才交给 DeepSeek 的结构化工具调用。
+标准输入为 `roscar_interfaces/msg/VoiceCommand` `/voice/command`，结果为
+`roscar_interfaces/msg/VoiceCommandResult` `/voice/command_result`。路由器通过
+`/control/set_mode`、`/control/arm` 和 `/control/stop` 编排控制，只有 `EXTERNAL`
+模式发布 `/chassis/cmd_vel`，不会直接发布最终 `/cmd_vel`。
+
+“开始遥控”会切换到 `EXTERNAL` 并请求显式授权；“开始跟随”切换到 `FOLLOW`，但仍需
+真实目标和跟随请求通过保护检查；“停止/急停”立即归零并切换到 `IDLE`。手动运动命令
+默认速度为前进 0.08 m/s、倒车 -0.08 m/s、转向 ±0.25 rad/s，单次和无新命令保持时间
+最多 2 秒。语音节点停止或请求超时仍由 motion_guard 的更短请求看门狗负责停车。
 
 ## 3. RGB-D 视觉接口
 

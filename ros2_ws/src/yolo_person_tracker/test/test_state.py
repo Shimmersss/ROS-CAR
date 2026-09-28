@@ -4,17 +4,19 @@ from yolo_person_tracker.state import Selection
 
 
 class SelectionTest(unittest.TestCase):
-    def test_lock_loss_and_release(self):
-        s = Selection()
+    def test_lock_loss_hold_and_release(self):
+        s = Selection(hold_s=.35)
         a, b = Detection(1,(0,0,20,90),.9), Detection(2,(40,0,60,90),.8)
         s.update([a,b], 100, 10)
         self.assertTrue(s.lock(now=10.1)[0])
         self.assertEqual(s.selected(), b)
         s.update([a], 100, 10.2)
-        self.assertIsNone(s.selected())
+        self.assertIsNotNone(s.selected(now=10.3))
         self.assertEqual(s.target_id, (0,2))
         s.update([b], 100, 10.3)
         self.assertEqual(s.selected(), b)
+        s.update([a], 100, 10.7)
+        self.assertIsNone(s.selected(now=10.71))
         s.reset_stream()
         s.update([b], 100, 11)
         self.assertIsNone(s.selected())
@@ -60,3 +62,21 @@ class UntrackedSelectionTest(unittest.TestCase):
         selection.update([tracked], 100, 5.)
         self.assertFalse(selection.auto_lock_single(now=6.))
         self.assertIsNone(selection.target_id)
+
+    def test_reacquires_changed_track_near_last_box(self):
+        selection = Selection(hold_s=.2, reacquire_s=.8, reacquire_center_fraction=.25)
+        first = Detection(1, (40, 20, 80, 120), .9)
+        selection.update([first], 200, 1.)
+        self.assertTrue(selection.lock(now=1.01)[0])
+        replacement = Detection(7, (44, 22, 84, 122), .8)
+        selection.update([replacement], 200, 1.2)
+        self.assertEqual(selection.target_id, (0, 7))
+        self.assertIs(selection.selected(), replacement)
+
+    def test_reacquire_rejects_far_person(self):
+        selection = Selection(reacquire_s=.8)
+        first = Detection(1, (40, 20, 80, 120), .9)
+        selection.update([first], 200, 1.)
+        self.assertTrue(selection.lock(now=1.01)[0])
+        selection.update([Detection(7, (150, 20, 190, 120), .8)], 200, 1.2)
+        self.assertEqual(selection.target_id, (0, 1))

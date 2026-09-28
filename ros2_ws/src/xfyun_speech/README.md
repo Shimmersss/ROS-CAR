@@ -60,7 +60,8 @@ DeepSeek 最终回答同时发布到 `/voice/assistant_text`，并按 JSON Lines
 tail -f /home/wheeltec/ROSCAR/logs/deepseek_responses.jsonl
 ```
 
-DeepSeek 当前只开放一个 `buzz(duration_ms)` 工具。工具调用必须经过
-`voice_command_router` 二次校验，100--2000 ms 以外的请求会被拒绝。GPIO
-适配器默认不启动。现已确认蜂鸣器属于下位机，GPIO 适配器仅保留为可选占位，
-后续应根据底盘协议另写适配器，不能猜测 Jetson GPIO。
+DeepSeek 现在仅作为复杂表达的结构化工具兜底；工具包括 `drive`、模式切换、授权、
+停止、状态查询和 `buzz`。所有工具都会转成 `VoiceCommand`，由
+`voice_command_router` 二次校验，不能绕过 `motion_guard`。常用的“开始遥控”“前进”
+等命令由本地规则直接处理。蜂鸣器仍限制在 100--2000 ms，GPIO 适配器默认不启动；
+蜂鸣器属于下位机，不能猜测 Jetson GPIO。

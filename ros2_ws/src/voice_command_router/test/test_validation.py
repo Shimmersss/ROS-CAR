@@ -2,7 +2,8 @@ import json
 
 import pytest
 
-from voice_command_router.validation import CommandValidationError, parse_buzz_command
+from voice_command_router.validation import (CommandValidationError,
+    parse_buzz_command, parse_local_text, validate_drive)
 
 
 def test_accepts_bounded_buzz_command():
@@ -33,3 +34,32 @@ def test_rejects_unknown_tool():
     })
     with pytest.raises(CommandValidationError):
         parse_buzz_command(raw)
+
+
+@pytest.mark.parametrize('text, expected', [
+    ('前进', ('DRIVE', 0.08, 0.0)),
+    ('后退一秒', ('DRIVE', -0.08, 0.0)),
+    ('左转', ('DRIVE', 0.0, 0.25)),
+    ('右转速度0.4两秒', ('DRIVE', 0.0, -0.4)),
+    ('后退0.1米每秒', ('DRIVE', -0.1, 0.0)),
+])
+def test_local_parser(text, expected):
+    command = parse_local_text(text)
+    assert command['action'] == expected[0]
+    assert command['linear_mps'] == pytest.approx(expected[1])
+    assert command['angular_rps'] == pytest.approx(expected[2])
+
+
+def test_local_parser_modes_and_fallback():
+    assert parse_local_text('开始遥控')['action'] == 'ARM'
+    assert parse_local_text('开始跟随') == {'action': 'SET_MODE', 'mode': 'FOLLOW'}
+    assert parse_local_text('导航去客厅')['query'] == 'unsupported_navigation'
+    assert parse_local_text('介绍一下你自己') is None
+
+
+def test_drive_validation_allows_bounded_reverse():
+    assert validate_drive(-0.15, 0.0, 2.0).linear_mps == -0.15
+    with pytest.raises(CommandValidationError):
+        validate_drive(-0.151, 0.0, 1.0)
+    with pytest.raises(CommandValidationError):
+        validate_drive(0.0, 0.0, 1.0)

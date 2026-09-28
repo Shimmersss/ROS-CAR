@@ -60,7 +60,8 @@ try:
     assert not any(name in p.get_node_names() for name in ('person_follower','wheeltec_robot','roscar_n10p'))
     stop(launched);pump(.3)
     guard=MotionGuard(parameter_overrides=[Parameter(k,value=v) for k,v in dict(command_mode='IDLE',
-        motion_enabled=True,geometry_confirmed=True,stopping_model_confirmed=True,mount_calibrated=True).items()])
+        motion_enabled=True,geometry_confirmed=True,stopping_model_confirmed=True,mount_calibrated=True,
+        radar_required=True).items()])
     ex.add_node(guard);tf.sendTransform(tr)
     chassis,log=start(['ros2','run','roscar_api','chassis','--duration','.4'])
     pump(1.3);assert chassis.poll() is None,output(log)

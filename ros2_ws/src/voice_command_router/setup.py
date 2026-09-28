@@ -15,7 +15,7 @@ setup(
     zip_safe=True,
     maintainer='ROSCAR maintainers',
     maintainer_email='maintainer@example.invalid',
-    description='Allowlisted robot command router and optional Jetson GPIO buzzer.',
+    description='Local-first voice command router for guarded ROS control and optional buzzer.',
     license='Proprietary',
     entry_points={
         'console_scripts': [

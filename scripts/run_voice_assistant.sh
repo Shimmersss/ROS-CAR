@@ -2,6 +2,7 @@
 set -eo pipefail
 
 workspace_dir="${ROSCAR_WS:-/home/wheeltec/ROSCAR/ros2_ws}"
+project_dir="$(cd "${workspace_dir}/.." && pwd)"
 voice_env_file="${ROSCAR_VOICE_ENV:-${XDG_CONFIG_HOME:-${HOME}/.config}/roscar/voice.env}"
 
 if [[ ! -f "${voice_env_file}" ]]; then
@@ -32,7 +33,17 @@ if [[ -f "${vendor_setup}" ]]; then
   # shellcheck disable=SC1090
   source "${vendor_setup}"
 fi
-source "${workspace_dir}/install/setup.bash"
+source "${project_dir}/install/setup.bash"
+# ament's generated Python interface path can be shadowed by an older overlay
+# on Jetson; keep the current VoiceCommand messages first for launch children.
+interface_python="${project_dir}/install/roscar_interfaces/local/lib/python3.10/dist-packages"
+if [[ -d "${interface_python}" ]]; then
+  export PYTHONPATH="${interface_python}${PYTHONPATH:+:${PYTHONPATH}}"
+fi
+interface_lib="${project_dir}/install/roscar_interfaces/lib"
+if [[ -d "${interface_lib}" ]]; then
+  export LD_LIBRARY_PATH="${interface_lib}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+fi
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-182}"
 export ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}"
 voice_tts_enabled="${VOICE_TTS_ENABLED:-true}"

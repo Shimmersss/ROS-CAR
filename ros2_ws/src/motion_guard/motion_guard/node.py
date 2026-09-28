@@ -33,7 +33,7 @@ class MotionGuard(Node):
                         base_frame='base_link', scan_frame='laser', expected_source='astra',
                         target_frame='astra_depth_optical_frame', request_topic='/control/cmd_vel_request',
                         scan_topic='/scan', target_topic='/perception/target_state',
-                        radar_required=False)
+                        radar_required=False, auto_arm=False)
         defaults.update(vars(SafetyConfig()))
         for key, value in defaults.items():
             self.declare_parameter(key, value, ParameterDescriptor(read_only=True))
@@ -142,7 +142,7 @@ class MotionGuard(Node):
         values=(t.linear.x,t.linear.y,t.linear.z,t.angular.x,t.angular.y,t.angular.z)
         if (self.request.header.frame_id != self.cfg['base_frame'] or not all(map(math.isfinite,values))
                 or any(x!=0 for x in (t.linear.y,t.linear.z,t.angular.x,t.angular.y))
-                or not 0 <= t.linear.x <= self.safety.max_linear_mps
+                or not -self.safety.max_reverse_mps <= t.linear.x <= self.safety.max_linear_mps
                 or abs(t.angular.z)>self.safety.max_angular_rps):
             return False,'invalid_velocity_request',0.,0.
         if not self.cfg['radar_required']:
@@ -189,6 +189,8 @@ class MotionGuard(Node):
 
     def tick(self):
         ready,reason,v,w=self.check()
+        if self.cfg['auto_arm'] and self.cfg['motion_enabled'] and self.mode == 'STANDBY' and ready:
+            self.mode='ARMED'; self.reason='auto_armed'
         if self.mode=='ARMED' and not ready:
             self.mode='FAULT'; self.last_fault=reason
         self.reason=reason

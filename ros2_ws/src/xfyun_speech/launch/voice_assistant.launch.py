@@ -27,12 +27,17 @@ def generate_launch_description():
         'enable_wake_driver', default_value='false',
         description='Start only the WheelTec microphone serial wake driver.',
     )
+    control_argument = DeclareLaunchArgument(
+        'voice_control_enabled', default_value='true',
+        description='Enable local voice control routing.',
+    )
     config = LaunchConfiguration('config')
     return LaunchDescription([
         config_argument,
         tts_argument,
         buzzer_argument,
         wake_argument,
+        control_argument,
         Node(
             package='wheeltec_mic_ros2',
             executable='wheeltec_mic',
@@ -56,7 +61,7 @@ def generate_launch_description():
             executable='router_node',
             name='voice_command_router',
             output='screen',
-            parameters=[config],
+            parameters=[config, {'enabled': LaunchConfiguration('voice_control_enabled')}],
         ),
         Node(
             package='voice_command_router',

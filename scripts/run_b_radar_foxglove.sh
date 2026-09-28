@@ -4,8 +4,11 @@ set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 source /opt/ros/humble/setup.bash
-# shellcheck disable=SC1091
-source "$ROOT/ros2_ws/radar_install/setup.bash"
+if [[ "${WITH_RADAR:-false}" == true ]]; then
+  [[ -f "$ROOT/ros2_ws/radar_install/setup.bash" ]] || { echo "缺少雷达环境" >&2; exit 1; }
+  # shellcheck disable=SC1091
+  source "$ROOT/ros2_ws/radar_install/setup.bash"
+fi
 # shellcheck disable=SC1091
 source "$ROOT/ros2_ws/install/setup.bash"
 set -u

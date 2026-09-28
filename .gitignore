@@ -14,7 +14,7 @@ __pycache__/
 /ros2_ws/src_vendor/
 /artifacts/
 /logs/
-/data/recordings/*
+/data/
 !/data/recordings/README.md
 /models/weights/*
 !/models/weights/README.md

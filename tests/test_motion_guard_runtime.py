@@ -49,7 +49,9 @@ def wire_loop():
             wire_frames.append(struct.unpack('>hhh',buf[3:9]));del buf[:11]
         time.sleep(.02)
 wire_thread=threading.Thread(target=wire_loop,daemon=True);wire_thread.start()
-params=[Parameter(k,value=v) for k,v in dict(motion_enabled=True,geometry_confirmed=True,stopping_model_confirmed=True,mount_calibrated=True).items()]
+params=[Parameter(k,value=v) for k,v in dict(
+    motion_enabled=True, geometry_confirmed=True, stopping_model_confirmed=True,
+    mount_calibrated=True, radar_required=True).items()]
 guard=MotionGuard(parameter_overrides=params);ex.add_node(guard)
 req=probe.create_publisher(TwistStamped,'/control/cmd_vel_request',1)
 scans=probe.create_publisher(LaserScan,'/scan',qos_profile_sensor_data)

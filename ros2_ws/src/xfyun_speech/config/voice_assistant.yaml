@@ -27,10 +27,12 @@ deepseek_chat:
     timeout_sec: 30.0
     max_tokens: 300
     history_turns: 6
-    input_topic: /voice/asr_text
+    input_topic: /voice/unhandled_text
     answer_topic: /voice/assistant_text
     tts_topic: /voice/tts_text
     tool_call_topic: /voice/tool_call
+    command_topic: /voice/command
+    command_result_topic: /voice/command_result
     response_log_path: /home/wheeltec/ROSCAR/logs/deepseek_responses.jsonl
     enable_tools: true
     wake_reply_enabled: true
@@ -40,8 +42,20 @@ deepseek_chat:
 
 voice_command_router:
   ros__parameters:
-    input_topic: /voice/tool_call
+    enabled: true
+    input_topic: /voice/asr_text
+    unhandled_topic: /voice/unhandled_text
+    command_topic: /voice/command
+    result_topic: /voice/command_result
+    legacy_tool_topic: /voice/tool_call
     buzzer_topic: /hardware/buzzer_duration_ms
+    control_request_topic: /chassis/cmd_vel
+    control_timeout_s: 2.0
+    default_forward_mps: 0.08
+    default_reverse_mps: -0.08
+    default_turn_rps: 0.25
+    default_duration_s: 2.0
+    base_frame: base_link
 
 buzzer_gpio:
   ros__parameters:
