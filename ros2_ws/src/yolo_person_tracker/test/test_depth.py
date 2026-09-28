@@ -16,6 +16,12 @@ class DepthTest(unittest.TestCase):
         self.assertEqual(f.update((0., 0., 2.), 2.), (0., 0., 2.))
         self.assertIsNone(f.update(None, 3.))
 
+    def test_temporal_filter_has_bounded_position_hold(self):
+        f = DepthTrackFilter()
+        f.update((0., 0., 2.), 10.)
+        self.assertEqual(f.hold(10.2, .25)[0], (0., 0., 2.))
+        self.assertIsNone(f.hold(10.3, .25))
+
     def test_plane_and_units(self):
         xyz = measure(np.full((100,100), 2.), (0,0,100,100), (100,100,50,50))
         self.assertAlmostEqual(xyz[2], 2.)

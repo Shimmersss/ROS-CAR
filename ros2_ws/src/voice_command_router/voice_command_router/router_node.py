@@ -52,6 +52,7 @@ class VoiceCommandRouter(Node):
         self.declare_parameter('default_turn_rps', 0.25)
         self.declare_parameter('default_duration_s', 2.0)
         self.declare_parameter('base_frame', 'base_link')
+        self.declare_parameter('continuous_wake_text', '小车唤醒')
 
         get = lambda key: self.get_parameter(key).value
         self._unhandled_pub = self.create_publisher(String, get('unhandled_topic'), 10)
@@ -81,8 +82,14 @@ class VoiceCommandRouter(Node):
         self._last_drive = 0.0
         self._drive_until = 0.0
         self._stop_requested = False
+        self._continuous_session = False
+        self._listen_client = self.create_client(Trigger, '/voice/start_listening')
+        self._next_listen_at = 0.0
+        self._last_listen_attempt = 0.0
 
         self.create_subscription(String, get('input_topic'), self._on_asr, 10)
+        self.create_subscription(String, '/voice_words', self._on_wake, 10)
+        self.create_subscription(String, '/voice/asr_state', self._on_asr_state, 10)
         self.create_subscription(VoiceCommand, get('command_topic'), self._on_command, 10)
         self.create_subscription(String, get('legacy_tool_topic'), self._on_legacy_tool, 10)
         self.create_subscription(String, '/control/state', self._on_state, 10)
@@ -104,9 +111,38 @@ class VoiceCommandRouter(Node):
         command.query = str(kwargs.get('query', ''))
         return command
 
+    def _on_wake(self, message):
+        trigger = str(self.get_parameter('continuous_wake_text').value).strip()
+        if str(message.data).strip() != trigger:
+            return
+        if not self._continuous_session:
+            self._continuous_session = True
+            self._speak('已进入持续控制，可以连续说指令；再次说小微小微退出')
+            self.get_logger().info('持续语音控制已开启')
+        else:
+            self._continuous_session = False
+            self._next_listen_at = 0.0
+            self._last_listen_attempt = 0.0
+            self._stop_motion(self._new_command('DISARM', request_id='wake-exit-' + str(uuid.uuid4())), set_idle=True)
+            self._speak('已退出持续控制')
+            self.get_logger().info('持续语音控制已退出')
+
+    def _on_asr_state(self, message):
+        # Also recover after an ASR timeout/energy miss, which produces no text.
+        if self._continuous_session and str(message.data).strip() == 'IDLE':
+            self._request_next_listen()
+
+    def _request_next_listen(self):
+        if self._continuous_session:
+            # ASR publishes the result just before it clears its busy flag;
+            # defer the service call so the next request is not rejected as busy.
+            self._next_listen_at = max(self._next_listen_at, time.monotonic() + 0.35)
+
+
     def _on_asr(self, message):
         if not self.get_parameter('local_parser_enabled').value:
             self._unhandled_pub.publish(message)
+            self._request_next_listen()
             return
         try:
             parsed = parse_local_text(
@@ -118,11 +154,14 @@ class VoiceCommandRouter(Node):
             )
         except CommandValidationError as exc:
             self._speak(f'这条操控指令无法执行：{exc}')
+            self._request_next_listen()
             return
         if parsed is None:
             self._unhandled_pub.publish(String(data=message.data.strip()))
+            self._request_next_listen()
             return
         self._on_command(self._new_command(**parsed))
+        self._request_next_listen()
 
     def _on_legacy_tool(self, message):
         try:
@@ -297,6 +336,13 @@ class VoiceCommandRouter(Node):
 
     def _tick(self):
         now = time.monotonic()
+        if self._continuous_session and self._listen_client.service_is_ready():
+            due = self._next_listen_at and now >= self._next_listen_at
+            keepalive = now - self._last_listen_attempt >= 1.0
+            if due or keepalive:
+                self._next_listen_at = 0.0
+                self._last_listen_attempt = now
+                self._listen_client.call_async(Trigger.Request())
         if self._pending_arm:
             command, mode, generation, deadline = self._pending_arm
             if now > deadline:
@@ -315,7 +361,10 @@ class VoiceCommandRouter(Node):
                 self._velocity = (0.0, 0.0)
                 if not self._stop_requested:
                     self._stop_requested = True
-                    self._stop_motion(self._new_command('STOP', request_id='internal-' + str(uuid.uuid4())), set_idle=True)
+                    if not self._continuous_session:
+                        self._stop_motion(self._new_command('STOP', request_id='internal-' + str(uuid.uuid4())), set_idle=True)
+                    else:
+                        self._velocity = (0.0, 0.0)
         if self._mode_request != 'EXTERNAL':
             return
         msg = TwistStamped()

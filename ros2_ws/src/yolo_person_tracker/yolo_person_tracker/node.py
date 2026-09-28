@@ -47,11 +47,13 @@ class TrackerNode(Node):
             'depth_registered': False, 'sync_slop_s': .06, 'max_age_s': .5,
             'visualization_fps': 10.0, 'visualization_scale': 0.5,
             'auto_lock_single': False,
-            'track_hold_s': .35,
-            'reacquire_s': .8,
+            'track_hold_s': .8,
+            'reacquire_s': 1.2,
             'reacquire_center_fraction': .25,
             'depth_smoothing_alpha': .35,
             'depth_jump_reset_m': .8,
+            'depth_min_fraction': .08,
+            'position_hold_s': .25,
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -73,6 +75,11 @@ class TrackerNode(Node):
         if (not math.isfinite(self.cfg['depth_jump_reset_m'])
                 or self.cfg['depth_jump_reset_m'] <= 0):
             raise ValueError('depth_jump_reset_m must be finite and positive')
+        if (not math.isfinite(self.cfg['depth_min_fraction'])
+                or not 0 < self.cfg['depth_min_fraction'] <= 1):
+            raise ValueError('depth_min_fraction must be finite and in (0, 1]')
+        if not math.isfinite(self.cfg['position_hold_s']) or self.cfg['position_hold_s'] < 0:
+            raise ValueError('position_hold_s must be finite and non-negative')
         if (not math.isfinite(self.cfg['visualization_fps'])
                 or not 0 <= self.cfg['visualization_fps'] <= 30):
             raise ValueError('visualization_fps must be finite and in [0, 30]')
@@ -83,6 +90,8 @@ class TrackerNode(Node):
         self.input_group = MutuallyExclusiveCallbackGroup()
         self.state_group = MutuallyExclusiveCallbackGroup()
         self.positions = {}
+        self.position_ages = {}
+        self.held_position_ids = set()
         self.depth_filters = {}
         self.bridge = CvBridge()
         self.selection = Selection(
@@ -199,6 +208,8 @@ class TrackerNode(Node):
             self.backend.reset()
         detections = self.backend.infer(image)
         positions = {}
+        position_ages = {}
+        held_position_ids = set()
         if self.cfg['depth_registered']:
             observation_stamp = stamp_seconds(color.header.stamp)
             for d in detections:
@@ -208,10 +219,19 @@ class TrackerNode(Node):
                     d.track_id,
                     DepthTrackFilter(self.cfg['depth_smoothing_alpha'],
                                       self.cfg['depth_jump_reset_m']))
-                xyz = filt.update(measure(metres, d.box, intrinsics), observation_stamp)
+                measured = measure(metres, d.box, intrinsics,
+                                   min_fraction=self.cfg['depth_min_fraction'])
+                xyz = filt.update(measured, observation_stamp)
                 if xyz is not None:
                     positions[d.track_id] = xyz
-        return (color, metres, received_at, intrinsics, image, depth), detections, positions
+                    position_ages[d.track_id] = 0.0
+                elif measured is None:
+                    held = filt.hold(observation_stamp, self.cfg['position_hold_s'])
+                    if held is not None:
+                        positions[d.track_id], position_ages[d.track_id] = held
+                        held_position_ids.add(d.track_id)
+        return ((color, metres, received_at, intrinsics, image, depth), detections,
+                positions, position_ages, held_position_ids)
 
     @serialized
     def tick(self):
@@ -225,7 +245,8 @@ class TrackerNode(Node):
             self.loading = None
         if self.future is not None and self.future.done():
             try:
-                self.snapshot, detections, self.positions = self.future.result()
+                (self.snapshot, detections, self.positions,
+                 self.position_ages, self.held_position_ids) = self.future.result()
                 self.selection.update(detections, self.snapshot[0].width, self.snapshot[2])
                 if self.fresh_snapshot():
                     if (self.cfg['auto_lock_single'] and self.cfg['depth_registered']
@@ -239,6 +260,8 @@ class TrackerNode(Node):
             except Exception as exc:
                 self.error = f'Inference failed: {type(exc).__name__}: {exc}'
                 self.snapshot = None
+                self.position_ages = {}
+                self.held_position_ids = set()
                 self.selection.reset_stream()
                 self.last_key = ('failed',)
                 self.get_logger().error(self.error)
@@ -278,17 +301,20 @@ class TrackerNode(Node):
                 msg.status = TargetState.TRACKING
                 msg.confidence = chosen.confidence
                 xyz = self.positions.get(chosen.track_id)
+                held = chosen.track_id in self.held_position_ids
                 if xyz is None:
                     msg.detail = ('Tracked; waiting for current body-part depth'
                                   if chosen not in self.selection.candidates
                                   else 'Tracked; body-part depth rejected')
                 else:
-                    msg.detail = 'Tracked; registered body-part depth'
+                    msg.detail = ('Tracked; short predicted depth hold'
+                                  if held else 'Tracked; registered body-part depth')
                 if xyz is not None:
                     msg.position_valid = True
                     msg.position.x, msg.position.y, msg.position.z = xyz
                     msg.horizontal_distance_m = math.hypot(xyz[0], xyz[2])
                     msg.bearing_rad = math.atan2(xyz[0], xyz[2])
+                    msg.measurement_age_s = self.position_ages.get(chosen.track_id, 0.0)
         self.pub.publish(msg)
         marker = Marker()
         marker.header = copy.deepcopy(msg.header)
