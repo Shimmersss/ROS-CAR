@@ -8,6 +8,8 @@ ros2 launch motion_guard follow.launch.py
 
 默认 PERCEPTION_ONLY；现有 A/B/red 纯感知入口保持不变。安全配置在 `config/safety.yaml`，均为启动后只读参数。填写实测外参、车体尺寸与停车模型后，确认 geometry_confirmed、mount_calibrated、stopping_model_confirmed，显式设置 motion_enabled:=true 才进入 STANDBY。即使开启此选项也不会自动运动。
 
+`radar_required` 默认为 false，当前版本允许 EXTERNAL 和 FOLLOW 在没有 `/scan` 时 arm。此模式没有障碍检查，必须由现场人员清空环境并保持人工急停准备；设为 true 才启用雷达净空保护。
+
 ```bash
 ros2 service call /control/arm std_srvs/srv/Trigger '{}'
 ros2 service call /control/stop std_srvs/srv/Trigger '{}'

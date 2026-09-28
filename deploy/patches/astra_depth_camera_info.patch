@@ -1,0 +1,12 @@
+--- a/astra_camera/src/ob_camera_info.cpp
++++ b/astra_camera/src/ob_camera_info.cpp
+@@ -210,7 +210,8 @@ CameraInfo OBCameraNode::getDepthCameraInfo() {
+   double scaling = (double)width / 640;
+   auto camera_info = getIRCameraInfo(width, height, f);
+   auto camera_params = getCameraParams();
+-  if (!isValidCameraParams(camera_params)) {
++  // Keep the calibrated CameraInfo when the device reports NaN factory parameters.
++  if (isValidCameraParams(camera_params)) {
+     if (depth_registration_ || enable_colored_point_cloud_) {
+       camera_info.k[0] = camera_params.r_intr_p[0];
+       camera_info.k[2] = camera_params.r_intr_p[2];

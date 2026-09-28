@@ -4,7 +4,7 @@
 
 链路：校正后的 RGB + 配准到同一彩色光学坐标系的深度 → YOLO26s person 检测（免 NMS） → ByteTrack → 显式锁定 → 躯干稳健测距 → TargetState、检测框图像、Foxglove 目标球。
 
-本分支 `codex/route-b` 补齐软件实现与本机测试，不部署小车、不切换 A 的开机服务。相机输入、Jetson 推理性能和真人跟踪必须另行实测。车辆控制、避障、语音和串口不在本次范围。
+目前总入口已切到 B + N10P + 语音 + 底盘串口回传，红色路线退出运行。模型在 Jetson GPU 设备 0 的空白帧及真人检测均有在线证据；按用户要求启用临时内参与驱动注册深度后，锁定轨迹曾输出有效 XYZ。持续跟踪、绝对误差和 RGB-D 像素配准仍待验收；底盘只收发，不启动车辆跟随。
 
 ## 输入契约
 
@@ -22,7 +22,7 @@
 | sync_slop_s | 0.06，RGB/深度最大采集时间差 |
 | max_age_s | 0.5，消息年龄和本地接收后年龄上限 |
 
-默认话题是接口约定，**尚未确认 ASTRA S 驱动实际提供这些名称及校正/配准语义**。订阅传感器数据采用 best-effort QoS，RGB/深度近似同步队列为 5。CameraInfo 缓存作为静态标定使用，分辨率和 frame_id 必须与输入一致；P 必须有有效焦距及零平移项。不接受零时间戳、未来时间戳、过期消息、深度原始 frame 与彩色 frame 混用或尺寸不一致。跨主机播放时必须同步时钟。
+默认话题是接口约定。2026-09-23 在线 ASTRA S 实际有流的话题为 `/camera/color/image_raw`、`/camera/depth/image_raw`、`/camera/color/camera_info`；默认 `/camera/color/image_rect` 和 `/camera/aligned_depth_to_color/image_raw` 当时无流。驱动目前从 `astra_s_provisional_color.yaml` 和 `astra_s_provisional_depth.yaml` 加载用户提供的临时内参，彩色与深度 CameraInfo 的 K/P/D 均已读回，但尚无该设备的标定精度和物理配准验证。订阅传感器数据采用 best-effort QoS，RGB/深度近似同步队列为 5。CameraInfo 缓存作为静态标定使用，分辨率和 frame_id 必须与输入一致；P 必须有有效焦距及零平移项。不接受零时间戳、未来时间戳、过期消息、深度原始 frame 与彩色 frame 混用或尺寸不一致。跨主机播放时必须同步时钟。
 
 同分辨率、同 frame_id 和 `depth_registered=true` 不能从软件上证明配准正确；这些只是防误接条件。驱动输出原始 RGB 时应先通过 image_proc 等相机校正节点处理，深度必须匹配校正后的彩色像素。首轮实机用近/远物体边缘检查对应关系，不能只重命名话题或 frame_id。
 
@@ -49,7 +49,7 @@
 | TRACKING | 锁定 ID 仍在；深度无效时 position_valid=false |
 | LOST | 锁定 ID 未匹配，或已经换 epoch |
 
-所有无效位置、距离和偏角为 NaN，Marker 发 DELETE。有效位置单位米，光学 X 右、Y 下、Z 前；水平距离 sqrt(X²+Z²)，偏角 atan2(X,Z)。header.stamp 是状态发布时间，observation_stamp 是被采用 RGB 的采集时间；只有新鲜结果保留观测时间。锁定 ID 不自动改成另一个人。
+所有无效位置、距离和偏角为 NaN，Marker 发 DELETE。有效位置单位米，光学 X 右、Y 下、Z 前；水平距离 sqrt(X²+Z²)，偏角 atan2(X,Z)。header.stamp 是状态发布时间，observation_stamp 是被采用 RGB 的采集时间；只有新鲜结果保留观测时间。整机入口默认开启单人自动锁定：唯一已跟踪人体连续稳定 3 帧后锁定，多人时不猜测目标；手动释放后需再次手动锁定。直接启动 perception.launch 时该功能默认关闭。
 
 输出 `/perception/target_state`、`/perception/detections_image`（bgr8，保留 RGB header）、`/perception/target_marker`。Marker 为 15cm 目标球、寿命 0.2 秒；消费者仍须检测整个节点退出导致的话题断流。Foxglove 使用 Image、Raw Messages、3D 面板，3D 固定坐标设为实际彩色 optical frame。
 
@@ -87,7 +87,7 @@ ros2 service call /perception/release_target std_srvs/srv/Trigger '{}'
 
 如果模型依赖安装在虚拟环境，追加 `yolo_python:=/absolute/venv/bin/python3`；仅 activate 不保证 ROS 安装脚本的 shebang 会使用该环境。解释器必须与 ROS 的 rclpy/cv_bridge ABI 匹配（Humble Ubuntu 22.04 为 Python 3.10）。Mac 的 Python 3.12 虚拟环境仅用于独立 CPU 冒烟测试。
 
-launch 不启动相机。A/B 不能同时争用相机或共同向同一目标话题输出；未来切换时先停止 A，B 验收结束后恢复原服务。此阶段不提供自动停 A 或改开机服务的脚本。
+单独的 perception.launch 不启动相机；整机入口会同时启动 Astra。A/B 不可共同向同一目标话题发布。当前红色目标服务已退出运行，整机默认运行 B；临时内参与配准未完成物理验收时不允许运动。
 
 ## 三维 TF 与未标定兼容性
 

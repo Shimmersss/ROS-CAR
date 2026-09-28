@@ -1,54 +1,226 @@
 {
   "configById": {
     "Image!detections": {
-      "topic": "/perception/detections_image",
-      "imageMode": {"imageTopic": "/perception/detections_image"},
-      "foxglovePanelTitle": "B 人体检测（320×240 / 10 FPS）"
+      "topic": "/perception/detections_preview/compressed",
+      "imageMode": {
+        "imageTopic": "/perception/detections_preview/compressed"
+      },
+      "foxglovePanelTitle": "B 人体检测框（JPEG，低带宽）"
     },
     "RawMessages!target": {
       "topicPath": "/perception/target_state",
       "defaultExpanded": true,
-      "foxglovePanelTitle": "B 目标状态"
+      "foxglovePanelTitle": "目标状态：position_valid=false 时 XYZ 为 NaN"
     },
     "Plot!distance": {
-      "paths": [{"value": "/perception/target_state.horizontal_distance_m", "enabled": true, "timestampMethod": "receiveTime"}],
+      "paths": [
+        {
+          "value": "/perception/target_state.horizontal_distance_m",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/perception/target_state.bearing_rad",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        }
+      ],
       "xAxisVal": "timestamp",
       "isSynced": true,
-      "foxglovePanelTitle": "目标距离 m"
+      "foxglovePanelTitle": "距离 m / 偏角 rad"
     },
     "3D!radar": {
       "fixedFrame": "laser",
       "followTf": "laser",
       "topics": {
-        "/scan": {"visible": true},
-        "/radar/points": {"visible": false}
+        "/radar/points": {
+          "visible": true
+        },
+        "/scan": {
+          "visible": false
+        }
       },
-      "foxglovePanelTitle": "N10P 扫描"
+      "foxglovePanelTitle": "N10P 实测二维扫描（laser 平面）"
     },
     "RawMessages!radar": {
       "topicPath": "/radar/status",
       "defaultExpanded": true,
-      "foxglovePanelTitle": "N10P 状态"
+      "foxglovePanelTitle": "N10P 健康状态"
+    },
+    "Image!raw": {
+      "topic": "/perception/color_preview/compressed",
+      "imageMode": {
+        "imageTopic": "/perception/color_preview/compressed"
+      },
+      "foxglovePanelTitle": "Astra 彩色预览（JPEG，低带宽）"
+    },
+    "Plot!xyz": {
+      "paths": [
+        {
+          "value": "/perception/target_state.position.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/perception/target_state.position.y",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/perception/target_state.position.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "isSynced": true,
+      "foxglovePanelTitle": "B 目标 XYZ（光学系，锁定且深度有效时）"
+    },
+    "3D!target": {
+      "fixedFrame": "camera_color_optical_frame",
+      "followTf": "camera_color_optical_frame",
+      "topics": {
+        "/perception/target_marker": {
+          "visible": true
+        }
+      },
+      "foxglovePanelTitle": "B 目标三维位置（有有效测距才显示）"
+    },
+    "3D!map": {
+      "fixedFrame": "map",
+      "followTf": "map",
+      "topics": {
+        "/map": {
+          "visible": true
+        },
+        "/plan": {
+          "visible": true
+        },
+        "/local_plan": {
+          "visible": true
+        }
+      },
+      "foxglovePanelTitle": "SLAM 地图/路径（建图与 TF 启动后显示）"
+    },
+    "RawMessages!odom": {
+      "topicPath": "/odom",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "底盘里程计回传"
+    },
+    "RawMessages!voice": {
+      "topicPath": "/voice/assistant_text",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "语音助手回答"
+    },
+    "RawMessages!asr": {
+      "topicPath": "/voice/asr_text",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "语音识别文本"
+    },
+    "Plot!velocity": {
+      "paths": [
+        {
+          "value": "/odom.twist.twist.linear.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/odom.twist.twist.angular.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "isSynced": true,
+      "foxglovePanelTitle": "底盘反馈速度（运动关闭时应为零）"
+    },
+    "RawMessages!asrstate": {
+      "topicPath": "/voice/asr_state",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "语音识别运行状态（1 Hz）"
+    },
+    "RawMessages!ttsstate": {
+      "topicPath": "/voice/tts_state",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "语音播报运行状态（1 Hz）"
     }
   },
   "globalVariables": {},
   "userNodes": {},
   "linkedGlobalVariables": [],
-  "playbackConfig": {"speed": 1, "messageOrder": "receiveTime"},
+  "playbackConfig": {
+    "speed": 1,
+    "messageOrder": "receiveTime"
+  },
   "layout": {
     "direction": "row",
-    "splitPercentage": 52,
+    "splitPercentage": 54,
     "first": {
       "direction": "column",
-      "splitPercentage": 68,
-      "first": "Image!detections",
-      "second": {"direction": "row", "first": "RawMessages!target", "second": "Plot!distance"}
+      "splitPercentage": 52,
+      "first": {
+        "direction": "row",
+        "splitPercentage": 50,
+        "first": "Image!raw",
+        "second": "Image!detections"
+      },
+      "second": {
+        "direction": "row",
+        "splitPercentage": 50,
+        "first": "3D!target",
+        "second": "3D!radar"
+      }
     },
     "second": {
       "direction": "column",
-      "splitPercentage": 72,
-      "first": "3D!radar",
-      "second": "RawMessages!radar"
+      "splitPercentage": 52,
+      "first": {
+        "direction": "row",
+        "splitPercentage": 50,
+        "first": "RawMessages!target",
+        "second": "Plot!xyz"
+      },
+      "second": {
+        "direction": "row",
+        "splitPercentage": 58,
+        "first": "3D!map",
+        "second": {
+          "direction": "column",
+          "splitPercentage": 50,
+          "first": "RawMessages!radar",
+          "second": {
+            "direction": "row",
+            "splitPercentage": 50,
+            "first": {
+              "direction": "column",
+              "splitPercentage": 50,
+              "first": "RawMessages!odom",
+              "second": "RawMessages!voice"
+            },
+            "second": {
+              "direction": "column",
+              "splitPercentage": 50,
+              "first": {
+                "direction": "column",
+                "splitPercentage": 50,
+                "first": "RawMessages!asr",
+                "second": {
+                  "direction": "row",
+                  "first": "RawMessages!asrstate",
+                  "second": "RawMessages!ttsstate",
+                  "splitPercentage": 50
+                }
+              },
+              "second": {
+                "direction": "row",
+                "splitPercentage": 50,
+                "first": "Plot!distance",
+                "second": "Plot!velocity"
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

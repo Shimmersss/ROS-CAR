@@ -10,7 +10,7 @@ import uuid
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 
 from .client import DeepSeekClient
 from .response_log import append_response
@@ -40,6 +40,10 @@ class DeepSeekChatNode(Node):
         self.declare_parameter('tool_call_topic', '/voice/tool_call')
         self.declare_parameter('response_log_path', '')
         self.declare_parameter('enable_tools', True)
+        self.declare_parameter('wake_reply_enabled', True)
+        self.declare_parameter('wake_reply_topic', '/voice_words')
+        self.declare_parameter('wake_reply_trigger', '小车唤醒')
+        self.declare_parameter('wake_reply_text', '我在')
         self.declare_parameter(
             'ignored_phrases',
             ['小车唤醒', '你好小微', '小微小微', '你好小薇', '小薇小薇'],
@@ -49,6 +53,14 @@ class DeepSeekChatNode(Node):
             String, self.get_parameter('answer_topic').value, 10)
         self._tts_pub = self.create_publisher(
             String, self.get_parameter('tts_topic').value, 10)
+        self._tts_speaking = False
+        self._speaking_sub = self.create_subscription(
+            Bool, '/voice/speaking', self._on_speaking, 10)
+        self._wake_sub = None
+        wake_topic = str(self.get_parameter('wake_reply_topic').value)
+        if bool(self.get_parameter('wake_reply_enabled').value) and wake_topic:
+            self._wake_sub = self.create_subscription(
+                String, wake_topic, self._on_wake, 10)
         self._tool_pub = self.create_publisher(
             String, self.get_parameter('tool_call_topic').value, 10)
         self._state_pub = self.create_publisher(String, '/voice/chat_state', 10)
@@ -77,6 +89,21 @@ class DeepSeekChatNode(Node):
             self._queue.put_nowait(text)
         except queue.Full:
             self.get_logger().warning('DeepSeek 请求队列已满，丢弃新问题')
+
+    def _on_speaking(self, message):
+        self._tts_speaking = bool(message.data)
+
+    def _on_wake(self, message):
+        trigger = str(self.get_parameter('wake_reply_trigger').value).strip()
+        if message.data.strip() != trigger:
+            return
+        if self._tts_speaking:
+            self.get_logger().info('TTS 正在播放，跳过唤醒应答')
+            return
+        reply = String()
+        reply.data = str(self.get_parameter('wake_reply_text').value)
+        self._tts_pub.publish(reply)
+        self.get_logger().info(f'唤醒应答: {reply.data}')
 
     def _messages_for(self, user_text):
         return [

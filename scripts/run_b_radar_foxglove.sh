@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Foreground B + N10P supervisor. Camera runs independently; no chassis or motion nodes.
+# Foreground B supervisor; N10P is opt-in. Camera runs independently; no chassis or motion nodes.
 set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
@@ -34,9 +34,10 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 setsid ros2 launch perception_bringup perception.launch.py \
-  route:=yolo with_radar:=true with_foxglove:=false \
+  route:=yolo with_radar:="${WITH_RADAR:-false}" with_foxglove:=false \
   yolo_python:="$YOLO_PYTHON" model_path:="$MODEL_PATH" device:="${YOLO_DEVICE:-0}" \
   depth_registered:="${DEPTH_REGISTERED:-false}" \
+  auto_lock_single:="${AUTO_LOCK_SINGLE:-false}" \
   color_topic:="${COLOR_TOPIC:-/camera/color/image_raw}" \
   depth_topic:="${DEPTH_TOPIC:-/camera/depth/image_raw}" \
   camera_info_topic:="${CAMERA_INFO_TOPIC:-/camera/color/camera_info}" \
@@ -45,8 +46,8 @@ setsid ros2 launch perception_bringup perception.launch.py \
 PIDS+=("$!")
 setsid bash "$ROOT/scripts/run_foxglove.sh" &
 PIDS+=("$!")
-echo 'B + N10P 可视化已启动；不含底盘或运动节点。'
-echo 'Foxglove 布局：foxglove/b-radar-layout.json'
+echo "B 可视化已启动；N10P=${WITH_RADAR:-false}；不含底盘或运动节点。"
+echo 'Foxglove 布局：foxglove/b-radar-layout.json（启用雷达时显示雷达面板）'
 echo "模型=$MODEL_PATH，设备=${YOLO_DEVICE:-0}，配准确认=${DEPTH_REGISTERED:-false}"
 echo "画框视频=${VISUALIZATION_FPS:-10} FPS，缩放=${VISUALIZATION_SCALE:-0.5}"
 wait -n "${PIDS[@]}" || true

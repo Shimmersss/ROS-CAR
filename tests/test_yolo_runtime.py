@@ -172,7 +172,7 @@ def main():
         with tempfile.TemporaryDirectory() as folder:
             report_path = Path(folder)/'probe.json'
             result = subprocess.run([
-                sys.executable, '/workspace/scripts/check_rgbd_input.py', '--duration', '.2',
+                sys.executable, str(Path(__file__).resolve().parents[1] / 'scripts/check_rgbd_input.py'), '--duration', '.2',
                 '--color-topic', '/absent/color', '--depth-topic', '/absent/depth',
                 '--camera-info-topic', '/absent/info', '--output', str(report_path)],
                 capture_output=True, text=True, timeout=10)

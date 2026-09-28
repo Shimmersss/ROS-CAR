@@ -34,13 +34,19 @@ class XfyunTtsNode(Node):
         self._speaking_pub = self.create_publisher(Bool, '/voice/speaking', 10)
         self._queue = queue.Queue(maxsize=5)
         self._stop = threading.Event()
+        self._state_value = 'IDLE'
+        self._state_timer = self.create_timer(1.0, self._republish_state)
         self._worker = threading.Thread(target=self._worker_loop, daemon=True)
         self._worker.start()
         self._publish_state('IDLE')
 
     def _publish_state(self, value):
+        self._state_value = value
+        self._republish_state()
+
+    def _republish_state(self):
         message = String()
-        message.data = value
+        message.data = self._state_value
         self._state_pub.publish(message)
 
     def _publish_speaking(self, value):

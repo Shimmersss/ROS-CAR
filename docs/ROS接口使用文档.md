@@ -32,6 +32,7 @@ ros2 launch roscar_api api.launch.py
 | `with_follower` / `target_distance_m` | false / 1.0 | 启动内部跟随请求生产者，不自动切 FOLLOW/arm |
 | `safety_config` | motion_guard/config/safety.yaml | 实测尺寸、雷达安装、停车模型、来源和 frame；占位确认开关默认 false |
 | `motion_enabled` | false | 允许调用 arm；仍须满足全部保护条件 |
+| `radar_required` | false | 要求 `/scan` 和雷达时刻 TF；默认 false 时 EXTERNAL/FOLLOW 均可无雷达运动，但没有障碍保护 |
 | `with_radar` / `radar_config` | false / perception_bringup/config/radar.yaml | 显式启用已有 N10P 驱动与状态节点 |
 | `with_chassis` / `serial_port` / `car_mode` | false / 空 / 空 | 显式启用底盘；后两项必须填写实测值 |
 

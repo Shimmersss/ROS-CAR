@@ -591,3 +591,105 @@
 - 修复同步到 `/home/wheeltec/ROSCAR-red` 后，xfyun_speech 原生 Humble 构建成功，协议和 WebSocket 超时恢复共 5 项测试通过。为避免与他人正在调整的跟随会话耦合，语音改为独立 `roscar-voice` tmux 会话；未重启或修改跟随进程。
 - 真人连续完成两轮完整链路：“你是人类吗？”与“你好吗？”均收到硬件唤醒、LISTENING、ASR_TEXT、DeepSeek ANSWER、TTS `SPEAKING→IDLE`，用户现场听到播报，日志未再出现发送超时。中间两次只唤醒未发出超过阈值的语音被安全丢弃。
 - `scripts/run_voice_assistant.sh` 从硬编码 `enable_tts:=false` 改为默认开启，可用 `VOICE_TTS_ENABLED=false` 恢复纯文本模式；配置固定已验证 USB 播放设备。同步更新 README。未修改跟随代码或参数。
+
+## 2026-09-23：当前 main 上车部署与相机内参来源
+
+- 本地 `main` 为 `376f5b8f86459c16a9d29c63d04c468826fa3978`。用同步白名单将当前源码和配置部署到 Jetson 独立目录 `/home/wheeltec/ROSCAR-current`；本地未跟踪的 `camera_info/` 不在部署内容内。复用板上兼容的 `.venv-yolo`，将已有官方 `yolo26s.pt` 复制到新目录，SHA-256 为 `646f8bc3fe0a656803d95c294f7852321748cb29d13466a1af8862e2db384a1b`。未替换现有 `/home/wheeltec/ROSCAR-red` 运行栈或修改自启动。
+- 部署前发现旧栈 `person_follower` 与底盘均在运行，在线设置 `/person_follower.enabled=false` 并读回确认。结束时再次读回为 false；新 API 仅在隔离 ROS 域 191 以默认 IDLE 运行 6 秒后正常退出，未启用新底盘节点或跟随。
+- Jetson 原生 ROS 2 Humble 构建：13 个主动包、独立底盘 3 包、独立雷达 2 包全部成功。结构检查覆盖 13 个主动包与 187 个 Python 文件；YOLO26s 在 Jetson GPU 设备 0 对空白帧完成推理，返回 0 个检测。该检查仅证明模型和推理依赖可用，不是实景识别或 TensorRT 验收。
+- 现有相机节点 `/camera/camera` 的 `color_info_url` 与 `ir_info_url` 均为空；`/camera/get_camera_params` 服务返回左右内参、畸变和外参全部为 NaN。在线 `/camera/color/camera_info` 为 640×480、`fx=fy=570.3422047415297`、`cx=319.5`、`cy=239.5`、D 全零、R 单位阵、P 与 K 同焦距主点。数值与厂商 ROS 2 Astra 驱动 `getDefaultCameraInfo()` 的视场角焦距及默认中心点公式吻合；当前使用的是驱动默认估算内参，不是已确认的设备标定，也未加载本地 `camera_info/` YAML。
+- 只读 RGB-D 输入探针改用实际 `/camera/color/image_raw` 和 `/camera/depth/image_raw`：8.23 秒收到彩色 76 帧、深度 74 帧、66 对同步帧，均为 640×480、同一 optical frame；66 对的 0.2–8 m 深度有效比例全部为 0，报告 `metadata_pass=false`。另取一帧 16UC1 深度图，307200 个像素全部为 0。这表明当前深度测距不可验收；同 frame/时间接近也不能证明物理配准。探针默认的 `/camera/color/image_rect`、`/camera/aligned_depth_to_color/image_raw` 在线无流，不应把默认话题当作本机已验证输入。
+- 最小审查：核对部署版本、权重哈希、各构建摘要、GPU 空帧、API 启退日志、相机参数服务与 CameraInfo、RGB-D 探针报告及旧跟随开关；`git diff --check` 通过。后续需对当前 ASTRA S 做对应分辨率的实际标定和 RGB-D 对齐/已知距离验证，并排查全零深度。
+
+## 2026-09-23：调整相机摆放后的深度复测
+
+- 用户提示先前全零深度可能与相机摆放有关，故未重启相机或关闭配准。保持原在线配置 `depth_registration=true`，只读采样 20 帧：每帧约 119303–120043 个非零像素，0.2–8 m 有效像素约 119292–120032 个；样本最小有效深度约 0.592 m。先前全零现象已消失，不能据之前快照认定设备或配准故障。
+- 再用当前实际话题做 10 秒 RGB-D 输入预检：彩色 193 帧、深度 194 帧、同步并接受 184 对；均无缺流、陈旧流或拒绝原因，深度有效比例均值 36.83%（范围 36.05%–38.23%），`metadata_pass=true`。报告在 Jetson `/home/wheeltec/ROSCAR-current-rgbd-resample.json`。这只证明当前可接收有效深度和基础时间/格式条件，`registration_verified` 仍为 false，物理配准与绝对距离还需另验。相机未重启，旧跟随开关此前已设为 false。
+
+## 2026-09-23：临时相机内参与深度 CameraInfo 修复
+
+- 将用户提供的 Astra YAML 数值复制到已跟踪的 `astra_s_provisional_color.yaml`、`astra_s_provisional_depth.yaml`，通过 `run_astra_camera.sh` 的 color/ir info URL 加载；未把本地原始 `camera_info/` 文件纳入同步。
+- 厂商驱动 `getDepthCameraInfo()` 在工厂参数无效时错误地用 NaN 覆盖 YAML 的 K，保存源码备份后用 `deploy/patches/astra_depth_camera_info.patch` 修正条件并在 Jetson 原生重建 `astra_camera`（35.9 秒）。在线重启后，彩色和深度 `/camera_info` 的 K/P/D 均与用户 YAML 一致；深度单帧 307200 像素中有 85012 个 0.2–8 m 有效像素。
+- 这些数值是用户提供的临时内参，尚未证明对应实物 ASTRA S、绝对测距精度或 RGB-D 像素配准。重启时旧 systemd 预设使跟随重新启用；已立即关闭并将旧远端 `start_robot.sh` 改为强制 `MOTION_ENABLED=false`，现场读回 false。该安全修改当时仅在旧部署目录，现行本地新入口也强制运动关闭。
+
+## 2026-09-23：取消红色目标，切换当前方案为 B + 雷达 + 语音 + 底盘 + Foxglove
+
+- 用户明确取消红色目标路线。撤回本轮对 `red-layout.json` 的未提交重构；改写 `start_project.sh` 为 Astra + YOLO26s/ByteTrack + N10P + Foxglove + 语音的统一入口，新建 `start_robot.sh` 加入底盘串口收发及 `run_chassis_io.sh`。拒绝 `MOTION_ENABLED=true`，不启动 person_follower 或 motion_guard 的运动模式。旧红色源文件及历史资料保留作为版本记录，不属于当前入口。
+- 更新 `b-radar-layout.json`：原始/检测视频、目标状态与 XYZ/距离曲线、相机光学坐标下的目标球、`laser` 平面 N10P 扫描及健康状态、语音识别/回答、底盘里程计/速度和待 SLAM 启用的地图/路径。目标无效时 NaN 和 Marker 消失属于正常状态；目前没有实际三维重建或雷达到相机的已标定外参。
+- 旧 `roscar-robot.service` 最后一次可达时仍运行红色 tracker、person_follower（enabled=false）、语音和底盘。尝试通过无密码 sudo 停服务被拒；随后停止了独立的临时雷达 user service。之后 SSH 握手超时/被关闭，尚未完成 B 部署或服务切换，不能声称在线已经运行 B。下一次连接恢复时应先改旧服务入口指向新 B、确认运动继续关闭，再重启并验收话题和 Foxglove。
+- 本机最小审查：Bash 语法和 ShellCheck 检查总入口、底盘 I/O 及 B 子入口；布局 JSON 结构覆盖所有面板；待完成在线检查后补记录。临时相机内参仍须重新标定和深度/彩色配准实测。
+
+### 网口完成 B 在线切换与三维坐标验收
+
+- 用户指定改用网口 `wheeltec@192.168.100.2`，链路恢复。Jetson `/home/wheeltec/ROSCAR-current` 同步 B 入口与代码，原生 Humble 重建 `yolo_person_tracker` 成功（4.42 秒）。合成 ROS 专项检查确认：`depth_registered=false` 时仍能输出检测框视频，但目标锁定和三维坐标保持关闭。用户随后明确要求按当前临时内参与驱动配准正常发布坐标，因此在线 `start_robot.sh` 设置 `DEPTH_REGISTERED=true`，同时强制 `MOTION_ENABLED=false`。该开关表示接受当前近似配准用于感知，不代表物理精度验收。
+- 旧 systemd 单元的用户可写入口已备份并改为转发 `/home/wheeltec/ROSCAR-current/scripts/start_robot.sh`。杀掉旧主进程触发该单元既有的失败重启机制；中间因新底盘脚本 `set -u` 早于 ROS setup、以及新目录缺 Foxglove 用户运行时，出现数次启动失败。修复脚本次序并链接到已有 `/home/wheeltec/ROSCAR/tools/foxglove-root` 后，单元为 active，当前运行进程为 YOLO tracker/target_transform、Astra、N10P、Foxglove、语音及底盘驱动；无 `red_object_tracker` 或 `person_follower` 进程。单元的 systemd Description 仍是旧红色文字，因为 `/etc/systemd/system/roscar-robot.service` 修改需管理员权限；实际 ExecStart 已转发 B。
+- 在线 `/perception/target_state` 为 `source=yolo`、`is_simulated=false`；真实人体候选检测置信度示例 0.81。调用 `/perception/lock_target` 成功锁定 `1:1`，得到有效相机光学 XYZ 约 `(-0.126,-0.120,0.643)m`；该 ID 消失后状态正确变 LOST，需要重新锁定。再次锁定 `1:51` 后 6 秒内采集 75 条有效 TRACKING，XYZ 示例首尾约 `(-0.426,-0.330,1.584)` 与 `(-0.423,-0.330,1.584)m`。上述为发布稳定性样本，不是已知距离的准确度测量。
+- 8 秒独立采样收到目标状态 136、检测图 37、雷达点云 52、雷达健康状态 34、里程计 130 条；雷达状态为 OK、约 10 Hz，串口成功打开。`/cmd_vel` 只有底盘驱动 1 个订阅者、0 个发布者；未启动车辆运动。语音节点与话题在线，但本轮未做真人问答复测。
+- `foxglove/b-radar-layout.json` 已同步到 Jetson，并作为本轮交付文件；用户表示自行导入 Mac Foxglove，故未声称客户端已导入或面板已视觉验收。布局中的地图/路径面板为预留，当前未运行 SLAM/Nav2；N10P 点云是二维扫描平面。
+- 本轮最终回归：Jetson 隔离 ROS 域 191 的未确认配准二维检测测试、域 192 的合成 B 锁定/测距/丢失/异常测试、域 193 的并发响应测试均通过。合成 B 测试初次直接在 Jetson 运行因硬编码 `/workspace/scripts` 容器路径报错，改为相对测试文件定位脚本后复跑通过；该错误不是 B 算法失败。Bash 语法、ShellCheck、Python 编译、布局 JSON 和 `git diff --check` 均通过。线上目标需由真人再次进入画面并在轨迹变化后重锁；本轮未做已知距离精度标定。
+- 用户指定网口调试后，Foxglove 主连接地址改为 `ws://192.168.100.2:8765`（Wi-Fi 仍可备用）；Mac 到网口 8765 TCP 连接成功。布局不包含连接地址，用户自行在 Foxglove 导入和连接，客户端实际显示仍待用户确认。
+
+## 2026-09-23：Foxglove“没有消息”与 B 坐标 NaN 复查
+
+- 小车服务保持 active、NRestarts 不再增长，Bridge 监听 `0.0.0.0:8765`，网口和 Wi-Fi TCP 均可达。Bridge 日志显示 Foxglove 客户端订阅了原始彩色图、检测图和雷达，但对 Wi-Fi 客户端持续报 `outbox ... full`；5 秒 ROS 直读同时收到彩色 83、检测图 25、雷达点云 26、目标状态约 84 条。判断为客户端/桥接高带宽排队，非 ROS 话题整体断流。
+- B 跟踪器新增两个 320×240、质量 70 的 JPEG CompressedImage 预览话题 `/perception/color_preview/compressed` 和 `/perception/detections_preview/compressed`；原有未压缩接口保留。Foxglove B 布局改订压缩预览，不再订 640×480 原始视频。Jetson 原生重建通过，隔离 ROS 的未配准二维检测、合成 B 运行和并发回归通过。在线 6 秒每个预览收到 36 帧，平均每帧约 11.8/12.6 KB；Foxglove 官方 Image 面板支持 ROS 2 `sensor_msgs/msg/CompressedImage`。用户仍需重新导入更新的布局；本轮未声称 Mac 客户端已显示成功。
+- 当用户报告 `position_valid=false`、XYZ NaN 时，在线状态为 SEARCHING；一次手动锁定返回 `No fresh tracked candidates`。短窗 23 帧检测中 19 帧有人，但部分候选无 ByteTrack ID；一次深度帧全零。随后 5 秒复测深度每帧有约 5.6–6.7 万个非零像素，检测出现 ID `1:27`。再次调用锁定成功选中 `1:116`；5 秒中 64 条 TRACKING/坐标有效、37 条 LOST/无效，最近有效 XYZ 约 `(-0.052,-0.124,0.989)m`。相机预览中人体部分被前景物体遮挡、头部靠近画面边缘，轨迹不稳定；坐标无效是目标/深度当前观测条件，不是内参矩阵回到 NaN。运动继续关闭。
+
+## 2026-09-23：单人自动锁定、唤醒应答与开机入口核对
+
+- B 自动锁定设为整机入口默认开启：唯一已跟踪候选连续 3 帧后锁定；多人时等待手动选人；手动释放会抑制自动重锁。自动模式遇到 ByteTrack epoch 更新时先丢弃旧 ID 再重新取得当前单人。Foxglove 布局增加 ASR/TTS 状态面板，两个状态话题每秒重发当前状态。
+- 当前运行期间自动取得 ID `1:1`，TargetState 为 TRACKING、位置有效；6 秒只读采样 98 条状态，98 条位置有效，期间唯一目标 ID 为 `1:6`，末值约 `(0.222,-0.165,0.717)m`。目标 ID 可随跟踪器重置而更新；坐标采用临时内参与驱动配准，样本未校验真实物理距离。
+- 对照旧语音实现后确认当前版本原本未订阅唤醒词发布“我在”。DeepSeek 节点现对精确 `/voice_words=小车唤醒` 发布本地应答到 TTS，ASR 等待 1 秒并避开仍在播放时才开始识别。在线真实唤醒日志确认发布应答，用户确认听到“我在”；随后 ASR 返回文本并触发 DeepSeek/TTS 完整回答，但该次样本识别为“我操。”，识别准确率仍需短句复测。ASR/TTS 状态话题现持续显示 IDLE/LISTENING/SPEAKING 等状态。
+- 原生 Jetson Humble 重建 `yolo_person_tracker`、`perception_bringup`、`xfyun_speech`、`deepseek_ros2` 成功；构建前后服务重启成功。整机含 Astra、B、N10P、Foxglove、语音和 `mini_akm` 底盘遥测，无跟随/运动节点，`/cmd_vel` 发布者数为 0。
+- `roscar-robot.service` 已是 enabled，实际经 `/home/wheeltec/ROSCAR-red/scripts/start_robot.sh` 的兼容入口转发到 `/home/wheeltec/ROSCAR-current/scripts/start_robot.sh`；新入口强制 `MOTION_ENABLED=false`。冲突的旧 `roscar-route-a.service` 为 disabled/inactive。开机启动已配置并验证服务重启，不执行整车重启，因此尚未做断电后的冷启动实测。系统级 unit 文件仍有旧红色描述及 `MOTION_ENABLED=true` 环境字段，但入口脚本无条件覆盖为 false。
+## 2026-09-28：ROS 外部接口在线核对
+
+- 按用户要求检查此前编写的 ROS 外部调用接口。在线小车通过 `roscar-wifi`、ROS 域 182 读取到 Route B 的 YOLO、Astra、N10P、语音和 `mini_akm` 底盘遥测；`/cmd_vel` 发布者数为 0，底盘只有一个订阅者，未触发运动。
+- 实际调用 `/perception/release_target` 成功；无人/无新鲜跟踪轨迹时调用 `/perception/lock_target` 按设计返回 `No fresh tracked candidates`，随后再次 release 成功。`/perception/target_state` 能发布真实 `source=yolo`、`is_simulated=false` 状态；当前无目标时为 SEARCHING、位置无效；`/perception/detections`、`/scan`、`/odom`、`/PowerVoltage` 均可单次读取，雷达约 10 Hz，电压约 11.95 V。
+- 在线服务清单没有 `/control/set_mode`、`/control/arm`、`/control/stop`、`/control/disarm`，话题清单没有 `/chassis/cmd_vel`、`/control/state`；因此供外部程序使用的 `roscar_api` 控制接口尚未部署到当前 `/home/wheeltec/ROSCAR-current`，本轮不将其描述为在线通过，也未尝试发送速度。
+- 本机直接运行 API Python 集成测试因 Mac 环境没有 `rclpy` 无法执行；在线只读调用和安全锁定/释放调用完成。最小审查为 `git diff --check`，待具备 ROS 2 Humble 容器或 Jetson 隔离测试环境后再运行 `tests/test_api_control.py` 与 `tests/test_api_examples.py`。
+- 随后复用 Jetson 已安装的 Humble 工作区，在隔离域 194 运行 `tests/test_api_control.py` 与 `tests/test_api_red.py`，分别通过外部 EXTERNAL/FOLLOW 模式、速度校验、看门狗、障碍/TF/重复发布者故障和红色检测接口检查。`tests/test_api_examples.py` 的默认 2 秒启动等待在 Jetson 上未收到首条状态而失败；手动将 API launch 等待 5 秒后，`/control/state`、`/control/set_mode`、`/control/arm`、`/control/stop`、`/control/disarm` 及零速输出均实测通过，`motion_enabled=false` 时 arm 正确拒绝。
+## 2026-09-28：真实外部控制保护测试与 N10P 自启动移除
+
+- 在在线 ROS 域 182 启动临时 `motion_guard`，使用 `EXTERNAL` 模式、0.02–0.03 m/s、0.3–0.5 秒短脉冲测试 `/chassis/cmd_vel` 外部调用。保护层正确拒绝 arm，原因是 N10P 扫描含大量 `+inf` 无回波值且 `allow_infinite_clear=false`（`unknown_scan_return`）；未向底盘发送非零 `/cmd_vel`，测试进程和临时 TF 已清理。未为测试放宽雷达安全规则。
+- 已将当前开机入口的 N10P 改为显式可选，`WITH_RADAR` 默认 `false`；保留 `scripts/run_radar.sh` 和手动 `with_radar:=true` 路径。同步到 Jetson 后通过杀掉旧入口触发服务重启，`roscar-robot.service` 保持 active，`roscar_n10p`/`radar_health` 节点及 `/scan`、`/radar/*` 话题均已从自启动在线图消失，`/cmd_vel` 仍无发布者。
+- 用户要求恢复原 A 语音版本；已在 Jetson `/home/wheeltec/ROSCAR-current` 备份当前语音源码到 `backups/voice-before-a-20260928-114524`，复制 `/home/wheeltec/ROSCAR-red` 的 A 版本 `xfyun_speech`、`deepseek_ros2`、`voice_command_router`、启动脚本，原生构建 3 包成功，并重启在线服务。A 版本唤醒延时参数为 `wake_cycle_delay_s=2.0`，保留“我在”唤醒应答。
+## 2026-09-28：移除 N10P 后的 ROS 接口复测
+
+- 在线服务 `roscar-robot.service` 保持 active；节点为 Astra、YOLO、相机、Foxglove、A 版本语音和 `mini_akm` 底盘。确认 N10P 节点、`/scan`、`/radar/*` 均不在 ROS 图中。
+- 复测 `/perception/target_state`（真实 `source=yolo`、当前 LOST、位置无效）、`/perception/detections`（空检测数组）、彩色/深度/CameraInfo 话题、目标 Marker/压缩预览、`/PowerVoltage`（11.565 V）和 `/odom`，均可读取；`/cmd_vel` 发布者仍为 0、底盘只有 1 个订阅者。
+- 复测 `/perception/release_target` 成功；当前无新鲜跟踪候选时 `/perception/lock_target` 正确返回 `No fresh tracked candidates`。语音节点和 `/voice/start_listening` 服务存在。
+- 当前在线入口没有 `/control/set_mode`、`/control/arm`、`/control/stop`、`/control/disarm` 或 `/chassis/cmd_vel`；外部控制 API 仍只在隔离域完成过，N10P 关闭后不能进行真实 arm，因为保护链路缺少扫描输入。没有绕过保护发车。
+## 2026-09-28：N10P 关闭后的真实底盘 ROS 脉冲复测
+
+- 用户现场观察并授权直接做真实控制链路测试。当前在线 `/cmd_vel` 预检为 0 个发布者、1 个 `wheeltec_robot` 订阅者；通过 ROS 域 182 发布端完成 DDS 发现后，先发零速，再发 `0.02 m/s × 0.30 s`，最后持续零速。收到 27 条 `/odom`，但速度和位置无变化。
+- 第二次以 `0.05 m/s × 0.50 s` 重测，发布端确认订阅者数为 1，运动期间收到 11 条 `/odom`，`max_abs_vx=0`、`x_delta=0`，结束后 `/cmd_vel` 恢复 0 发布者、底盘仍为唯一订阅者。结论：ROS 发布/订阅发现链路正常，但本次未观察到下位机运动或里程计响应，不能称真实位移通过；未继续提高速度或延长时间。
+- 由于 N10P 已关闭，正式 `motion_guard` 无 `/scan` 输入，不能进行带保护的 `arm` 测试；本次直接脉冲仅验证底盘 ROS 接口，后续应检查驱动命令帧、底盘固件使能/急停状态和串口回传，而不是绕过保护反复发车。
+## 2026-09-28：按用户要求默认关闭雷达运动门禁
+
+- `motion_guard` 新增只读参数 `radar_required`，并按用户要求将默认值改为 `false`；EXTERNAL/FOLLOW 均可在无 `/scan` 时完成 arm，仍保留显式 arm、请求时效、速度限制、唯一发布者和底盘命令超时。设置为 `true` 时恢复雷达数据、TF 和包络检查。
+- `roscar_api` launch 增加同名参数，默认 false；README 与 ROS 接口文档已说明无雷达模式没有障碍保护，必须人工清空环境并准备急停。
+- 已同步 Jetson `/home/wheeltec/ROSCAR-current`，原生重建 `motion_guard` 与 `roscar_api` 成功。在在线 ROS 域 182 启动临时 guard（无 N10P、无 `/scan`），正式调用 `/control/set_mode EXTERNAL` 和 `/control/arm`，arm 返回 `ready_without_radar`；`roscar_api chassis` 随后正常退出并调用 stop，未留下测试发布者。该次证明无雷达正式控制门禁已打开；实际里程计样本仍未形成可观测运动，不能称底盘位移验收通过。
+## 2026-09-28：无雷达外部接口状态机复测
+
+- 在在线 ROS 域 182、未启动 N10P 的情况下，正式启动临时 `motion_guard(radar_required=false)` 并运行外部接口验证。`IDLE → EXTERNAL` 成功，`/control/arm` 返回 `ready_without_radar`；外部 `/chassis/cmd_vel` 请求经 guard 转为 `/cmd_vel`，共收到 51 条输出，其中 8 条非零，最大 `linear.x=0.03 m/s`；调用 stop 后回到 STANDBY，测试发布者清理。
+- 重新验证请求超时：arm 成功后停止发送约 0.5 秒，guard 进入 `FAULT`，`last_fault=request_timeout`，输出速度回零。无雷达模式的门禁和失联停车状态机均通过。
+## 2026-09-28：现场观察方向控制脉冲
+
+- 用户现场观察并明确要求执行直走、左转、右转。通过正式无雷达 `motion_guard` 外部接口顺序发送并在段间归零：直走 `0.03 m/s × 0.5 s`，左转 `+0.20 rad/s × 0.5 s`，右转 `-0.20 rad/s × 0.5 s`。
+- 三段均完成 DDS 发现和请求发布：直走 guard 输出 11 条、最大 `linear.x=0.03`；左转输出 10 条、最大 `angular.z=0.20`；右转输出 10 条、最大 `angular.z=-0.20`。最后调用 stop、持续零速并清理临时 guard。
+- `/odom` 仍未显示位置或速度变化，因此记录为 ROS 方向命令链路通过、实际车体位移/转向未由里程计证明；未继续提高速度或延长时长。
+## 2026-09-28：底盘节点与串口复核
+
+- 针对“是否没开底盘”的疑问，在线复核确认 `/wheeltec_robot` 正在运行，实际进程打开 `/dev/wheeltec_controller`（解析到 `/dev/ttyCH343USB1`），车型参数为 `mini_akm`，命令/反馈超时均为 0.5 s。
+- `/PowerVoltage` 可读约 11.40 V，`/odom` 持续发布，驱动日志显示 `serial port opened`；因此底盘 ROS 节点和串口通信是开启的。当前临时控制节点已清理，`/cmd_vel` 目前回到 0 个发布者，这是正常待机状态。
+## 2026-09-28：提高速度后的真实直行测试
+
+- 用户现场观察并要求提高速度、延长时间。经 `/cmd_vel` 预检无其他发布者且底盘唯一订阅者存在后，通过正式无雷达 guard 发送 `0.08 m/s × 2.0 s` 直行，随后持续零速 1.5 秒并调用 stop。
+- `arm=ready_without_radar`，guard 记录 40 条输出，最大 `linear.x=0.08 m/s`、角速度为 0。结束后临时 guard 清理，`/cmd_vel` 恢复 0 个发布者。
+- 结束时 `/odom` 位置约 `x=0.0856 m, y=-0.0061 m`，速度已回到 0；这是本轮首次观察到与直行指令一致的非零里程计位移。实际车体方向和地面位移仍以用户现场观察为准。
+## 2026-09-28：mini_akm 左右弧线真实动作完成
+
+- 纯角速度 `linear.x=0` 的左/右转只验证了指令输出，`mini_akm` 不会原地旋转，里程计姿态无变化。随后改用实际转向车动作：左弧线 `linear.x=0.08 m/s, angular.z=+0.20 rad/s, 2 s`，右弧线 `linear.x=0.08 m/s, angular.z=-0.20 rad/s, 2 s`，两段之间持续零速。
+- 正式无雷达 guard 两段均 arm/stop 成功，各收到 40 条 guard 输出。里程计：起点约 `(x=0.0854,y=-0.0061,yaw=-0.0273)`；左弧线后约 `(0.2001,0.0063,0.2018)`；右弧线后约 `(0.3563,0.0012,-0.2144)`，已观察到前进和左右转向姿态变化。
+- 测试结束后临时 guard 清理，`/cmd_vel` 恢复 0 个发布者，底盘保留唯一订阅者。

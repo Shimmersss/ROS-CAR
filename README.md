@@ -1,6 +1,6 @@
 # ROSCAR · 室内人体跟随感知
 
-当前目标：Orin Nano Super 8GB + RGB-D 感知，通过 Foxglove / SSH 调试。默认感知与运动关闭入口保留；底盘、雷达及受保护控制均须显式启用。各路线本机/实车验证范围见 WORKLOG。
+当前目标：Orin Nano Super 8GB 上的 B 人体感知、N10P 雷达、语音、底盘回传和 Foxglove。总入口不启动车辆跟随；B 的测距仍等待 RGB-D 配准实物验收。各模块验证范围见 WORKLOG。
 
 ## 对外 ROS 2 接口
 
@@ -11,14 +11,14 @@
 | 内容 | 状态 |
 |---|---|
 | 公共 TargetState/模式服务、13 个主动 ROS 2 包、A/B/demo 启动选择 | 已建立 |
-| A / B 节点 | A 已接真实骨架适配器；B 已有本地真实算法实现，待实机验收 |
+| B 节点 | 已在 Jetson 运行 YOLO26s/ByteTrack，真人检测和临时内参三维坐标有在线样本；连续跟踪与绝对精度待验收 |
 | demo | 显式模拟数据：9 秒目标可见、3 秒丢失，用于验证消息与展示 |
 | Mac → Jetson 同步脚本、模型清单、测试脚本 | 已建立 |
 | 讯飞流式 ASR/TTS → DeepSeek 语音助手 | Orin 真人语音 → 讯飞 IAT → DeepSeek 回答 → 讯飞 TTS 扬声器播报已跑通 |
 | DeepSeek 蜂鸣器工具链 | 白名单路由已建立；蜂鸣器属于下位机，协议适配延后 |
-| 相机、骨架与测距 | A 已在 Jetson 真人验收；B 已本机接入 YOLO26s/ByteTrack，待相机及 Jetson 验收，SDK 授权提示待厂商解释 |
-| 下位机串口驱动及两个依赖包 | 已迁入 chassis_vendor，默认跳过构建，未启动、未实机验证 |
-| Foxglove | A 路线布局已验收，Wi-Fi 直连 `ws://192.168.1.240:8765` |
+| 相机与测距 | 彩色/深度 CameraInfo 已加载用户临时值；B 在线有有效 XYZ，仍需重新标定和物理量距 |
+| 底盘串口驱动 | 已在 Jetson 构建并运行，仅收发里程计；当前无速度发布者 |
+| Foxglove | 当前使用 B + 雷达布局；网口地址 `ws://192.168.100.2:8765` |
 
 B 当前选用官方预训练 **YOLO26s 检测版 + ByteTrack**，默认免 NMS 推理；目标 Jetson 加速使用 TensorRT FP16（引擎尚未在板端构建）。权重准备、本机测试和导出命令见 [B 方案实现与验收](docs/方案B实现与验收.md)。
 
@@ -61,40 +61,12 @@ source ros2_ws/install/setup.bash
 
 # 默认 B 入口未配置模型/配准时报告 NOT_READY
 ros2 launch perception_bringup perception.launch.py route:=yolo
-# 新 A：外部配准 RGB-D + 红色物体，默认无底盘
-ros2 launch perception_bringup route_a.launch.py
-# 原骨架兼容入口：另行运行 bodyreader/main
-ros2 launch perception_bringup perception.launch.py route:=astra
-# 显式启用模拟数据：route:=demo
+# 当前整机入口：Astra + B + N10P + 语音 + 底盘回传，运动关闭
+bash scripts/start_robot.sh
+# 显式启用模拟数据：route:=demo（仅测试）
 ```
 
-方案 A 一键入口在本分支改为红色目标节点和 Foxglove Bridge，等待外部配准 RGB-D，默认不启动底盘或 `/cmd_vel`。可选串口与运动配置见 [方案 A 红色物体跟随](docs/方案A红色物体跟随.md)。本轮仅本机实现，未更新在线服务：
-
-```bash
-# 在 Jetson 仓库根目录
-bash scripts/route_a.sh start
-bash scripts/route_a.sh status
-bash scripts/route_a.sh logs
-bash scripts/route_a.sh stop
-
-# 在 Mac 仓库根目录，通过 SSH 一键远程拉起
-bash scripts/route_a_remote.sh start
-```
-
-Mac 也可直接双击仓库根目录的 `启动方案A.command`。启动成功后 Foxglove 连接 `ws://192.168.1.240:8765`。
-
-需要 Jetson 开机自动启动方案 A 时，在代码同步到 `/home/wheeltec/ROSCAR` 后执行一次：
-
-```bash
-bash scripts/install_route_a_autostart.sh install
-
-# 后续管理
-bash scripts/install_route_a_autostart.sh status
-bash scripts/install_route_a_autostart.sh logs
-bash scripts/install_route_a_autostart.sh remove
-```
-
-该 systemd 服务以 `wheeltec` 用户运行，开机启动并在异常退出后等待 5 秒重启。它仍只运行人体感知和 Foxglove，不启动底盘或 `/cmd_vel`。
+红色目标路线已退出当前启动链路；旧脚本和历史资料保留作版本记录，不用于现行部署。Foxglove 导入 [B + 雷达布局](foxglove/b-radar-layout.json)。
 
 另一个终端加载相同环境后检查：
 
@@ -137,7 +109,7 @@ python3 scripts/sync_to_jetson.py --host 用户名@IP --dest /home/用户名/ROS
 
 ## 原骨架方案 A 历史联调（2026-09-14）
 
-以下为历史骨架路线记录，新 A 红色路线尚未实机验收。ASTRA S 深度流、真实人体骨架、叉腰锁定、质心测距、掩码和 Foxglove 展示均已实机跑通。`route:=astra` 现启动已验证的 `/bodylist` 适配器；厂商 bodyreader 仍由安全组合脚本单独启动，不包含底盘节点。SDK 授权提示没有阻止本次输出，但仍待厂商解释。详细入口与限制见 [方案 A 联调记录](docs/方案A联调记录.md)。
+以下为历史骨架路线记录，不属于当前启动链路。ASTRA S 深度流、真实人体骨架、叉腰锁定、质心测距、掩码和 Foxglove 展示均已实机跑通。`route:=astra` 现启动已验证的 `/bodylist` 适配器；厂商 bodyreader 仍由安全组合脚本单独启动，不包含底盘节点。SDK 授权提示没有阻止本次输出，但仍待厂商解释。详细入口与限制见 [方案 A 联调记录](docs/方案A联调记录.md)。
 
 B 方案的输入契约、依赖、锁定服务与验证范围见 [方案 B 实现与验收](docs/方案B实现与验收.md)。
 
@@ -147,7 +119,7 @@ B 方案的输入契约、依赖、锁定服务与验证范围见 [方案 B 实�
 bash scripts/start_project.sh
 ```
 
-统一启动 Astra 彩色/深度相机、红色方案 A、Foxglove 与语音助手；Ctrl-C 停止整组。日志在 `artifacts/project/`。语音需要私有凭据，默认开启 TTS 扬声器播报；可用 `VOICE_TTS_ENABLED=false` 仅保留文本，或用 `WITH_VOICE=false bash scripts/start_project.sh` 完全禁用语音。底盘默认关闭，通过 `WITH_CHASSIS=true SERIAL_PORT=实际串口 CAR_MODE=实际车型` 启用收发；运动另需 `MOTION_ENABLED=true` 和已验证的 `DEPTH_REGISTERED=true`。查看全部选项：`bash scripts/start_project.sh --help`。
+当前总入口启动 Astra、B 人体检测/ByteTrack、N10P、Foxglove 与语音；`start_project.sh` 默认不接底盘，`start_robot.sh` 还启动底盘串口收发。两者均不启动跟随，拒绝 `MOTION_ENABLED=true`。现行 `start_robot.sh` 按用户要求使用临时内参与驱动注册深度发布 B 三维坐标，精度待重新标定；运动仍关闭。布局见 [B + 雷达 Foxglove](foxglove/README.md)，日志在 `artifacts/project/`；查看选项：`bash scripts/start_project.sh --help`。
 
 总入口在小车本机运行，依赖已构建的项目与厂商相机包；不自动部署。若现有 A systemd 服务运行，先停止该服务以释放相机。默认相机原始彩色流可用于检测可视化；控制测距仍要求实际校正/配准输入，通过 COLOR_TOPIC、DEPTH_TOPIC、CAMERA_INFO_TOPIC 指定，不能把启动驱动当作配准验证。
 

@@ -15,7 +15,7 @@ from rclpy.node import Node
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import Image, CameraInfo, CompressedImage
 from std_srvs.srv import Trigger
 from visualization_msgs.msg import Marker
 from person_interfaces.msg import TargetState
@@ -46,6 +46,7 @@ class TrackerNode(Node):
             'camera_info_topic': '/camera/color/camera_info',
             'depth_registered': False, 'sync_slop_s': .06, 'max_age_s': .5,
             'visualization_fps': 10.0, 'visualization_scale': 0.5,
+            'auto_lock_single': False,
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -66,6 +67,7 @@ class TrackerNode(Node):
         self.positions = {}
         self.bridge = CvBridge()
         self.selection = Selection()
+        self.auto_lock_suppressed = False
         self.info = None
         self.snapshot = None
         self.future = None
@@ -80,6 +82,10 @@ class TrackerNode(Node):
         self.marker_pub = self.create_publisher(Marker, 'target_marker', 10)
         self.detections_pub = self.create_publisher(Detection2DArray, 'detections', 10)
         self.image_pub = self.create_publisher(Image, 'detections_image', 2)
+        self.color_preview_pub = self.create_publisher(
+            CompressedImage, 'color_preview/compressed', 2)
+        self.detections_preview_pub = self.create_publisher(
+            CompressedImage, 'detections_preview/compressed', 2)
         self.create_service(Trigger, 'lock_target', self.lock_target, callback_group=self.state_group)
         self.create_service(Trigger, 'release_target', self.release_target, callback_group=self.state_group)
         self.create_subscription(CameraInfo, self.cfg['camera_info_topic'],
@@ -92,9 +98,7 @@ class TrackerNode(Node):
             [self.color_sub, self.depth_sub], queue_size=5, slop=self.cfg['sync_slop_s'])
         self.sync.registerCallback(self.on_pair)
         self.loading = None
-        if not self.cfg['depth_registered']:
-            self.error = 'Set depth_registered only after verifying rectified color/depth registration'
-        elif backend is None:
+        if backend is None:
             if not self.cfg['model_path']:
                 self.error = 'Configure an existing local model_path; no automatic weight download'
             else:
@@ -110,15 +114,18 @@ class TrackerNode(Node):
     @serialized
     def lock_target(self, request, response):
         fresh = self.snapshot is not None and self.fresh_snapshot()
-        if self.error or not fresh:
+        if self.error or not self.cfg['depth_registered'] or not fresh:
             response.success, response.message = False, 'No fresh valid inference'
         else:
             response.success, response.message = self.selection.lock(max_age=self.cfg['max_age_s'])
+            if response.success:
+                self.auto_lock_suppressed = False
         return response
 
     @serialized
     def release_target(self, request, response):
         self.selection.release()
+        self.auto_lock_suppressed = True
         response.success, response.message = True, 'Target released'
         return response
 
@@ -134,7 +141,7 @@ class TrackerNode(Node):
 
     @serialized
     def on_pair(self, color, depth):
-        if self.backend is None or not self.cfg['depth_registered'] or self.future is not None:
+        if self.backend is None or self.future is not None:
             return
         received_at = time.monotonic()
         try:
@@ -168,7 +175,9 @@ class TrackerNode(Node):
         if reset:
             self.backend.reset()
         detections = self.backend.infer(image)
-        positions = {d.track_id: measure(metres, d.box, intrinsics) for d in detections if d.track_id is not None}
+        positions = ({d.track_id: measure(metres, d.box, intrinsics)
+                      for d in detections if d.track_id is not None}
+                     if self.cfg['depth_registered'] else {})
         return (color, metres, received_at, intrinsics, image, depth), detections, positions
 
     @serialized
@@ -186,6 +195,9 @@ class TrackerNode(Node):
                 self.snapshot, detections, self.positions = self.future.result()
                 self.selection.update(detections, self.snapshot[0].width, self.snapshot[2])
                 if self.fresh_snapshot():
+                    if (self.cfg['auto_lock_single'] and self.cfg['depth_registered']
+                            and not self.auto_lock_suppressed):
+                        self.selection.auto_lock_single(max_age=self.cfg['max_age_s'])
                     self.detections_pub.publish(detection_array(self.snapshot[0].header,
                         [(d.box, 'person', d.confidence,
                           '' if d.track_id is None else f'{self.selection.epoch}:{d.track_id}')
@@ -207,7 +219,10 @@ class TrackerNode(Node):
         msg.position.x = msg.position.y = msg.position.z = math.nan
         msg.horizontal_distance_m = msg.bearing_rad = math.nan
         msg.measurement_age_s = msg.confidence = math.nan
-        if self.backend is None or not self.cfg['depth_registered']:
+        if not self.cfg['depth_registered']:
+            msg.status, msg.detail = TargetState.NOT_READY, (
+                self.error or 'RGB-D registration unverified; 2D detections only')
+        elif self.backend is None:
             msg.status, msg.detail = TargetState.NOT_READY, self.error or 'Loading model'
         elif self.error:
             msg.status, msg.detail = TargetState.NOT_READY, self.error
@@ -220,7 +235,10 @@ class TrackerNode(Node):
             msg.measurement_age_s = (stamp_seconds(msg.header.stamp)-stamp_seconds(color.header.stamp))
             chosen = self.selection.selected()
             if self.selection.target_id is None:
-                msg.status, msg.detail = TargetState.SEARCHING, 'Call lock_target to select central track'
+                msg.status = TargetState.SEARCHING
+                msg.detail = ('Waiting for one stable track (3 frames); multiple people require lock_target'
+                              if self.cfg['auto_lock_single'] and not self.auto_lock_suppressed
+                              else 'Call lock_target to select central track')
             elif chosen is None:
                 msg.status, msg.detail = TargetState.LOST, 'Selected track absent; explicit relock required after stream reset'
             else:
@@ -264,12 +282,24 @@ class TrackerNode(Node):
             cv2.putText(annotated, label, (x1,max(15,y1)), cv2.FONT_HERSHEY_SIMPLEX,
                         .5, (0,255,0), 1)
         scale = self.cfg['visualization_scale']
+        raw_preview = image
         if scale != 1:
+            raw_preview = cv2.resize(image, None, fx=scale, fy=scale,
+                                     interpolation=cv2.INTER_AREA)
             annotated = cv2.resize(annotated, None, fx=scale, fy=scale,
                                    interpolation=cv2.INTER_AREA)
         output = self.bridge.cv2_to_imgmsg(annotated, encoding='bgr8')
         output.header = copy.deepcopy(color.header)
         self.image_pub.publish(output)
+        for frame, publisher in ((raw_preview, self.color_preview_pub),
+                                 (annotated, self.detections_preview_pub)):
+            ok, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            if ok:
+                compressed = CompressedImage()
+                compressed.header = copy.deepcopy(color.header)
+                compressed.format = 'jpeg'
+                compressed.data = jpeg.tobytes()
+                publisher.publish(compressed)
 
     def destroy_node(self):
         self.pool.shutdown(wait=True, cancel_futures=True)

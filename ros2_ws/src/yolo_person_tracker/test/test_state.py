@@ -36,3 +36,27 @@ class UntrackedSelectionTest(unittest.TestCase):
         selection.update([Detection(None, (10, 0, 90, 100), .8)], 100, 1.)
         self.assertFalse(selection.lock(now=1.)[0])
         self.assertIsNone(selection.selected())
+
+    def test_auto_requires_stable_single_and_reacquires_changed_track(self):
+        selection = Selection()
+        person = Detection(1, (10, 0, 90, 100), .8)
+        for index in range(3):
+            selection.update([person], 100, float(index))
+            self.assertEqual(selection.auto_lock_single(now=float(index)), index == 2)
+        self.assertEqual(selection.target_id, (0, 1))
+        replacement = Detection(2, (10, 0, 90, 100), .8)
+        for index in range(3, 6):
+            selection.update([replacement], 100, float(index))
+            self.assertEqual(selection.auto_lock_single(now=float(index)), index == 5)
+        self.assertEqual(selection.target_id, (0, 2))
+
+    def test_auto_never_selects_among_multiple_or_stale_people(self):
+        selection = Selection()
+        tracked = Detection(1, (10, 0, 40, 100), .8)
+        untracked = Detection(None, (50, 0, 90, 100), .8)
+        for index in range(4):
+            selection.update([tracked, untracked], 100, float(index))
+            self.assertFalse(selection.auto_lock_single(now=float(index)))
+        selection.update([tracked], 100, 5.)
+        self.assertFalse(selection.auto_lock_single(now=6.))
+        self.assertIsNone(selection.target_id)

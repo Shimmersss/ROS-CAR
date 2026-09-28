@@ -15,6 +15,7 @@ xfyun_asr:
     wake_topic: ''
     wake_text_topic: /voice_words
     trusted_wake_text: 小车唤醒
+    wake_cycle_delay_sec: 1.0
     speaking_topic: /voice/speaking
     output_topic: /voice/asr_text
 
@@ -32,6 +33,10 @@ deepseek_chat:
     tool_call_topic: /voice/tool_call
     response_log_path: /home/wheeltec/ROSCAR/logs/deepseek_responses.jsonl
     enable_tools: true
+    wake_reply_enabled: true
+    wake_reply_topic: /voice_words
+    wake_reply_trigger: 小车唤醒
+    wake_reply_text: 我在
 
 voice_command_router:
   ros__parameters:

@@ -44,6 +44,8 @@ def launch_route(context):
                 parameters[0][name] = int(LaunchConfiguration(name).perform(context))
             for name in ('min_area_fraction', 'lost_timeout_s'):
                 parameters[0][name] = float(LaunchConfiguration(name).perform(context))
+        else:
+            parameters[0]['auto_lock_single'] = LaunchConfiguration('auto_lock_single').perform(context) == 'true'
     elif route == 'astra':
         parameters = [{
             'akimbo_hand_above_base_min_mm': float(LaunchConfiguration(
@@ -115,6 +117,7 @@ def generate_launch_description():
         DeclareLaunchArgument('nms_free', default_value='true', choices=['true', 'false']),
         DeclareLaunchArgument('image_size', default_value='640'),
         DeclareLaunchArgument('depth_registered', default_value='false', choices=['true', 'false']),
+        DeclareLaunchArgument('auto_lock_single', default_value='false', choices=['true', 'false']),
         DeclareLaunchArgument('color_topic', default_value='/camera/color/image_rect'),
         DeclareLaunchArgument('depth_topic', default_value='/camera/aligned_depth_to_color/image_raw'),
         DeclareLaunchArgument('camera_info_topic', default_value='/camera/color/camera_info'),

@@ -30,9 +30,9 @@ ros2 launch xfyun_speech voice_assistant.launch.py enable_tts:=false enable_buzz
 ```
 
 板子启动脚本会额外启动厂商 `wheeltec_mic` 串口节点，但仅使用其硬件唤醒事件，
-不会启动厂商离线识别、反馈音频或运动控制。默认唤醒词是“小微小微”：说出
-唤醒词、停顿约 1 秒后再说问题，`/awake_flag` 会触发一轮录音。没有唤醒驱动时
-也可以手动触发：
+不会启动厂商离线识别、反馈音频或运动控制。硬件唤醒后，助手会先播报“我在”，
+再等待播报结束与短暂回声间隔后开始讯飞录音。说出“小微小微”后停顿约 1 秒再
+提问；唤醒事件通过 `/voice_words` 精确触发。没有唤醒驱动时也可以手动触发：
 
 ```bash
 ros2 service call /voice/start_listening std_srvs/srv/Trigger '{}'

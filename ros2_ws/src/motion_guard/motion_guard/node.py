@@ -32,7 +32,8 @@ class MotionGuard(Node):
         defaults = dict(command_mode='FOLLOW', motion_enabled=False, geometry_confirmed=False, stopping_model_confirmed=False, mount_calibrated=False,
                         base_frame='base_link', scan_frame='laser', expected_source='astra',
                         target_frame='astra_depth_optical_frame', request_topic='/control/cmd_vel_request',
-                        scan_topic='/scan', target_topic='/perception/target_state')
+                        scan_topic='/scan', target_topic='/perception/target_state',
+                        radar_required=False)
         defaults.update(vars(SafetyConfig()))
         for key, value in defaults.items():
             self.declare_parameter(key, value, ParameterDescriptor(read_only=True))
@@ -107,18 +108,19 @@ class MotionGuard(Node):
             return False,'external_requires_base_link',0.,0.
         if not all(self.cfg[k] for k in ('geometry_confirmed','mount_calibrated','stopping_model_confirmed')):
             return False,'unconfirmed_geometry_or_mount',0.,0.
-        topics = [self.cfg['scan_topic'], '/cmd_vel',
+        topics = ['/cmd_vel',
                   '/chassis/cmd_vel' if self.command_mode == 'EXTERNAL' else self.cfg['request_topic']]
+        if self.cfg['radar_required']:
+            topics.insert(0, self.cfg['scan_topic'])
         if self.command_mode == 'FOLLOW':
             topics.append(self.cfg['target_topic'])
         for topic in topics:
             if self.count_publishers(topic) != 1:
                 return False,'missing_or_multiple_publishers:'+topic,0.,0.
         now_ros=self.get_clock().now().nanoseconds*1e-9
-        inputs = [
-            ('request',self.request,self.safety.request_timeout_s),
-            ('scan',self.scan,self.safety.scan_timeout_s),
-        ]
+        inputs = [('request',self.request,self.safety.request_timeout_s)]
+        if self.cfg['radar_required']:
+            inputs.append(('scan',self.scan,self.safety.scan_timeout_s))
         if self.command_mode == 'FOLLOW':
             inputs.append(('target',self.target,self.safety.target_timeout_s))
         for key, msg, timeout in inputs:
@@ -143,6 +145,8 @@ class MotionGuard(Node):
                 or not 0 <= t.linear.x <= self.safety.max_linear_mps
                 or abs(t.angular.z)>self.safety.max_angular_rps):
             return False,'invalid_velocity_request',0.,0.
+        if not self.cfg['radar_required']:
+            return True,'ready_without_radar',t.linear.x,t.angular.z
         if self.scan.header.frame_id != self.cfg['scan_frame']:
             return False,'unexpected_scan_frame',0.,0.
         try:

@@ -1,0 +1,22 @@
+# Provisional values copied from camera_info/camera_info/depth_Astra_Orbbec.yaml.
+# The source RGB and depth files contain identical numeric matrices.
+image_width: 640
+image_height: 480
+camera_name: ir_camera
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [582.795354, 0.0, 321.415982, 0.0, 584.395006, 245.98941, 0.0, 0.0, 1.0]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [-0.068613, 0.174404, 0.001015, 0.00624, 0.0]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1, 0, 0, 0, 1, 0, 0, 0, 1]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [586.186035, 0.0, 324.702427, 0, 0, 590.631409, 246.167765, 0, 0, 0, 1, 0]

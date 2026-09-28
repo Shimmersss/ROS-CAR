@@ -5,6 +5,7 @@ import os
 import queue
 import threading
 import time
+import traceback
 
 import rclpy
 from rclpy.node import Node
@@ -34,6 +35,7 @@ class XfyunAsrNode(Node):
         self.declare_parameter('wake_topic', '/awake_flag')
         self.declare_parameter('wake_text_topic', '')
         self.declare_parameter('trusted_wake_text', '小车唤醒')
+        self.declare_parameter('wake_cycle_delay_sec', 1.0)
         self.declare_parameter('speaking_topic', '/voice/speaking')
         self.declare_parameter('output_topic', '/voice/asr_text')
 
@@ -61,13 +63,22 @@ class XfyunAsrNode(Node):
         self._lock = threading.Lock()
         self._requests = queue.Queue(maxsize=1)
         self._stop = threading.Event()
+        self._state_value = 'IDLE'
+        self._phase = 'IDLE'
+        self._pending_wake = False
+        self._wake_ready_at = 0.0
+        self._state_timer = self.create_timer(1.0, self._republish_state)
         self._worker = threading.Thread(target=self._worker_loop, daemon=True)
         self._worker.start()
         self._publish_state('IDLE')
 
     def _publish_state(self, value):
+        self._state_value = value
+        self._republish_state()
+
+    def _republish_state(self):
         message = String()
-        message.data = value
+        message.data = self._state_value
         self._state_pub.publish(message)
 
     def _on_speaking(self, message):
@@ -80,7 +91,12 @@ class XfyunAsrNode(Node):
     def _on_wake_text(self, message):
         trusted_text = self.get_parameter('trusted_wake_text').value
         if message.data.strip() == trusted_text:
-            self._enqueue_listen('trusted_wake')
+            with self._lock:
+                if self._busy or not self._requests.empty() or self._pending_wake:
+                    return
+                self._pending_wake = True
+                self._wake_ready_at = time.monotonic() + float(
+                    self.get_parameter('wake_cycle_delay_sec').value)
 
     def _on_trigger(self, request, response):
         del request
@@ -103,6 +119,17 @@ class XfyunAsrNode(Node):
             try:
                 item = self._requests.get(timeout=0.2)
             except queue.Empty:
+                with self._lock:
+                    pending_wake = self._pending_wake
+                    ready_at = self._wake_ready_at
+                    speaking = self._speaking
+                    if pending_wake and time.monotonic() >= ready_at and not speaking:
+                        self._pending_wake = False
+                        start_wake_listen = True
+                    else:
+                        start_wake_listen = False
+                if start_wake_listen:
+                    self._enqueue_listen('trusted_wake')
                 continue
             if item is None:
                 break
@@ -111,7 +138,9 @@ class XfyunAsrNode(Node):
             try:
                 self._listen_once(item)
             except Exception as exc:  # hardware/network errors must not kill the node
-                self.get_logger().error(str(exc))
+                stack = ' -> '.join(f'{entry.name}:{entry.lineno}'
+                                    for entry in traceback.extract_tb(exc.__traceback__))
+                self.get_logger().error(f'{type(exc).__name__} during {self._phase}: {exc}; {stack}')
                 self._publish_state(f'ERROR: {exc}')
             finally:
                 with self._lock:
@@ -174,6 +203,7 @@ class XfyunAsrNode(Node):
         assembler = IatResultAssembler()
         self._publish_state('CONNECTING')
         try:
+            self._phase = 'CONNECTING'
             ws = websocket.create_connection(url, timeout=5, enable_multithread=True)
             capture.start()
             self._publish_state('LISTENING')
@@ -206,8 +236,10 @@ class XfyunAsrNode(Node):
                     sample_rate=sample_rate,
                     vad_eos_ms=silence_limit,
                 )
+                self._phase = 'SENDING_AUDIO'
                 ws.send(json.dumps(frame, ensure_ascii=False))
                 first_frame = False
+                self._phase = 'RECEIVING_PARTIAL'
                 server_final = self._receive_one(ws, assembler, 0.001)
                 elapsed = time.monotonic() - started
                 if server_final:
@@ -220,6 +252,7 @@ class XfyunAsrNode(Node):
                     break
 
             if not server_final:
+                self._phase = 'SENDING_FINAL'
                 ws.send(json.dumps(make_iat_frame(
                     app_id, b'', 2,
                     language=language,
@@ -230,6 +263,7 @@ class XfyunAsrNode(Node):
                 self._publish_state('RECOGNIZING')
                 deadline = time.monotonic() + response_timeout
                 while time.monotonic() < deadline:
+                    self._phase = 'RECEIVING_FINAL'
                     remaining = max(0.01, min(0.5, deadline - time.monotonic()))
                     if self._receive_one(ws, assembler, remaining):
                         server_final = True

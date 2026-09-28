@@ -1,65 +1,72 @@
 #!/usr/bin/env bash
-# Jetson foreground project supervisor; Ctrl-C stops everything it started.
+# Jetson foreground supervisor for Route B, voice and chassis I/O.
 set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WITH_VOICE="${WITH_VOICE:-true}"
-export WITH_CHASSIS="${WITH_CHASSIS:-false}"
-export MOTION_ENABLED="${MOTION_ENABLED:-false}"
-export DEPTH_REGISTERED="${DEPTH_REGISTERED:-false}"
-export COLOR_TOPIC="${COLOR_TOPIC:-/camera/color/image_raw}"
-export DEPTH_TOPIC="${DEPTH_TOPIC:-/camera/depth/image_raw}"
-export CAMERA_INFO_TOPIC="${CAMERA_INFO_TOPIC:-/camera/color/camera_info}"
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-182}"
 export ROS_LOCALHOST_ONLY=0
 export ROSCAR_WS="$ROOT/ros2_ws"
+export COLOR_TOPIC="${COLOR_TOPIC:-/camera/color/image_raw}"
+export DEPTH_TOPIC="${DEPTH_TOPIC:-/camera/depth/image_raw}"
+export CAMERA_INFO_TOPIC="${CAMERA_INFO_TOPIC:-/camera/color/camera_info}"
+export AUTO_LOCK_SINGLE="${AUTO_LOCK_SINGLE:-true}"
+WITH_VOICE="${WITH_VOICE:-true}"
+WITH_CHASSIS="${WITH_CHASSIS:-false}"
+WITH_RADAR="${WITH_RADAR:-false}"
+MODEL_PATH="${MODEL_PATH:-$ROOT/models/weights/yolo26s.pt}"
+YOLO_PYTHON="${YOLO_PYTHON:-$ROOT/.venv-yolo/bin/python3}"
 case "${1:-}" in
   --help|-h)
     cat <<'HELP'
 用法：bash scripts/start_project.sh
-默认启动：Astra 彩色/深度相机、红色检测、Foxglove、语音助手。
-Ctrl-C 停止本次启动的所有模块；单个模块退出也会清理整组。
-WITH_VOICE=false                不启动语音
-WITH_CHASSIS=true               启动底盘收发（要求 SERIAL_PORT、CAR_MODE）
-MOTION_ENABLED=true             允许跟随（要求开启底盘并确认配准）
-DEPTH_REGISTERED=true           仅现场验证彩色/深度配准后设置
-COLOR_TOPIC / DEPTH_TOPIC / CAMERA_INFO_TOPIC 可覆盖相机输入
-本脚本在 Jetson 上运行，不执行 SSH、编译或自动部署。
+    启动 Astra RGB-D、B 人体检测/ByteTrack、Foxglove 和语音。
+WITH_VOICE=false 关闭语音；WITH_CHASSIS=true 开启底盘串口收发。
+底盘要求 SERIAL_PORT 和 CAR_MODE；本入口不启动跟随或发布运动指令。
+DEPTH_REGISTERED=true 使用驱动当前 RGB-D 配准；坐标精度仍须现场量距验证。
+MODEL_PATH、YOLO_PYTHON、YOLO_DEVICE 可覆盖模型和推理环境。
+Ctrl-C 或任一子模块退出时停止本入口启动的全部模块。
 HELP
     exit 0;;
   '') ;;
   *) echo '未知参数，使用 --help 查看用法。' >&2; exit 2;;
 esac
 set -u
-for value in "$WITH_VOICE" "$WITH_CHASSIS" "$MOTION_ENABLED" "$DEPTH_REGISTERED"; do
+for value in "$WITH_VOICE" "$WITH_CHASSIS" "$WITH_RADAR" "${DEPTH_REGISTERED:-false}" "$AUTO_LOCK_SINGLE"; do
   [[ "$value" == true || "$value" == false ]] || { echo '开关必须为 true/false' >&2; exit 2; }
 done
-if [[ "$MOTION_ENABLED" == true && ( "$WITH_CHASSIS" != true || "$DEPTH_REGISTERED" != true ) ]]; then
-  echo '开启运动需要 WITH_CHASSIS=true 和已实测的 DEPTH_REGISTERED=true。' >&2; exit 2
-fi
-if [[ "$WITH_CHASSIS" == true && ( -z "${SERIAL_PORT:-}" || -z "${CAR_MODE:-}" ) ]]; then
-  echo '底盘要求显式 SERIAL_PORT 和已核验 CAR_MODE。' >&2; exit 2
-fi
-for file in /opt/ros/humble/setup.bash /home/wheeltec/wheeltec_ros2/install/setup.bash "$ROOT/ros2_ws/install/setup.bash"; do
-  [[ -f "$file" ]] || { echo "缺少环境：$file；请先安装依赖并构建项目。" >&2; exit 1; }
+[[ "${MOTION_ENABLED:-false}" == false ]] || { echo 'B 入口尚未接入安全运动控制，拒绝 MOTION_ENABLED=true。' >&2; exit 2; }
+[[ -f "$MODEL_PATH" && -x "$YOLO_PYTHON" ]] || { echo '缺少 B 模型或 Python 环境。' >&2; exit 1; }
+for file in /opt/ros/humble/setup.bash /home/wheeltec/wheeltec_ros2/install/setup.bash \
+  "$ROOT/ros2_ws/install/setup.bash" "$ROOT/ros2_ws/radar_install/setup.bash"; do
+  [[ -f "$file" ]] || { echo "缺少环境：$file" >&2; exit 1; }
 done
-if [[ "$WITH_CHASSIS" == true && ! -f "$ROOT/ros2_ws/chassis_install/setup.bash" ]]; then
-  echo '请先运行 bash scripts/build_chassis.sh 构建底盘。' >&2; exit 1
+if [[ "$WITH_CHASSIS" == true ]]; then
+  [[ -f "$ROOT/ros2_ws/chassis_install/setup.bash" && -n "${SERIAL_PORT:-}" && -n "${CAR_MODE:-}" ]] || {
+    echo '底盘需要已构建 overlay 及明确的 SERIAL_PORT、CAR_MODE。' >&2; exit 1;
+  }
 fi
 if [[ "$WITH_VOICE" == true ]]; then
   voice_file="${ROSCAR_VOICE_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/roscar/voice.env}"
-  [[ -f "$voice_file" ]] || { echo "缺少语音私有配置：$voice_file；不需要语音可设置 WITH_VOICE=false。" >&2; exit 1; }
+  [[ -f "$voice_file" ]] || { echo "缺少语音私有配置：$voice_file" >&2; exit 1; }
 fi
-# Refuse camera contention with the deployed skeleton service.
 if systemctl is-active --quiet roscar-route-a.service 2>/dev/null; then
-  echo '旧/独立 A 服务正在运行。先执行 sudo systemctl stop roscar-route-a.service，再运行总入口。' >&2; exit 1
+  echo '旧 A 服务仍占用相机，请先停止。' >&2; exit 1
 fi
 set +u
+# shellcheck disable=SC1091
 source /opt/ros/humble/setup.bash
+# shellcheck disable=SC1091
 source /home/wheeltec/wheeltec_ros2/install/setup.bash
+# shellcheck disable=SC1091
+source "$ROOT/ros2_ws/radar_install/setup.bash"
+# shellcheck disable=SC1091
 source "$ROOT/ros2_ws/install/setup.bash"
+if [[ "$WITH_CHASSIS" == true ]]; then
+  # shellcheck disable=SC1091
+  source "$ROOT/ros2_ws/chassis_install/setup.bash"
+fi
 set -u
-for package in astra_camera red_object_tracker perception_bringup; do
-  ros2 pkg prefix "$package" >/dev/null || { echo "未构建/安装 ROS 包：$package" >&2; exit 1; }
+for package in astra_camera yolo_person_tracker perception_bringup lslidar_driver; do
+  ros2 pkg prefix "$package" >/dev/null || { echo "未构建 ROS 包：$package" >&2; exit 1; }
 done
 mkdir -p "$ROOT/artifacts/project"
 exec 8>"$ROOT/artifacts/project/start.lock"
@@ -69,7 +76,6 @@ PIDS=()
 cleanup() {
   trap - EXIT INT TERM
   for pid in "${PIDS[@]}"; do kill -TERM -- "-$pid" 2>/dev/null || true; done
-  # The red supervisor owns nested process groups and performs its own cleanup.
   for _ in {1..60}; do
     local alive=false
     for pid in "${PIDS[@]}"; do kill -0 "$pid" 2>/dev/null && alive=true; done
@@ -87,18 +93,20 @@ start_module() {
   printf '启动 %-10s 日志：%s/artifacts/project/%s.log\n' "$name" "$ROOT" "$name"
 }
 start_module camera bash "$ROOT/scripts/run_astra_camera.sh"
-start_module perception bash "$ROOT/scripts/run_red_foxglove.sh"
+start_module perception bash "$ROOT/scripts/run_b_radar_foxglove.sh"
+if [[ "$WITH_CHASSIS" == true ]]; then
+  start_module chassis bash "$ROOT/scripts/run_chassis_io.sh"
+fi
 if [[ "$WITH_VOICE" == true ]]; then
   start_module voice bash "$ROOT/scripts/run_voice_assistant.sh"
 fi
-printf '\n模块已派发，等待相机数据；这不代表硬件验收通过。\n'
-printf '串口=%s 运动=%s 配准确认=%s 语音=%s\n' "$WITH_CHASSIS" "$MOTION_ENABLED" "$DEPTH_REGISTERED" "$WITH_VOICE"
-printf 'Foxglove：ws://192.168.1.240:8765；导入 foxglove/red-layout.json\n'
-printf '原图 /perception/color_image；框图 /perception/detections_image\n'
-printf 'Ctrl-C 停止整个项目。下位机实体运动开关尚未接入。\n'
+printf 'B 感知已派发；N10P=%s，底盘串口=%s，运动=false，语音=%s，配准确认=%s\n' \
+  "${WITH_RADAR:-false}" \
+  "$WITH_CHASSIS" "$WITH_VOICE" "${DEPTH_REGISTERED:-false}"
+printf 'Foxglove 网口：ws://192.168.100.2:8765；布局 foxglove/b-radar-layout.json\n'
 set +e
 wait -n "${PIDS[@]}"
 result=$?
 set -e
-printf '项目模块退出（%s），正在停止所有模块，请检查 artifacts/project/ 日志。\n' "$result" >&2
+printf '项目模块退出（%s），正在清理整组；检查 artifacts/project/ 日志。\n' "$result" >&2
 exit 1
