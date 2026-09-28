@@ -91,6 +91,7 @@ class TrackerNode(Node):
         self.state_group = MutuallyExclusiveCallbackGroup()
         self.positions = {}
         self.position_ages = {}
+        self.position_stamps = {}
         self.held_position_ids = set()
         self.depth_filters = {}
         self.bridge = CvBridge()
@@ -209,6 +210,7 @@ class TrackerNode(Node):
         detections = self.backend.infer(image)
         positions = {}
         position_ages = {}
+        position_stamps = {}
         held_position_ids = set()
         if self.cfg['depth_registered']:
             observation_stamp = stamp_seconds(color.header.stamp)
@@ -225,13 +227,15 @@ class TrackerNode(Node):
                 if xyz is not None:
                     positions[d.track_id] = xyz
                     position_ages[d.track_id] = 0.0
+                    position_stamps[d.track_id] = observation_stamp
                 elif measured is None:
                     held = filt.hold(observation_stamp, self.cfg['position_hold_s'])
                     if held is not None:
                         positions[d.track_id], position_ages[d.track_id] = held
+                        position_stamps[d.track_id] = observation_stamp-position_ages[d.track_id]
                         held_position_ids.add(d.track_id)
         return ((color, metres, received_at, intrinsics, image, depth), detections,
-                positions, position_ages, held_position_ids)
+                positions, position_ages, position_stamps, held_position_ids)
 
     @serialized
     def tick(self):
@@ -246,7 +250,8 @@ class TrackerNode(Node):
         if self.future is not None and self.future.done():
             try:
                 (self.snapshot, detections, self.positions,
-                 self.position_ages, self.held_position_ids) = self.future.result()
+                 self.position_ages, self.position_stamps,
+                 self.held_position_ids) = self.future.result()
                 self.selection.update(detections, self.snapshot[0].width, self.snapshot[2])
                 if self.fresh_snapshot():
                     if (self.cfg['auto_lock_single'] and self.cfg['depth_registered']
@@ -261,6 +266,7 @@ class TrackerNode(Node):
                 self.error = f'Inference failed: {type(exc).__name__}: {exc}'
                 self.snapshot = None
                 self.position_ages = {}
+                self.position_stamps = {}
                 self.held_position_ids = set()
                 self.selection.reset_stream()
                 self.last_key = ('failed',)
@@ -288,7 +294,6 @@ class TrackerNode(Node):
             color, depth, _, intrinsics, _, _ = self.snapshot
             msg.header.frame_id = color.header.frame_id
             msg.observation_stamp = copy.deepcopy(color.header.stamp)
-            msg.measurement_age_s = (stamp_seconds(msg.header.stamp)-stamp_seconds(color.header.stamp))
             chosen = self.selection.selected()
             if self.selection.target_id is None:
                 msg.status = TargetState.SEARCHING
@@ -310,6 +315,15 @@ class TrackerNode(Node):
                     msg.detail = ('Tracked; short predicted depth hold'
                                   if held else 'Tracked; registered body-part depth')
                 if xyz is not None:
+                    observation_stamp = self.position_stamps.get(chosen.track_id)
+                    if observation_stamp is not None and math.isfinite(observation_stamp):
+                        sec = int(observation_stamp)
+                        nanosec = int(round((observation_stamp-sec)*1e9))
+                        if nanosec >= 1000000000:
+                            sec += 1
+                            nanosec -= 1000000000
+                        msg.observation_stamp.sec = sec
+                        msg.observation_stamp.nanosec = nanosec
                     msg.position_valid = True
                     msg.position.x, msg.position.y, msg.position.z = xyz
                     msg.horizontal_distance_m = math.hypot(xyz[0], xyz[2])

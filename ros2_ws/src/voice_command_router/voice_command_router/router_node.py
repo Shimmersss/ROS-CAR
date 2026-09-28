@@ -361,10 +361,7 @@ class VoiceCommandRouter(Node):
                 self._velocity = (0.0, 0.0)
                 if not self._stop_requested:
                     self._stop_requested = True
-                    if not self._continuous_session:
-                        self._stop_motion(self._new_command('STOP', request_id='internal-' + str(uuid.uuid4())), set_idle=True)
-                    else:
-                        self._velocity = (0.0, 0.0)
+                    self._stop_motion(self._new_command('STOP', request_id='internal-' + str(uuid.uuid4())), set_idle=True)
         if self._mode_request != 'EXTERNAL':
             return
         msg = TwistStamped()

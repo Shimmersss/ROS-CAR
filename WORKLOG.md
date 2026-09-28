@@ -778,6 +778,12 @@
 - 新增 `scripts/mac_record_orbbec_rgbd.cpp` 与 `scripts/mac_record_orbbec_rgbd.sh`：使用 Orbbec SDK v1 的硬件 D2C 对齐和 `waitForFrames` 成对取帧，保存 RGB8/16 位毫米深度原始帧、时间戳和元数据。实测确认 Astra S 不支持新版 SDK 的显式 `enableFrameSync`，已移除该硬失败条件；项目录制器尚未完成一段正式数据采集。
 - 录制器短测发现 Astra S 在当前拓展坞/USB2.0 链路下，SDK 能枚举并创建设备，但启动彩色流时报 `Match openni video mode failed`；尝试硬件/软件/关闭 D2C、320×240 与 640×480 配置均未形成帧。官方枚举与设备打开已验证，正式录制仍需调整 USB 直连/供电或使用 SDK 支持的确切模式。
 
+## 2026-09-28 PR 复审修复：跟踪保鲜与连续语音超时
+
+- 修复 `yolo_person_tracker` 的短时深度持有保鲜语义：为每个 track 额外记录真实测量时间戳，持有位置时把 `TargetState.observation_stamp` 回填到原测量时刻，避免“新发布头 + 旧位置”绕过下游 `target_timeout_s` 判定。
+- 修复 `voice_command_router` 连续会话下的运动超时行为：`EXTERNAL` 模式超时后始终走 `_stop_motion(..., set_idle=True)`，撤销授权并退出手动模式；持续唤醒会话仍保留，仅取消“超时后继续保留授权”的不安全分支。
+- 最小审查：本机为测试补齐 `pytest`/`numpy` 后，`yolo_person_tracker` 23 项与 `voice_command_router` 14 项测试全部通过；`parallel_validation` 的 Code Review/CodeQL 均无新增告警。
+
 ## 2026-09-28 Astra OpenNI Viewer 实机验证
 
 - Mac 已安装 `/Applications/Astra OpenNI Viewer.app`。通过拓展坞连接的 Astra S 已在该应用中显示实时深度伪彩色画面，底部状态显示 `Capture Formats - Depth: Lossless | Image: Lossy | IR: Lossless`，证明 Viewer 的旧 OpenNI 适配链路能实际取流。
