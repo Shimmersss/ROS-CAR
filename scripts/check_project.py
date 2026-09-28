@@ -19,7 +19,7 @@ def main():
         names.add(name)
     assert names == {
         'person_interfaces', 'astra_body_adapter', 'yolo_person_tracker',
-        'perception_bringup', 'bodyreader_msg', 'xfyun_speech',
+        'perception_bringup', 'bodyreader_msg', 'xfyun_speech', 'offline_voice',
         'deepseek_ros2', 'voice_command_router', 'red_object_tracker', 'motion_guard', 'navigation_bringup', 'roscar_interfaces', 'roscar_api',
     }
     python_files = list(packages.rglob('*.py')) + list((root / 'scripts').glob('*.py')) + list((root / 'tests').glob('*.py'))

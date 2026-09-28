@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>offline_voice</name>
+  <version>0.1.0</version>
+  <description>Offline ASR, TTS, and local language-model bridge for ROSCAR.</description>
+  <maintainer email="maintainer@example.invalid">ROSCAR maintainers</maintainer>
+  <license>Proprietary</license>
+  <buildtool_depend>ament_python</buildtool_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>alsa-utils</exec_depend>
+  <exec_depend>xfyun_speech</exec_depend>
+  <exec_depend>deepseek_ros2</exec_depend>
+  <exec_depend>voice_command_router</exec_depend>
+  <test_depend>python3-pytest</test_depend>
+  <export><build_type>ament_python</build_type></export>
+</package>

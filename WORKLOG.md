@@ -858,3 +858,14 @@
 - 语音启动文件与配置删除蜂鸣器参数及 GPIO 节点，`run_voice_assistant.sh` 不再传 `enable_buzzer`。V5 的中文命令、本地规则、结构化运动/状态工具、讯飞 ASR/TTS 和唤醒应答保持原链路。
 - 保留独立 `buzzer_gpio_node.py`、`parse_buzz_command` 及对应测试，便于以后单独评估硬件；更新项目和语音文档。当前版本标记为 V5.1。
 - 本机结构检查通过（13 包）；语音相关纯逻辑测试 `21 passed, 2 skipped`，新增的两项路由行为测试因当前 WSL 缺少 ROS 2 `rclpy` 而跳过。Python 编译、语音 YAML 解析、Bash 语法及定点 `git diff --check` 均通过；未在 Jetson 部署或实车执行。
+
+## 2026-09-28：离线语音独立分支和隔离实机验证
+
+- 从 V5.1 `c84d838` 建立 `codex/offline-voice-v5.2`，工作树在 WSL `/home/ubuntu/works/ROS-CAR-offline-voice`；原 `/mnt/e/works/newcar/ROS-CAR` 工作树中的换行差异和 stash 未动。
+- 新增 `offline_voice`：sherpa-onnx 流式 Paraformer INT8 ASR、MeloTTS、本机 Ollama/Qwen3 1.7B。沿用 V5.1 的本地命令路由和受限 `VoiceCommand` 工具；离线入口不读取讯飞/DeepSeek 密钥，HTTP 客户端只允许本机地址且禁用代理。`VOICE_BACKEND=online` 保留原入口作为回退。
+- Jetson `/home/wheeltec/ROSCAR-offline` 隔离安装 sherpa-onnx 1.13.8、Ollama 0.34.0 JetPack 6、本地 Qwen3 模型及 ASR/TTS 模型。官方 Ollama 归档哈希已核对；模型和权重未加入 Git。端侧 ASR 样例识别为“昨天是 monday today is 零八二 the day after tomorrow 是星期三”；TTS “我在”生成 44.1 kHz、23552 样本；Qwen3 回答和 `query_status` 工具调用成功，热态工具调用约 0.75 秒。
+- 发现车上现有 `/home/wheeltec/ROSCAR-current` 安装层比仓库 V5.1 旧，仍有 `buzz`。隔离 overlay 因此从本分支重建 `xfyun_speech`、`deepseek_ros2`、`voice_command_router`、`offline_voice` 四包成功；新安装的聊天与路由节点代码不含蜂鸣器调用。
+- 在 ROS 域 183、`enable_wake_driver=false`、`voice_control_enabled=false` 下四个离线节点启动成功；`/voice/unhandled_text` 经本机 Qwen3 返回 `/voice/assistant_text`，TTS 节点无报错；手动 ASR 空唤醒正确忽略。单独发送“查询小车状态”时 Qwen3 发出结构化 `QUERY_STATUS`，禁用的路由返回“语音控制已关闭”，未产生车体动作。未验证真人发音的识别率和扬声器主观音质。
+- 在线整车栈同时运行且 Qwen3 GPU 加载时，Jetson RAM 约 5.4 GiB 已用、1.7 GiB 可用、swap 约 101 MiB；停止隔离语音后约 3.4 GiB 可用。离线启动脚本的独立 Ollama 与 ROS 进程组经停止测试均退出，原 `/home/wheeltec/ROSCAR-current` 的在线语音、相机、感知和底盘进程仍运行，正式部署未切换。
+- 本机 `offline_voice` 的 2 个 HTTP 客户端单测、14 包结构检查、Python 编译、Bash 语法和 `git diff --check` 通过；隔离 overlay 的 4 包 Jetson Humble 构建通过。根据用户要求，后续远端操作改为 WSL 中的 Paramiko 密钥连接。
+- 代码已在 WSL 专用分支本地提交；尝试用 WSL Git 推送到贡献者 fork 时因 WSL 未配置 GitHub HTTPS 凭据而停止，尚未推送远端。车上正式部署和原仓库工作树未改。
