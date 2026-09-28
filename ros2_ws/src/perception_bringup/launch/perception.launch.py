@@ -40,6 +40,8 @@ def launch_route(context):
             'reacquire_center_fraction': float(LaunchConfiguration('reacquire_center_fraction').perform(context)),
             'depth_smoothing_alpha': float(LaunchConfiguration('depth_smoothing_alpha').perform(context)),
             'depth_jump_reset_m': float(LaunchConfiguration('depth_jump_reset_m').perform(context)),
+            'depth_min_fraction': float(LaunchConfiguration('depth_min_fraction').perform(context)),
+            'position_hold_s': float(LaunchConfiguration('position_hold_s').perform(context)),
         })
         if route == 'red':
             parameters[0]['performance_enabled'] = LaunchConfiguration('performance_enabled').perform(context) == 'true'
@@ -130,11 +132,13 @@ def generate_launch_description():
         DeclareLaunchArgument('max_age_s', default_value='0.5'),
         DeclareLaunchArgument('visualization_fps', default_value='10.0'),
         DeclareLaunchArgument('visualization_scale', default_value='0.5'),
-        DeclareLaunchArgument('track_hold_s', default_value='0.35'),
-        DeclareLaunchArgument('reacquire_s', default_value='0.8'),
+        DeclareLaunchArgument('track_hold_s', default_value='0.8'),
+        DeclareLaunchArgument('reacquire_s', default_value='1.2'),
         DeclareLaunchArgument('reacquire_center_fraction', default_value='0.25'),
         DeclareLaunchArgument('depth_smoothing_alpha', default_value='0.35'),
         DeclareLaunchArgument('depth_jump_reset_m', default_value='0.8'),
+        DeclareLaunchArgument('depth_min_fraction', default_value='0.08'),
+        DeclareLaunchArgument('position_hold_s', default_value='0.25'),
         DeclareLaunchArgument('hue_low_max', default_value='10'),
         DeclareLaunchArgument('hue_high_min', default_value='170'),
         DeclareLaunchArgument('saturation_min', default_value='100'),
