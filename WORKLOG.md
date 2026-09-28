@@ -778,6 +778,12 @@
 - 新增 `scripts/mac_record_orbbec_rgbd.cpp` 与 `scripts/mac_record_orbbec_rgbd.sh`：使用 Orbbec SDK v1 的硬件 D2C 对齐和 `waitForFrames` 成对取帧，保存 RGB8/16 位毫米深度原始帧、时间戳和元数据。实测确认 Astra S 不支持新版 SDK 的显式 `enableFrameSync`，已移除该硬失败条件；项目录制器尚未完成一段正式数据采集。
 - 录制器短测发现 Astra S 在当前拓展坞/USB2.0 链路下，SDK 能枚举并创建设备，但启动彩色流时报 `Match openni video mode failed`；尝试硬件/软件/关闭 D2C、320×240 与 640×480 配置均未形成帧。官方枚举与设备打开已验证，正式录制仍需调整 USB 直连/供电或使用 SDK 支持的确切模式。
 
+## 2026-09-28 PR 复审修复：跟踪保鲜与连续语音超时
+
+- 修复 `yolo_person_tracker` 的短时深度持有保鲜语义：为每个 track 额外记录真实测量时间戳，持有位置时把 `TargetState.observation_stamp` 回填到原测量时刻，避免“新发布头 + 旧位置”绕过下游 `target_timeout_s` 判定。
+- 修复 `voice_command_router` 连续会话下的运动超时行为：`EXTERNAL` 模式超时后始终走 `_stop_motion(..., set_idle=True)`，撤销授权并退出手动模式；持续唤醒会话仍保留，仅取消“超时后继续保留授权”的不安全分支。
+- 最小审查：本机为测试补齐 `pytest`/`numpy` 后，`yolo_person_tracker` 23 项与 `voice_command_router` 14 项测试全部通过；`parallel_validation` 的 Code Review/CodeQL 均无新增告警。
+
 ## 2026-09-28 Astra OpenNI Viewer 实机验证
 
 - Mac 已安装 `/Applications/Astra OpenNI Viewer.app`。通过拓展坞连接的 Astra S 已在该应用中显示实时深度伪彩色画面，底部状态显示 `Capture Formats - Depth: Lossless | Image: Lossy | IR: Lossless`，证明 Viewer 的旧 OpenNI 适配链路能实际取流。
@@ -852,6 +858,7 @@
 - 按用户要求，将语音交接文档、ROS 接口文档和 `motion_guard` 说明明确为：本版本不启动雷达，`radar_required` 固定为 `false`，模式切换、arm 和故障判定不等待 `/scan`、雷达 TF 或雷达净空结果。
 - 保留模式、请求/目标时效、重复发布者、底盘自身停车和人工急停要求；未修改雷达驱动代码，也未启动雷达。
 - 文档改动通过 `git diff --check` 审查。
+
 ## 2026-09-28：V5.1 语音控制移除蜂鸣器入口
 
 - 在 V5 (`8510805`) 上定点修改，未应用基于旧版本的 stash：DeepSeek 不再向模型提供 `buzz`，结构化调用白名单也拒绝 `buzz`；语音路由不再订阅旧 `/voice/tool_call` 蜂鸣器 JSON 或接受 `BUZZ`，也不创建蜂鸣器发布者。
@@ -869,3 +876,49 @@
 - 在线整车栈同时运行且 Qwen3 GPU 加载时，Jetson RAM 约 5.4 GiB 已用、1.7 GiB 可用、swap 约 101 MiB；停止隔离语音后约 3.4 GiB 可用。离线启动脚本的独立 Ollama 与 ROS 进程组经停止测试均退出，原 `/home/wheeltec/ROSCAR-current` 的在线语音、相机、感知和底盘进程仍运行，正式部署未切换。
 - 本机 `offline_voice` 的 2 个 HTTP 客户端单测、14 包结构检查、Python 编译、Bash 语法和 `git diff --check` 通过；隔离 overlay 的 4 包 Jetson Humble 构建通过。根据用户要求，后续远端操作改为 WSL 中的 Paramiko 密钥连接。
 - 代码已在 WSL 专用分支本地提交；尝试用 WSL Git 推送到贡献者 fork 时因 WSL 未配置 GitHub HTTPS 凭据而停止，尚未推送远端。车上正式部署和原仓库工作树未改。
+=======
+
+- 2026-09-28 离线 ONI 评估入口：新增 `scripts/analyze_oni.cpp` / `scripts/analyze_oni.sh`，使用 Astra OpenNI 2.3 回放读取 RGB/Depth，输出帧数、时间跨度、分辨率和有效深度比例。最新 16:53 录制前 300 帧约 10.107 秒，640x480 RGB/Depth，深度 0.2–8m 有效率约 54.4%；短样本读取成功。完整 112 秒扫描在本机旧 x86 OpenNI 回放库上超过单次检查窗口，未宣称已完成全片逐帧识别率统计。
+
+## 2026-09-28 语音改为持续控制会话
+
+- `voice_command_router` 新增持续会话状态：首次 `/voice_words: 小车唤醒` 开启会话，ASR 每轮完成后自动调用 `/voice/start_listening` 进入下一轮；再次唤醒事件退出会话并执行停止/回到 IDLE。
+- 持续会话不取消速度请求超时和底盘停车保护；无新运动指令时速度归零，只有会话保持语音监听授权。
+- 已更新语音交接文档和路由器 README；本机 Python 语法检查通过，尚未完成 Jetson 编译和现场连续语音验收。
+
+## 2026-09-28 修复持续语音监听衔接
+
+- 发现持续会话中 ASR 发布文本时仍处于 busy 状态，路由器立即调用 `/voice/start_listening` 会被 ASR 拒绝，造成下一轮识别间歇失效。
+- 路由器现将下一轮监听延迟约 350 ms，并由定时器在服务可用时发起，避免与 ASR 清理上一轮请求竞争。
+- 本机语法检查通过；需在 Jetson 重编译并现场连续说多条命令验证。
+
+- 2026-09-28 跟随连续性优化第四轮：深度测量加入人体候选区域小孔局部中值修复、多部位深度簇投票，并将默认人体区域有效阈值降至 8%；锁定保持默认 0.8 秒、换 ID 重捕获默认 1.2 秒。保留大跳变重置和无效深度停车语义。22 项逻辑测试及 Python 编译通过，未部署实车。
+
+## 2026-09-28 放宽遥控模式语音同义词
+
+- 现场 ASR 将“开始遥控”识别为“遥控模式”，原本地解析器将其判为不明确指令。
+- 新增“遥控模式”“进入遥控”到 `EXTERNAL` 授权命令，并同步更新语音文档。
+
+- 2026-09-28 有限位置保持与录制评估：新增 `position_hold_s` 默认 0.25 秒；深度短暂无效时输出带 `measurement_age_s` 的短时保持位置，超过窗口自动失效，控制 freshness 检查仍可停车。最新 16:53 ONI 以每 5 帧抽样（680 帧、约 113.3 秒）运行当前 YOLO26s + ByteTrack，检测到人 678/680 帧，单人 598 帧，多人 80 帧，零人 2 帧；按当前单人连续 3 帧确认的保守规则锁定约 92.3 秒（81.5%）。该统计未包含真实深度区域有效性，也未替代完整 ROS 节点实机验收。
+
+## 2026-09-28 增加“开启遥控”语音别名
+
+- Foxglove 实测 ASR 输出为“开启遥控”，解析器原先未收录，现加入 `EXTERNAL` 授权别名；同时加入“遥控”。
+
+## 2026-09-28 修复首轮 ASR 失败后的持续监听恢复
+
+- 持续会话首轮 ASR 若因能量阈值或网络错误失败，不会发布 `/voice/asr_text`，原路由器无法安排下一轮监听。
+- 路由器现订阅 `/voice/asr_state`，持续会话中检测到 ASR 回到 `IDLE` 即重新排队监听，识别失败后也能恢复。
+- 本机语法检查通过，待 Jetson 重编译和连续会话验收。
+
+## 2026-09-28 增加持续监听保活
+
+- 现场持续会话只有开启日志、没有后续 ASR 事件；在状态回调之外增加约 1 秒低频监听保活。
+- ASR 忙时服务请求会被安全拒绝，空闲时自动接收下一轮；不改变速度、授权和停车保护。
+
+## 2026-09-28 当前跟随逻辑部署
+
+- 将人体跟随优化涉及的 `yolo_person_tracker`（检测框短暂保持、ID 近邻重捕获、深度多区域投票/小孔洞修复/平滑、0.25 秒有界位置保持）和 `perception_bringup` 启动参数部署到 Jetson `/home/wheeltec/ROSCAR-current`；远端源码与本地 SHA-256 一致。
+- 远端 `yolo_person_tracker` 与 `perception_bringup` 原生 Humble 构建成功；远端跟踪器单元测试 22 项全部通过。在线 B 路线已由现有 supervisor 重新拉起，读回 `position_hold_s=0.25`、`depth_smoothing_alpha=0.35`、`depth_min_fraction=0.08`；`/cmd_vel` 抽样为零速，本轮未执行运动测试。
+- 远端另有 `/home/wheeltec/ROSCAR` 开发副本同步并完成依赖构建；实际运行副本为 `/home/wheeltec/ROSCAR-current`。清理了错误复制到 `ros2_ws/src/` 顶层的临时 Python 文件。最小审查：`git diff --check` 通过。
+
