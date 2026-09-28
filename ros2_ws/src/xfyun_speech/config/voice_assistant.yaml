@@ -30,7 +30,6 @@ deepseek_chat:
     input_topic: /voice/unhandled_text
     answer_topic: /voice/assistant_text
     tts_topic: /voice/tts_text
-    tool_call_topic: /voice/tool_call
     command_topic: /voice/command
     command_result_topic: /voice/command_result
     response_log_path: /home/wheeltec/ROSCAR/logs/deepseek_responses.jsonl
@@ -47,8 +46,6 @@ voice_command_router:
     unhandled_topic: /voice/unhandled_text
     command_topic: /voice/command
     result_topic: /voice/command_result
-    legacy_tool_topic: /voice/tool_call
-    buzzer_topic: /hardware/buzzer_duration_ms
     control_request_topic: /chassis/cmd_vel
     control_timeout_s: 2.0
     default_forward_mps: 0.08
@@ -56,14 +53,6 @@ voice_command_router:
     default_turn_rps: 0.25
     default_duration_s: 2.0
     base_frame: base_link
-
-buzzer_gpio:
-  ros__parameters:
-    enabled: false
-    pin_numbering: BOARD
-    pin: -1
-    active_high: true
-    input_topic: /hardware/buzzer_duration_ms
 
 xfyun_tts:
   ros__parameters:

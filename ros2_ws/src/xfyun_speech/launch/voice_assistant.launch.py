@@ -19,10 +19,6 @@ def generate_launch_description():
         'enable_tts', default_value='false',
         description='Start online TTS and ALSA playback.',
     )
-    buzzer_argument = DeclareLaunchArgument(
-        'enable_buzzer', default_value='false',
-        description='Start the hardware buzzer adapter.',
-    )
     wake_argument = DeclareLaunchArgument(
         'enable_wake_driver', default_value='false',
         description='Start only the WheelTec microphone serial wake driver.',
@@ -35,7 +31,6 @@ def generate_launch_description():
     return LaunchDescription([
         config_argument,
         tts_argument,
-        buzzer_argument,
         wake_argument,
         control_argument,
         Node(
@@ -62,14 +57,6 @@ def generate_launch_description():
             name='voice_command_router',
             output='screen',
             parameters=[config, {'enabled': LaunchConfiguration('voice_control_enabled')}],
-        ),
-        Node(
-            package='voice_command_router',
-            executable='buzzer_gpio_node',
-            name='buzzer_gpio',
-            output='screen',
-            parameters=[config],
-            condition=IfCondition(LaunchConfiguration('enable_buzzer')),
         ),
         Node(
             package='deepseek_ros2',

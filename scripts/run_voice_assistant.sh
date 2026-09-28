@@ -53,4 +53,4 @@ if [[ "${voice_tts_enabled}" != true && "${voice_tts_enabled}" != false ]]; then
 fi
 
 exec ros2 launch xfyun_speech voice_assistant.launch.py \
-  enable_wake_driver:=true enable_tts:="${voice_tts_enabled}" enable_buzzer:=false "$@"
+  enable_wake_driver:=true enable_tts:="${voice_tts_enabled}" "$@"

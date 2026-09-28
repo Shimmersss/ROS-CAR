@@ -10,4 +10,6 @@
 
 结构化输入为 `roscar_interfaces/msg/VoiceCommand`，结果为
 `roscar_interfaces/msg/VoiceCommandResult`。旧的 `/voice/tool_call` 蜂鸣器 JSON
-入口继续兼容，但新控制命令必须经过本地校验和 motion_guard 服务。
+入口已从语音路由中移除；`BUZZ` 动作会被拒绝。独立的蜂鸣器解析和 GPIO
+适配源码仍保留在包内，语音启动文件不会加载它们。控制命令继续经过本地校验
+和 motion_guard 服务。

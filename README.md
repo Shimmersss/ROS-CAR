@@ -1,5 +1,7 @@
 # ROSCAR · 室内人体跟随感知
 
+当前版本：V5.1。语音控制支持 V5 的模式切换、短时运动、停止和状态查询；蜂鸣器代码保留为独立模块，不接入语音控制。
+
 当前目标：Orin Nano Super 8GB 上的 B 人体感知、N10P 雷达、语音、底盘回传和 Foxglove。总入口不启动车辆跟随；B 的测距仍等待 RGB-D 配准实物验收。各模块验证范围见 WORKLOG。
 
 ## 对外 ROS 2 接口
@@ -15,7 +17,7 @@
 | demo | 显式模拟数据：9 秒目标可见、3 秒丢失，用于验证消息与展示 |
 | Mac → Jetson 同步脚本、模型清单、测试脚本 | 已建立 |
 | 讯飞流式 ASR/TTS → DeepSeek 语音助手 | Orin 真人语音 → 讯飞 IAT → DeepSeek 回答 → 讯飞 TTS 扬声器播报已跑通 |
-| DeepSeek 蜂鸣器工具链 | 白名单路由已建立；蜂鸣器属于下位机，协议适配延后 |
+| 语音控制工具 | 支持受限运动、模式切换、停止和状态查询；不提供蜂鸣器工具 |
 | 相机与测距 | 彩色/深度 CameraInfo 已加载用户临时值；B 在线有有效 XYZ，仍需重新标定和物理量距 |
 | 底盘串口驱动 | 已在 Jetson 构建并运行，仅收发里程计；当前无速度发布者 |
 | Foxglove | 当前使用 B + 雷达布局；网口地址 `ws://192.168.100.2:8765` |
@@ -36,7 +38,7 @@ ros2_ws/src/
   perception_bringup/    单路线启动与显式 demo
   xfyun_speech/          讯飞 WebSocket 流式 ASR/TTS
   deepseek_ros2/         DeepSeek 文本对话桥
-  voice_command_router/  模型工具白名单与蜂鸣器适配
+  voice_command_router/  语音控制路由；独立蜂鸣器源码保留但不接入语音
   chassis_vendor/       原厂串口驱动与依赖，COLCON_IGNORE 暂不编译
 scripts/                 构建、检查、同步与模型准备
 foxglove/                连接说明和面板计划

@@ -852,3 +852,9 @@
 - 按用户要求，将语音交接文档、ROS 接口文档和 `motion_guard` 说明明确为：本版本不启动雷达，`radar_required` 固定为 `false`，模式切换、arm 和故障判定不等待 `/scan`、雷达 TF 或雷达净空结果。
 - 保留模式、请求/目标时效、重复发布者、底盘自身停车和人工急停要求；未修改雷达驱动代码，也未启动雷达。
 - 文档改动通过 `git diff --check` 审查。
+## 2026-09-28：V5.1 语音控制移除蜂鸣器入口
+
+- 在 V5 (`8510805`) 上定点修改，未应用基于旧版本的 stash：DeepSeek 不再向模型提供 `buzz`，结构化调用白名单也拒绝 `buzz`；语音路由不再订阅旧 `/voice/tool_call` 蜂鸣器 JSON 或接受 `BUZZ`，也不创建蜂鸣器发布者。
+- 语音启动文件与配置删除蜂鸣器参数及 GPIO 节点，`run_voice_assistant.sh` 不再传 `enable_buzzer`。V5 的中文命令、本地规则、结构化运动/状态工具、讯飞 ASR/TTS 和唤醒应答保持原链路。
+- 保留独立 `buzzer_gpio_node.py`、`parse_buzz_command` 及对应测试，便于以后单独评估硬件；更新项目和语音文档。当前版本标记为 V5.1。
+- 本机结构检查通过（13 包）；语音相关纯逻辑测试 `21 passed, 2 skipped`，新增的两项路由行为测试因当前 WSL 缺少 ROS 2 `rclpy` 而跳过。Python 编译、语音 YAML 解析、Bash 语法及定点 `git diff --check` 均通过；未在 Jetson 部署或实车执行。
