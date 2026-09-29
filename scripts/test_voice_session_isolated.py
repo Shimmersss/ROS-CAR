@@ -31,6 +31,7 @@ class FakeGuard(Node):
         self.velocities = []
         self.results = []
         self.sessions = []
+        self.tts = []
         self.state_pub = self.create_publisher(String, '/control/state', 10)
         self.wake_pub = self.create_publisher(String, '/voice_words', 10)
         self.asr_pub = self.create_publisher(String, '/voice/asr_text', 10)
@@ -43,6 +44,8 @@ class FakeGuard(Node):
                                      (msg.twist.linear.x, msg.twist.angular.z)), 10)
         self.create_subscription(VoiceCommandResult, '/voice/command_result',
                                  lambda msg: self.results.append(msg), 10)
+        self.create_subscription(String, '/voice/tts_text',
+                                 lambda msg: self.tts.append(msg.data), 10)
         qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                          durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(Bool, '/voice/session_active',
@@ -105,6 +108,12 @@ def main():
         fake.wake_pub.publish(String(data='小车唤醒'))
         pump(0.2)
         assert fake.sessions[-1] is True
+        tts_count = len(fake.tts)
+        for text in ('嗯。', '真。', '前任'):
+            send(text)
+        assert len(fake.tts) == tts_count, fake.tts[tts_count:]
+        assert fake.sessions[-1] is True
+        assert fake.arm_calls == 0
         send('前进')
         pump(1.0)
         assert fake.arm_calls == 1, fake.arm_calls
@@ -150,7 +159,7 @@ def main():
         fake.wake_pub.publish(String(data='小车唤醒'))
         pump(0.8)
         assert fake.sessions[-1] is False
-        print('PASS: 自动授权、重复唤醒、停止后重授权、急停与超时退出、会话外拒绝、授权状态未确认停车')
+        print('PASS: 无意义语音静默忽略、自动授权、重复唤醒、停止后重授权、急停与超时退出、会话外拒绝、授权状态未确认停车')
     finally:
         executor.remove_node(fake)
         executor.remove_node(router)

@@ -989,3 +989,9 @@
 - 正式项目备份为 `/home/wheeltec/ROSCAR-backups/continuous-voice-20260929-192944/before.tar.gz`，SHA-256 `460409fba541dd5b05e4af8633080dfd27c72089a4086b221f3b93c0fdcaeb34`。源码同步后在正式根目录构建两包并由 systemd 重启加载；核实正式节点为 `continuous_asr_node`，参数 `vad_silence_s=0.7`、`session_timeout_s=30`、`legacy_listen_polling=false`，服务 active，`/voice/session_active=false`、`/cmd_vel` 零速。一次误用 `ros2_ws/install` 构建未被正式入口读取，发现后在根目录 `install` 正确重建。隔离测试残留的两个进程组已清理，可用内存恢复；正式切换后快照约 2.8 GiB 可用、733 MiB swap 已用。
 - 本轮未发布实际运动指令；真人麦克风、嘈杂环境、实体底盘运动与长期稳定性仍待用户现场验收。
 - 车载网络恢复后补传旧 ASR 唤醒归属和“识别中刷新会话时限”修正，在正式根目录重新构建 `voice_command_router`、`offline_voice`；隔离 ROS 域 185 假 guard 测试新增 0.5 秒会话超时场景并通过。重启正式守护服务后读回 `continuous_asr_node` 已加载、会话未激活、`/cmd_vel` 为零，约 2.4 GiB 内存可用、19 MiB swap 已用。尚未进行真人语音与实车动作验收。
+
+## 2026-09-29：无意义 ASR 结果静默忽略
+
+- 用户现场日志出现“真。”“嗯。”等无关识别，路由器之前会播报整段可用指令提示。现对未匹配固定指令或无法解析的含糊口令只记录日志，不发 TTS，继续监听；有效动作被运动门禁拒绝时仍播报失败原因。
+- 本地 29 项相关测试、Python 编译与差异检查通过；车上隔离 ROS 域 185 假 guard 测试确认“嗯。”“真。”“前任”不产生 TTS，随后“前进”仍能自动授权，原有停止、急停和授权未确认安全路径通过。
+- 改动前备份 `/home/wheeltec/ROSCAR-backups/silent-unknown-20260929-222043/before.tar.gz`，SHA-256 `52768f17c09e5c68d213a74c67347ccf2b5bb84f049c4d921fc16a63556caa63`。正式 `voice_command_router` 原生 Humble 构建成功；重启服务后读回新版源码与安装包哈希一致、连续 ASR 已加载、会话未激活、`/cmd_vel` 零速。未执行真人语音和实际底盘运动测试。

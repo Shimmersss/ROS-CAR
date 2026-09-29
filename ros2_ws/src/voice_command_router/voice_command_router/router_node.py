@@ -187,13 +187,11 @@ class VoiceCommandRouter(Node):
                 duration_s=float(self.get_parameter('default_duration_s').value),
             )
         except CommandValidationError as exc:
-            self.get_logger().warning(f'语音文本: {text!r} -> 指令无效: {exc}')
-            self._speak(f'这条操控指令无法执行：{exc}')
+            self.get_logger().info(f'忽略无法解析的语音文本: {text!r} ({exc})')
             self._request_next_listen()
             return
         if parsed is None:
-            self.get_logger().info(f'语音文本: {text!r} -> 不在固定指令列表中')
-            self._speak('没有识别到控制指令，请说开始遥控、前进、后退、左转、右转、停止或当前状态')
+            self.get_logger().info(f'忽略未匹配指令的语音文本: {text!r}')
             self._request_next_listen()
             return
         self.get_logger().info(f'语音文本: {text!r} -> 本地动作: {parsed}')
