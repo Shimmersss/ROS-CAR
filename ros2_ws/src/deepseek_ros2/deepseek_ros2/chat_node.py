@@ -43,12 +43,11 @@ class DeepSeekChatNode(Node):
             'system_prompt',
             '你是运行在室内 ROS 2 小车上的中文语音助手。回答简洁、口语化，'
             '不要使用 Markdown。涉及车辆动作时必须调用结构化工具，不能凭空声称动作已完成。'
-            '只允许在用户明确要求时调用运动、模式、状态或蜂鸣器工具。',
+            '只允许在用户明确要求时调用运动、模式或状态工具。',
         )
         self.declare_parameter('input_topic', '/voice/unhandled_text')
         self.declare_parameter('answer_topic', '/voice/assistant_text')
         self.declare_parameter('tts_topic', '/voice/tts_text')
-        self.declare_parameter('tool_call_topic', '/voice/tool_call')
         self.declare_parameter('command_topic', '/voice/command')
         self.declare_parameter('command_result_topic', '/voice/command_result')
         self.declare_parameter('response_log_path', '')
@@ -74,7 +73,7 @@ class DeepSeekChatNode(Node):
         if bool(self.get_parameter('wake_reply_enabled').value) and wake_topic:
             self._wake_sub = self.create_subscription(
                 String, wake_topic, self._on_wake, 10)
-        self._tool_pub = self.create_publisher(
+        self._command_pub = self.create_publisher(
             VoiceCommand, self.get_parameter('command_topic').value, 10)
         self._result_sub = self.create_subscription(
             VoiceCommandResult, self.get_parameter('command_result_topic').value,
@@ -180,9 +179,6 @@ class DeepSeekChatNode(Node):
             tool('query_status', '查询当前控制状态、电量和跟随目标状态。', {
                 'query': {'type': 'string', 'enum': ['status', 'unsupported_navigation']},
             }, ['query']),
-            tool('buzz', '用户明确要求蜂鸣器响时调用。', {
-                'duration_ms': {'type': 'integer', 'minimum': 100, 'maximum': 2000},
-            }, ['duration_ms']),
         ]
 
     def _handle_tool_calls(self, message):
@@ -191,7 +187,7 @@ class DeepSeekChatNode(Node):
             raise RuntimeError('只允许一次调用一个机器人工具')
         function = tool_calls[0].get('function') or {}
         name = function.get('name')
-        allowed = {'drive', 'set_control_mode', 'arm', 'stop', 'query_status', 'buzz'}
+        allowed = {'drive', 'set_control_mode', 'arm', 'stop', 'query_status'}
         if name not in allowed:
             raise RuntimeError(f'拒绝未知工具: {name}')
         try:
@@ -202,7 +198,7 @@ class DeepSeekChatNode(Node):
             'drive': {'linear_mps', 'angular_rps', 'duration_s'},
             'set_control_mode': {'mode'},
             'arm': set(), 'stop': set(),
-            'query_status': {'query'}, 'buzz': {'duration_ms'},
+            'query_status': {'query'},
         }
         if not isinstance(arguments, dict) or set(arguments) != schemas[name]:
             raise RuntimeError(f'{name} 参数不完整或包含未知字段')
@@ -211,7 +207,7 @@ class DeepSeekChatNode(Node):
         command.request_id = str(uuid.uuid4())
         command.action = {'drive': 'DRIVE', 'set_control_mode': 'SET_MODE',
                           'arm': 'ARM', 'stop': 'STOP',
-                          'query_status': 'QUERY_STATUS', 'buzz': 'BUZZ'}[name]
+                          'query_status': 'QUERY_STATUS'}[name]
         if name == 'drive':
             command.linear_mps = float(arguments['linear_mps'])
             command.angular_rps = float(arguments['angular_rps'])
@@ -220,11 +216,9 @@ class DeepSeekChatNode(Node):
             command.mode = arguments['mode']
         elif name == 'query_status':
             command.query = arguments['query']
-        elif name == 'buzz':
-            command.duration_s = float(arguments['duration_ms']) / 1000.0
         event = threading.Event()
         self._result_events[command.request_id] = event
-        self._tool_pub.publish(command)
+        self._command_pub.publish(command)
         if not event.wait(timeout=5.0):
             self._result_events.pop(command.request_id, None)
             self._result_values.pop(command.request_id, None)

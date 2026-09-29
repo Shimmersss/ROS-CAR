@@ -26,7 +26,7 @@ cd /home/wheeltec/ROSCAR/ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-select deepseek_ros2 voice_command_router xfyun_speech --symlink-install
 source install/setup.bash
-ros2 launch xfyun_speech voice_assistant.launch.py enable_tts:=false enable_buzzer:=false
+ros2 launch xfyun_speech voice_assistant.launch.py enable_tts:=false
 ```
 
 板子启动脚本会额外启动厂商 `wheeltec_mic` 串口节点，但仅使用其硬件唤醒事件，
@@ -61,7 +61,6 @@ tail -f /home/wheeltec/ROSCAR/logs/deepseek_responses.jsonl
 ```
 
 DeepSeek 现在仅作为复杂表达的结构化工具兜底；工具包括 `drive`、模式切换、授权、
-停止、状态查询和 `buzz`。所有工具都会转成 `VoiceCommand`，由
+停止和状态查询。所有工具都会转成 `VoiceCommand`，由
 `voice_command_router` 二次校验，不能绕过 `motion_guard`。常用的“开始遥控”“前进”
-等命令由本地规则直接处理。蜂鸣器仍限制在 100--2000 ms，GPIO 适配器默认不启动；
-蜂鸣器属于下位机，不能猜测 Jetson GPIO。
+等命令由本地规则直接处理。独立蜂鸣器源码仍保留，但此语音启动链路不加载它。

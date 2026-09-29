@@ -858,64 +858,9 @@
 - 按用户要求，将语音交接文档、ROS 接口文档和 `motion_guard` 说明明确为：本版本不启动雷达，`radar_required` 固定为 `false`，模式切换、arm 和故障判定不等待 `/scan`、雷达 TF 或雷达净空结果。
 - 保留模式、请求/目标时效、重复发布者、底盘自身停车和人工急停要求；未修改雷达驱动代码，也未启动雷达。
 - 文档改动通过 `git diff --check` 审查。
+## 2026-09-28：V5.1 语音控制移除蜂鸣器入口
 
-- 2026-09-28 离线 ONI 评估入口：新增 `scripts/analyze_oni.cpp` / `scripts/analyze_oni.sh`，使用 Astra OpenNI 2.3 回放读取 RGB/Depth，输出帧数、时间跨度、分辨率和有效深度比例。最新 16:53 录制前 300 帧约 10.107 秒，640x480 RGB/Depth，深度 0.2–8m 有效率约 54.4%；短样本读取成功。完整 112 秒扫描在本机旧 x86 OpenNI 回放库上超过单次检查窗口，未宣称已完成全片逐帧识别率统计。
-
-## 2026-09-28 语音改为持续控制会话
-
-- `voice_command_router` 新增持续会话状态：首次 `/voice_words: 小车唤醒` 开启会话，ASR 每轮完成后自动调用 `/voice/start_listening` 进入下一轮；再次唤醒事件退出会话并执行停止/回到 IDLE。
-- 持续会话不取消速度请求超时和底盘停车保护；无新运动指令时速度归零，只有会话保持语音监听授权。
-- 已更新语音交接文档和路由器 README；本机 Python 语法检查通过，尚未完成 Jetson 编译和现场连续语音验收。
-
-## 2026-09-28 修复持续语音监听衔接
-
-- 发现持续会话中 ASR 发布文本时仍处于 busy 状态，路由器立即调用 `/voice/start_listening` 会被 ASR 拒绝，造成下一轮识别间歇失效。
-- 路由器现将下一轮监听延迟约 350 ms，并由定时器在服务可用时发起，避免与 ASR 清理上一轮请求竞争。
-- 本机语法检查通过；需在 Jetson 重编译并现场连续说多条命令验证。
-
-- 2026-09-28 跟随连续性优化第四轮：深度测量加入人体候选区域小孔局部中值修复、多部位深度簇投票，并将默认人体区域有效阈值降至 8%；锁定保持默认 0.8 秒、换 ID 重捕获默认 1.2 秒。保留大跳变重置和无效深度停车语义。22 项逻辑测试及 Python 编译通过，未部署实车。
-
-## 2026-09-28 放宽遥控模式语音同义词
-
-- 现场 ASR 将“开始遥控”识别为“遥控模式”，原本地解析器将其判为不明确指令。
-- 新增“遥控模式”“进入遥控”到 `EXTERNAL` 授权命令，并同步更新语音文档。
-
-- 2026-09-28 有限位置保持与录制评估：新增 `position_hold_s` 默认 0.25 秒；深度短暂无效时输出带 `measurement_age_s` 的短时保持位置，超过窗口自动失效，控制 freshness 检查仍可停车。最新 16:53 ONI 以每 5 帧抽样（680 帧、约 113.3 秒）运行当前 YOLO26s + ByteTrack，检测到人 678/680 帧，单人 598 帧，多人 80 帧，零人 2 帧；按当前单人连续 3 帧确认的保守规则锁定约 92.3 秒（81.5%）。该统计未包含真实深度区域有效性，也未替代完整 ROS 节点实机验收。
-
-## 2026-09-28 增加“开启遥控”语音别名
-
-- Foxglove 实测 ASR 输出为“开启遥控”，解析器原先未收录，现加入 `EXTERNAL` 授权别名；同时加入“遥控”。
-
-## 2026-09-28 修复首轮 ASR 失败后的持续监听恢复
-
-- 持续会话首轮 ASR 若因能量阈值或网络错误失败，不会发布 `/voice/asr_text`，原路由器无法安排下一轮监听。
-- 路由器现订阅 `/voice/asr_state`，持续会话中检测到 ASR 回到 `IDLE` 即重新排队监听，识别失败后也能恢复。
-- 本机语法检查通过，待 Jetson 重编译和连续会话验收。
-
-## 2026-09-28 增加持续监听保活
-
-- 现场持续会话只有开启日志、没有后续 ASR 事件；在状态回调之外增加约 1 秒低频监听保活。
-- ASR 忙时服务请求会被安全拒绝，空闲时自动接收下一轮；不改变速度、授权和停车保护。
-
-## 2026-09-28 当前跟随逻辑部署
-
-- 将人体跟随优化涉及的 `yolo_person_tracker`（检测框短暂保持、ID 近邻重捕获、深度多区域投票/小孔洞修复/平滑、0.25 秒有界位置保持）和 `perception_bringup` 启动参数部署到 Jetson `/home/wheeltec/ROSCAR-current`；远端源码与本地 SHA-256 一致。
-- 远端 `yolo_person_tracker` 与 `perception_bringup` 原生 Humble 构建成功；远端跟踪器单元测试 22 项全部通过。在线 B 路线已由现有 supervisor 重新拉起，读回 `position_hold_s=0.25`、`depth_smoothing_alpha=0.35`、`depth_min_fraction=0.08`；`/cmd_vel` 抽样为零速，本轮未执行运动测试。
-- 远端另有 `/home/wheeltec/ROSCAR` 开发副本同步并完成依赖构建；实际运行副本为 `/home/wheeltec/ROSCAR-current`。清理了错误复制到 `ros2_ws/src/` 顶层的临时 Python 文件。最小审查：`git diff --check` 通过。
-
-
-## 2026-09-29 YOLO 三维卡尔曼与 TensorRT
-
-- 用户确认仅修改 YOLO 三维位置滤波与 TensorRT；随后授权上车测试，要求与正在修改语音的朋友隔离。未修改语音源码或配置。板端代码验证使用 `/home/wheeltec/roscar-yolo-validation-20260929`，不覆盖正式源码，不再重启整套服务。
-- `DepthTrackFilter` 替换为 XYZ+速度六维恒速卡尔曼，按实际观测间隔预测、Joseph 协方差更新；深度统计/异常值处理和 ByteTrack 框滤波保留。支持缺测有界预测、跳变/时钟倒退/长间断重置、过期轨迹清理。初始测量标准差 0.08m、加速度标准差 2m/s² 尚未实车标定。
-- 修正发布测量年龄覆盖问题：计入观测到发布的延迟以及预测距离上次真实测量的间隔；发布时再次检查预测窗口，不让定时器刷新旧测量有效期。
-- 本地 B 管理入口默认 `yolo26s-fp16.engine`，缺引擎报错；显式 MODEL_PATH 可选 PyTorch 基线。导出器增加跨进程锁和 4GiB 剩余磁盘检查。新增只读采帧、同帧后端基准和独立命名空间真实 RGB-D 验证脚本。
-- 已检查 Jetson 约 98GiB 可用空间；复用 CUDA torch 2.6.0-rc1、TensorRT 10.3.0、Ultralytics 8.4.156，仅在 `.venv-yolo` 补 ONNX 1.17.0/protobuf 3.20.3。pip check 同时报告已有系统可见依赖不一致（系统 OpenCV 无 opencv-python 分发记录、jupyter/anyio、pipx/argcomplete），未为此替换系统环境或语音依赖。
-- 板端开始验证前调用 `/control/disarm`；发现终止总入口会被 systemd 自动重启后，再次 disarm，并设 `/person_follower enabled=false`。用户后续限定只改本模块，本轮不再操作总服务。没有发送运动指令，也不自动恢复跟随。
-- 引擎初次构建时网络安装完成与重试重叠，短暂出现两个构建进程；已终止重复进程，并给导出器补互斥锁。初次构建日志含内存不足跳过 tactic，最终性能必须以实际加载/同帧测试为准，不根据 FP16 标签宣称加速。
-- 本机 Linux ARM64 Humble 8 个相关包构建通过；26 项逻辑测试、真实 ROS 合成 RGB-D（含预测总年龄与超时失效）及并发测试通过，日志 `artifacts/kalman-20260929.log`。Jetson 隔离目录两包原生构建与同组测试通过；并发测试退出时出现一条 rclpy Destroyable 清理警告，进程退出码为 0，断言通过，不据此宣称无任何运行告警。
-
-- 2026-09-29 上车 B 隔离验证：在 `/home/wheeltec/roscar-yolo-validation-20260929` 使用独立 namespace `/validation_yolo_20260929`，只启动真实 YOLO RGB-D 感知，不启动跟随/底盘，不修改语音。TensorRT FP16 engine 成功加载，60 秒无推理错误；收到 568 条检测消息，参数读回 `kalman_measurement_std_m=0.08`、`kalman_acceleration_std_mps2=2.0`。现场窗口无人，状态为 SEARCHING/NOT_READY/STALE，未产生有效人体坐标，不能视为真人跟踪或卡尔曼坐标验收。结果保留在远端隔离目录 `artifacts/live-kalman.json`。
-- 同一批 30 帧真实彩色图的后端对比：PyTorch 平均 35.508 ms、P95 40.058 ms；TensorRT 平均 25.653 ms、P95 28.273 ms；平均约 1.384 倍，检测数量一致率 1.0。画面无人，因此仅是推理/链路性能对比，不是人体识别准确率验收。结果保留在远端隔离目录 `artifacts/backend-comparison.json`。
-- 首次 TensorRT 构建生成约 23 MB engine，Jetson 日志显示引擎生成约 848 秒、加载成功；构建期间出现低可用内存跳过 tactic 的警告，但最终引擎通过加载和空图 smoke test。正式运行仍未切换到该 engine；需后续有人在画面前时重复独立验证，并再评估内存与长期稳定性。
-- 2026-09-29 真人 TensorRT+卡尔曼只读验收：用户现场对准人体后，在隔离目录与 `/validation_yolo_20260929` namespace 运行 45 秒，未启动跟随/底盘，语音不变。收到 152 条检测消息，状态 TRACKING 414 次，产生 414 条有效 XYZ；Z 范围 0.854–0.891m，中位数约 0.882m。`measurement_age_s` 最大约 0.494s，表明卡尔曼短时预测未刷新真实测量年龄；节点 error 为空。结果 `/home/wheeltec/roscar-yolo-validation-20260929/artifacts/live-kalman-person.json`。TensorRT 加载有跨设备 plan 通用性警告，当前 Jetson 上加载和推理成功；正式部署应继续使用本机生成的 engine。
+- 在 V5 (`8510805`) 上定点修改，未应用基于旧版本的 stash：DeepSeek 不再向模型提供 `buzz`，结构化调用白名单也拒绝 `buzz`；语音路由不再订阅旧 `/voice/tool_call` 蜂鸣器 JSON 或接受 `BUZZ`，也不创建蜂鸣器发布者。
+- 语音启动文件与配置删除蜂鸣器参数及 GPIO 节点，`run_voice_assistant.sh` 不再传 `enable_buzzer`。V5 的中文命令、本地规则、结构化运动/状态工具、讯飞 ASR/TTS 和唤醒应答保持原链路。
+- 保留独立 `buzzer_gpio_node.py`、`parse_buzz_command` 及对应测试，便于以后单独评估硬件；更新项目和语音文档。当前版本标记为 V5.1。
+- 本机结构检查通过（13 包）；语音相关纯逻辑测试 `21 passed, 2 skipped`，新增的两项路由行为测试因当前 WSL 缺少 ROS 2 `rclpy` 而跳过。Python 编译、语音 YAML 解析、Bash 语法及定点 `git diff --check` 均通过；未在 Jetson 部署或实车执行。

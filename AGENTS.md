@@ -126,3 +126,4 @@
 - 2026-09-20 用户授权全部修复审查问题：R1–R5 和两项串口遗留问题已本地修复。跟随拒绝模拟/未知来源与过期发布/观测，保留 A 未知传感器时间戳契约；GPIO 禁用/退出收尾改为定时器；A 服务安装后统一由 systemd 管理，手动生命周期加 flock；机械臂输入检查及 10 字节发送、安全帧尾均修正。8 主动包编译、48 逻辑测试和新增控制/GPIO/生命周期回归、既有 TF/并发/A/B/路由回归通过。另补齐容器依赖并首次在本机独立副本编译串口 3 包，通过真实回调串口替身 ASan/UBSan 检查；COLCON_IGNORE 保留，扩展固件支持未确认，无部署/实机验证。SOURCE_MANIFEST 原哈希保留，local_modifications 记录本地补丁哈希。
 
 - 对外 ROS 2 入口为 `ros2 launch roscar_api api.launch.py`，默认 IDLE/运动关闭/不启硬件。接口手册 `docs/ROS接口使用文档.md`；外部速度只发 `/chassis/cmd_vel`，模式服务 `/control/set_mode`，由唯一 motion_guard 输出 `/cmd_vel`。禁止与已有包含 guard 的组合入口重复启动。检测列表沿用同步 RGB-D，未跟踪框不参与目标锁定。
+- V5.1 语音入口保留 V5 的本地控制与 DeepSeek 结构化控制工具，但不再声明或接受蜂鸣器动作；`voice_assistant.launch.py` 不启动蜂鸣器适配节点。独立 `voice_command_router` 包内的蜂鸣器解析与 GPIO 源码保留，历史条目中关于语音蜂鸣器的描述不代表当前入口行为。

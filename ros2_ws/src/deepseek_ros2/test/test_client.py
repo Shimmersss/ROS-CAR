@@ -20,6 +20,6 @@ def test_extract_assistant_text_rejects_malformed_response():
 def test_extract_tool_call_message():
     payload = {'choices': [{'message': {
         'content': None,
-        'tool_calls': [{'function': {'name': 'buzz', 'arguments': '{}'}}],
+        'tool_calls': [{'function': {'name': 'query_status', 'arguments': '{"query":"status"}'}}],
     }}]}
-    assert extract_assistant_message(payload)['tool_calls'][0]['function']['name'] == 'buzz'
+    assert extract_assistant_message(payload)['tool_calls'][0]['function']['name'] == 'query_status'
