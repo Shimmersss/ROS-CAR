@@ -902,3 +902,20 @@
 - 将人体跟随优化涉及的 `yolo_person_tracker`（检测框短暂保持、ID 近邻重捕获、深度多区域投票/小孔洞修复/平滑、0.25 秒有界位置保持）和 `perception_bringup` 启动参数部署到 Jetson `/home/wheeltec/ROSCAR-current`；远端源码与本地 SHA-256 一致。
 - 远端 `yolo_person_tracker` 与 `perception_bringup` 原生 Humble 构建成功；远端跟踪器单元测试 22 项全部通过。在线 B 路线已由现有 supervisor 重新拉起，读回 `position_hold_s=0.25`、`depth_smoothing_alpha=0.35`、`depth_min_fraction=0.08`；`/cmd_vel` 抽样为零速，本轮未执行运动测试。
 - 远端另有 `/home/wheeltec/ROSCAR` 开发副本同步并完成依赖构建；实际运行副本为 `/home/wheeltec/ROSCAR-current`。清理了错误复制到 `ros2_ws/src/` 顶层的临时 Python 文件。最小审查：`git diff --check` 通过。
+
+
+## 2026-09-29 YOLO 三维卡尔曼与 TensorRT
+
+- 用户确认仅修改 YOLO 三维位置滤波与 TensorRT；随后授权上车测试，要求与正在修改语音的朋友隔离。未修改语音源码或配置。板端代码验证使用 `/home/wheeltec/roscar-yolo-validation-20260929`，不覆盖正式源码，不再重启整套服务。
+- `DepthTrackFilter` 替换为 XYZ+速度六维恒速卡尔曼，按实际观测间隔预测、Joseph 协方差更新；深度统计/异常值处理和 ByteTrack 框滤波保留。支持缺测有界预测、跳变/时钟倒退/长间断重置、过期轨迹清理。初始测量标准差 0.08m、加速度标准差 2m/s² 尚未实车标定。
+- 修正发布测量年龄覆盖问题：计入观测到发布的延迟以及预测距离上次真实测量的间隔；发布时再次检查预测窗口，不让定时器刷新旧测量有效期。
+- 本地 B 管理入口默认 `yolo26s-fp16.engine`，缺引擎报错；显式 MODEL_PATH 可选 PyTorch 基线。导出器增加跨进程锁和 4GiB 剩余磁盘检查。新增只读采帧、同帧后端基准和独立命名空间真实 RGB-D 验证脚本。
+- 已检查 Jetson 约 98GiB 可用空间；复用 CUDA torch 2.6.0-rc1、TensorRT 10.3.0、Ultralytics 8.4.156，仅在 `.venv-yolo` 补 ONNX 1.17.0/protobuf 3.20.3。pip check 同时报告已有系统可见依赖不一致（系统 OpenCV 无 opencv-python 分发记录、jupyter/anyio、pipx/argcomplete），未为此替换系统环境或语音依赖。
+- 板端开始验证前调用 `/control/disarm`；发现终止总入口会被 systemd 自动重启后，再次 disarm，并设 `/person_follower enabled=false`。用户后续限定只改本模块，本轮不再操作总服务。没有发送运动指令，也不自动恢复跟随。
+- 引擎初次构建时网络安装完成与重试重叠，短暂出现两个构建进程；已终止重复进程，并给导出器补互斥锁。初次构建日志含内存不足跳过 tactic，最终性能必须以实际加载/同帧测试为准，不根据 FP16 标签宣称加速。
+- 本机 Linux ARM64 Humble 8 个相关包构建通过；26 项逻辑测试、真实 ROS 合成 RGB-D（含预测总年龄与超时失效）及并发测试通过，日志 `artifacts/kalman-20260929.log`。Jetson 隔离目录两包原生构建与同组测试通过；并发测试退出时出现一条 rclpy Destroyable 清理警告，进程退出码为 0，断言通过，不据此宣称无任何运行告警。
+
+- 2026-09-29 上车 B 隔离验证：在 `/home/wheeltec/roscar-yolo-validation-20260929` 使用独立 namespace `/validation_yolo_20260929`，只启动真实 YOLO RGB-D 感知，不启动跟随/底盘，不修改语音。TensorRT FP16 engine 成功加载，60 秒无推理错误；收到 568 条检测消息，参数读回 `kalman_measurement_std_m=0.08`、`kalman_acceleration_std_mps2=2.0`。现场窗口无人，状态为 SEARCHING/NOT_READY/STALE，未产生有效人体坐标，不能视为真人跟踪或卡尔曼坐标验收。结果保留在远端隔离目录 `artifacts/live-kalman.json`。
+- 同一批 30 帧真实彩色图的后端对比：PyTorch 平均 35.508 ms、P95 40.058 ms；TensorRT 平均 25.653 ms、P95 28.273 ms；平均约 1.384 倍，检测数量一致率 1.0。画面无人，因此仅是推理/链路性能对比，不是人体识别准确率验收。结果保留在远端隔离目录 `artifacts/backend-comparison.json`。
+- 首次 TensorRT 构建生成约 23 MB engine，Jetson 日志显示引擎生成约 848 秒、加载成功；构建期间出现低可用内存跳过 tactic 的警告，但最终引擎通过加载和空图 smoke test。正式运行仍未切换到该 engine；需后续有人在画面前时重复独立验证，并再评估内存与长期稳定性。
+- 2026-09-29 真人 TensorRT+卡尔曼只读验收：用户现场对准人体后，在隔离目录与 `/validation_yolo_20260929` namespace 运行 45 秒，未启动跟随/底盘，语音不变。收到 152 条检测消息，状态 TRACKING 414 次，产生 414 条有效 XYZ；Z 范围 0.854–0.891m，中位数约 0.882m。`measurement_age_s` 最大约 0.494s，表明卡尔曼短时预测未刷新真实测量年龄；节点 error 为空。结果 `/home/wheeltec/roscar-yolo-validation-20260929/artifacts/live-kalman-person.json`。TensorRT 加载有跨设备 plan 通用性警告，当前 Jetson 上加载和推理成功；正式部署应继续使用本机生成的 engine。

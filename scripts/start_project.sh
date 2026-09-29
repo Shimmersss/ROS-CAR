@@ -14,7 +14,7 @@ WITH_CHASSIS="${WITH_CHASSIS:-false}"
 export WITH_RADAR="${WITH_RADAR:-false}"
 WITH_FOLLOWER="${WITH_FOLLOWER:-false}"
 MOTION_ENABLED="${MOTION_ENABLED:-false}"
-MODEL_PATH="${MODEL_PATH:-$ROOT/models/weights/yolo26s.pt}"
+MODEL_PATH="${MODEL_PATH:-$ROOT/models/weights/yolo26s-fp16.engine}"
 YOLO_PYTHON="${YOLO_PYTHON:-$ROOT/.venv-yolo/bin/python3}"
 case "${1:-}" in
   --help|-h)

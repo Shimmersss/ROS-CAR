@@ -50,7 +50,8 @@ class TrackerNode(Node):
             'track_hold_s': .8,
             'reacquire_s': 1.2,
             'reacquire_center_fraction': .25,
-            'depth_smoothing_alpha': .35,
+            'kalman_measurement_std_m': .08,
+            'kalman_acceleration_std_mps2': 2.0,
             'depth_jump_reset_m': .8,
             'depth_min_fraction': .08,
             'position_hold_s': .25,
@@ -69,9 +70,9 @@ class TrackerNode(Node):
         if (not math.isfinite(self.cfg['reacquire_center_fraction'])
                 or self.cfg['reacquire_center_fraction'] <= 0):
             raise ValueError('reacquire_center_fraction must be finite and positive')
-        if (not math.isfinite(self.cfg['depth_smoothing_alpha'])
-                or not 0 < self.cfg['depth_smoothing_alpha'] <= 1):
-            raise ValueError('depth_smoothing_alpha must be finite and in (0, 1]')
+        for name in ('kalman_measurement_std_m', 'kalman_acceleration_std_mps2'):
+            if not math.isfinite(self.cfg[name]) or self.cfg[name] <= 0:
+                raise ValueError(f'{name} must be finite and positive')
         if (not math.isfinite(self.cfg['depth_jump_reset_m'])
                 or self.cfg['depth_jump_reset_m'] <= 0):
             raise ValueError('depth_jump_reset_m must be finite and positive')
@@ -208,19 +209,25 @@ class TrackerNode(Node):
         if reset:
             self.backend.reset()
         detections = self.backend.infer(image)
+        observation_stamp = stamp_seconds(color.header.stamp)
+        self.depth_filters = {key: filt for key, filt in self.depth_filters.items()
+                              if filt.stamp is not None
+                              and 0 <= observation_stamp-filt.stamp <= self.cfg['max_age_s']}
         positions = {}
         position_ages = {}
         position_stamps = {}
         held_position_ids = set()
         if self.cfg['depth_registered']:
-            observation_stamp = stamp_seconds(color.header.stamp)
             for d in detections:
                 if d.track_id is None:
                     continue
                 filt = self.depth_filters.setdefault(
                     d.track_id,
-                    DepthTrackFilter(self.cfg['depth_smoothing_alpha'],
-                                      self.cfg['depth_jump_reset_m']))
+                    DepthTrackFilter(
+                        measurement_std_m=self.cfg['kalman_measurement_std_m'],
+                        acceleration_std_mps2=self.cfg['kalman_acceleration_std_mps2'],
+                        jump_reset_m=self.cfg['depth_jump_reset_m'],
+                        reset_gap_s=self.cfg['max_age_s']))
                 measured = measure(metres, d.box, intrinsics,
                                    min_fraction=self.cfg['depth_min_fraction'])
                 xyz = filt.update(measured, observation_stamp)
@@ -307,6 +314,9 @@ class TrackerNode(Node):
                 msg.confidence = chosen.confidence
                 xyz = self.positions.get(chosen.track_id)
                 held = chosen.track_id in self.held_position_ids
+                measurement_age = msg.measurement_age_s + self.position_ages.get(chosen.track_id, 0.0)
+                if held and not 0 <= measurement_age <= self.cfg['position_hold_s']:
+                    xyz = None
                 if xyz is None:
                     msg.detail = ('Tracked; waiting for current body-part depth'
                                   if chosen not in self.selection.candidates
@@ -328,7 +338,7 @@ class TrackerNode(Node):
                     msg.position.x, msg.position.y, msg.position.z = xyz
                     msg.horizontal_distance_m = math.hypot(xyz[0], xyz[2])
                     msg.bearing_rad = math.atan2(xyz[0], xyz[2])
-                    msg.measurement_age_s = self.position_ages.get(chosen.track_id, 0.0)
+                    msg.measurement_age_s = measurement_age
         self.pub.publish(msg)
         marker = Marker()
         marker.header = copy.deepcopy(msg.header)
