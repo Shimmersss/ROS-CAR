@@ -988,3 +988,4 @@
 - 本地 29 项相关测试通过；Python、Shell 语法与差异检查通过。Jetson 隔离工作区两包原生 Humble 构建成功，ROS 域 184 使用模拟 `arecord` 连续重放两句真实播报，每句均完整识别，解码约 1.8–2.0 秒；ROS 域 185 使用假的 guard 服务验证自动授权、重复唤醒、停止后重授权、急停、会话外拒绝与 `ARMED` 未确认时不发非零速度。
 - 正式项目备份为 `/home/wheeltec/ROSCAR-backups/continuous-voice-20260929-192944/before.tar.gz`，SHA-256 `460409fba541dd5b05e4af8633080dfd27c72089a4086b221f3b93c0fdcaeb34`。源码同步后在正式根目录构建两包并由 systemd 重启加载；核实正式节点为 `continuous_asr_node`，参数 `vad_silence_s=0.7`、`session_timeout_s=30`、`legacy_listen_polling=false`，服务 active，`/voice/session_active=false`、`/cmd_vel` 零速。一次误用 `ros2_ws/install` 构建未被正式入口读取，发现后在根目录 `install` 正确重建。隔离测试残留的两个进程组已清理，可用内存恢复；正式切换后快照约 2.8 GiB 可用、733 MiB swap 已用。
 - 本轮未发布实际运动指令；真人麦克风、嘈杂环境、实体底盘运动与长期稳定性仍待用户现场验收。
+- 车载网络恢复后补传旧 ASR 唤醒归属和“识别中刷新会话时限”修正，在正式根目录重新构建 `voice_command_router`、`offline_voice`；隔离 ROS 域 185 假 guard 测试新增 0.5 秒会话超时场景并通过。重启正式守护服务后读回 `continuous_asr_node` 已加载、会话未激活、`/cmd_vel` 为零，约 2.4 GiB 内存可用、19 MiB swap 已用。尚未进行真人语音与实车动作验收。
