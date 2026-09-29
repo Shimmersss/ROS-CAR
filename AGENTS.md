@@ -3,6 +3,12 @@
 1. 每次项目更新后更新 WORKLOG.md，并做与改动范围相称的最小审查；仅在长期规则或项目入口变化时更新 AGENTS.md，避免堆积历史日志。
 2. 缺少必要环境时主动补齐；不得将静态检查描述为编译通过或实机验证。
 
+## B 路线当前入口约定
+
+- B 管理入口默认 `models/weights/yolo26s-fp16.engine`，由目标 Jetson 导出；缺文件必须报错，不静默回退。显式 `MODEL_PATH=.../yolo26s.pt` 可做基线对比。
+- YOLO 三维位置使用独立恒速卡尔曼；`kalman_measurement_std_m` / `kalman_acceleration_std_mps2` 替代 `depth_smoothing_alpha`。预测必须保留真实测量年龄和超时失效。
+- 与语音并行协作时只改 YOLO 相关文件，不重启整套服务；板端验证优先使用隔离目录和独立命名空间。
+
 ## 当前上下文（2026-09-14）
 
 - 目标：室内人体跟随小车，计划使用 Orin Nano Super 8GB，通过 Mac 上的 Foxglove 和 SSH 调试。

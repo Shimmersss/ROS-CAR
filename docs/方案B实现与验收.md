@@ -39,7 +39,7 @@
 
 取检测框横向 30%–70%、纵向 25%–60% 的中央躯干区域。保留 0.2–8 米的有限深度，至少 12 像素且有效比例不低于 30%。使用中位数 Z，四分位距超过 max(0.25 米, 0.2Z) 时拒绝；从接近中位深度的像素计算代表像素，用 P 中的 fx/fy/cx/cy 反投影。
 
-这个位置是躯干区域代表点，既非脚点也非检测框中心。当前不加额外位置卡尔曼或平滑；ByteTrack 的框卡尔曼不能视为 3D 位置滤波。后续用固定距离与移动实验评估抖动后再决定。
+这个位置是躯干区域代表点，既非脚点也非检测框中心。当前对每个 ByteTrack ID 的三维位置使用恒速卡尔曼；ByteTrack 的框卡尔曼独立保留。深度区域统计与异常值剔除先生成测量，再进行时间滤波。
 
 | 状态 | 条件 |
 |---|---|
@@ -199,3 +199,28 @@ Linux ARM64 Humble 8 包编译完成（7.26 秒），21 项 A、11 项 B、14 �
 ## 2026-09-20 TF / 并发兼容回归
 
 8 包 Linux ARM64 Humble 编译（7.28 秒）、48 项逻辑测试、TF 专项、阻塞推理并发专项和 A/B/demo/非法路由回归通过。未标定兼容测试明确断言原光学 TRACKING、2 m 位置、检测图和 Marker ADD 均正常，而新增 base 位置无效、安装 TF 广播未启用。日志 `artifacts/route-b-tf-concurrency-final.log`。这证明合成条件下的接口隔离与状态行为，不替代实机安装标定和性能复验。
+
+
+## 2026-09-29：三维卡尔曼与 TensorRT 入口
+
+- 三维状态为 `[x,y,z,vx,vy,vz]`，按彩色观测时间的实际间隔预测，XYZ 测量更新；Joseph 形式更新协方差。速度属于相机光学坐标系的相对速度，不是 odom 世界速度。小车急转时恒速假设可能失效，需用移动实测调整过程噪声。
+- `kalman_measurement_std_m=0.08` 为位置测量标准差，`kalman_acceleration_std_mps2=2.0` 为过程加速度标准差；这两个初始值未经过实车噪声标定。删除旧 `depth_smoothing_alpha` 参数，部署配置应同步迁移。`depth_jump_reset_m=0.8` 保留为大跳变重初始化阈值，不作为异常深度剔除的替代。
+- 换轨迹、流 epoch/标定变化、时间倒退或超过 `max_age_s` 的观测间断清空/重建对应状态；过期 ID 定期清理。换 ID 不继承旧 ID 的速度。
+- 深度暂缺时 `position_hold_s=0.25` 窗口内改为卡尔曼预测；预测不改写最后真实测量时间，`measurement_age_s` 包含到发布时的总年龄，发布时再次检查窗口，超过窗口失效。下游测量年龄、请求超时和停车保护保持生效。
+- `start_project.sh` 与 `run_b_radar_foxglove.sh` 默认模型改为本板构建的 `models/weights/yolo26s-fp16.engine`；缺引擎明确失败，无静默 PyTorch 回退。需要对比时显式 `MODEL_PATH=.../yolo26s.pt`。底层 ROS launch 继续要求明确传入模型路径。
+- 导出沿用 `scripts/export_yolo26_engine.py --execute`，保留固定版本、哈希、平台与 CUDA 校验。`scripts/benchmark_yolo_backends.py` 用相同 NPZ `bgr` 帧比较两个后端，预热后 CUDA 同步计时，报告均值、P95、检测数和框；该指标包含预处理/后处理/ByteTrack，不代表 ROS 端到端延迟或跟随实车验收。
+
+
+隔离验证命令（只订阅相机，输出到独立命名空间，不含控制节点）：
+
+```bash
+# 已 source Humble 和验证工作区；沿用设备上的 CUDA Python 环境
+ROS_DOMAIN_ID=182 python3 scripts/capture_yolo_benchmark.py --output artifacts/camera-frames.npz
+.venv-yolo/bin/python scripts/benchmark_yolo_backends.py \
+  --frames artifacts/camera-frames.npz --pt models/weights/yolo26s.pt \
+  --engine models/weights/yolo26s-fp16.engine --output artifacts/backend-comparison.json
+ROS_DOMAIN_ID=182 .venv-yolo/bin/python scripts/test_yolo_live_readonly.py \
+  --model models/weights/yolo26s-fp16.engine --output artifacts/live-kalman.json
+```
+
+最后一条使用现有已确认配准的 `/camera/color/image_raw`、`/camera/depth/image_raw`、`/camera/color/camera_info`；只适用于当前相机配置，不能用脚本中的 `depth_registered=true` 代替实际配准验证。命名空间为 `/validation_yolo_20260929`，与正式目标话题分开。

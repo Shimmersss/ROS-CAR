@@ -40,7 +40,10 @@ def main():
     rclpy.init()
     backend = FakeBackend()
     node = TrackerNode(backend=backend, parameter_overrides=[
-        Parameter('depth_registered', value=True), Parameter('max_age_s', value=1.0)])
+        Parameter('depth_registered', value=True), Parameter('max_age_s', value=1.0),
+        # This fixture checks immediate loss; continuity is covered by state/depth tests.
+        Parameter('track_hold_s', value=0.0), Parameter('reacquire_s', value=0.0),
+        Parameter('position_hold_s', value=0.0)])
     executor = SingleThreadedExecutor()
     executor.add_node(node)
     probe = InputProbe(node.cfg['color_topic'], node.cfg['depth_topic'],
@@ -127,7 +130,17 @@ def main():
         assert (images[-1].width, images[-1].height) == (50, 50)
         assert states[-1].observation_stamp.sec > 0
         assert not states[-1].is_simulated  # Injected test backend; never a deployable mode.
-        assert abs(send('32FC1',1.5).position.z-1.5) < 1e-5
+        # A fresh metre-encoded sample updates the estimate, rather than bypassing Kalman.
+        filtered = send('32FC1', 1.5)
+        assert filtered.position_valid and 1.5 <= filtered.position.z < 2.
+        assert 0 < filtered.measurement_age_s < 1.0
+        # Exercise prediction through the real ROS node, retaining real measurement age.
+        node.cfg['position_hold_s'] = .55
+        predicted = send(value=0)
+        assert predicted.position_valid and 0 < predicted.measurement_age_s <= .55
+        expired = send(value=0)
+        assert not expired.position_valid
+        node.cfg['position_hold_s'] = 0.0
         backend.detections = [Detection(8,(10,5,90,95),.9)]
         assert send().status == TargetState.LOST
         assert states[-1].target_id == '0:7' and not states[-1].position_valid

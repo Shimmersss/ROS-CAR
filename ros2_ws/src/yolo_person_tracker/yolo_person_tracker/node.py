@@ -47,11 +47,14 @@ class TrackerNode(Node):
             'depth_registered': False, 'sync_slop_s': .06, 'max_age_s': .5,
             'visualization_fps': 10.0, 'visualization_scale': 0.5,
             'auto_lock_single': False,
-            'track_hold_s': .35,
-            'reacquire_s': .8,
+            'track_hold_s': .8,
+            'reacquire_s': 1.2,
             'reacquire_center_fraction': .25,
-            'depth_smoothing_alpha': .35,
+            'kalman_measurement_std_m': .08,
+            'kalman_acceleration_std_mps2': 2.0,
             'depth_jump_reset_m': .8,
+            'depth_min_fraction': .08,
+            'position_hold_s': .25,
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -67,12 +70,17 @@ class TrackerNode(Node):
         if (not math.isfinite(self.cfg['reacquire_center_fraction'])
                 or self.cfg['reacquire_center_fraction'] <= 0):
             raise ValueError('reacquire_center_fraction must be finite and positive')
-        if (not math.isfinite(self.cfg['depth_smoothing_alpha'])
-                or not 0 < self.cfg['depth_smoothing_alpha'] <= 1):
-            raise ValueError('depth_smoothing_alpha must be finite and in (0, 1]')
+        for name in ('kalman_measurement_std_m', 'kalman_acceleration_std_mps2'):
+            if not math.isfinite(self.cfg[name]) or self.cfg[name] <= 0:
+                raise ValueError(f'{name} must be finite and positive')
         if (not math.isfinite(self.cfg['depth_jump_reset_m'])
                 or self.cfg['depth_jump_reset_m'] <= 0):
             raise ValueError('depth_jump_reset_m must be finite and positive')
+        if (not math.isfinite(self.cfg['depth_min_fraction'])
+                or not 0 < self.cfg['depth_min_fraction'] <= 1):
+            raise ValueError('depth_min_fraction must be finite and in (0, 1]')
+        if not math.isfinite(self.cfg['position_hold_s']) or self.cfg['position_hold_s'] < 0:
+            raise ValueError('position_hold_s must be finite and non-negative')
         if (not math.isfinite(self.cfg['visualization_fps'])
                 or not 0 <= self.cfg['visualization_fps'] <= 30):
             raise ValueError('visualization_fps must be finite and in [0, 30]')
@@ -83,6 +91,9 @@ class TrackerNode(Node):
         self.input_group = MutuallyExclusiveCallbackGroup()
         self.state_group = MutuallyExclusiveCallbackGroup()
         self.positions = {}
+        self.position_ages = {}
+        self.position_stamps = {}
+        self.held_position_ids = set()
         self.depth_filters = {}
         self.bridge = CvBridge()
         self.selection = Selection(
@@ -198,20 +209,40 @@ class TrackerNode(Node):
         if reset:
             self.backend.reset()
         detections = self.backend.infer(image)
+        observation_stamp = stamp_seconds(color.header.stamp)
+        self.depth_filters = {key: filt for key, filt in self.depth_filters.items()
+                              if filt.stamp is not None
+                              and 0 <= observation_stamp-filt.stamp <= self.cfg['max_age_s']}
         positions = {}
+        position_ages = {}
+        position_stamps = {}
+        held_position_ids = set()
         if self.cfg['depth_registered']:
-            observation_stamp = stamp_seconds(color.header.stamp)
             for d in detections:
                 if d.track_id is None:
                     continue
                 filt = self.depth_filters.setdefault(
                     d.track_id,
-                    DepthTrackFilter(self.cfg['depth_smoothing_alpha'],
-                                      self.cfg['depth_jump_reset_m']))
-                xyz = filt.update(measure(metres, d.box, intrinsics), observation_stamp)
+                    DepthTrackFilter(
+                        measurement_std_m=self.cfg['kalman_measurement_std_m'],
+                        acceleration_std_mps2=self.cfg['kalman_acceleration_std_mps2'],
+                        jump_reset_m=self.cfg['depth_jump_reset_m'],
+                        reset_gap_s=self.cfg['max_age_s']))
+                measured = measure(metres, d.box, intrinsics,
+                                   min_fraction=self.cfg['depth_min_fraction'])
+                xyz = filt.update(measured, observation_stamp)
                 if xyz is not None:
                     positions[d.track_id] = xyz
-        return (color, metres, received_at, intrinsics, image, depth), detections, positions
+                    position_ages[d.track_id] = 0.0
+                    position_stamps[d.track_id] = observation_stamp
+                elif measured is None:
+                    held = filt.hold(observation_stamp, self.cfg['position_hold_s'])
+                    if held is not None:
+                        positions[d.track_id], position_ages[d.track_id] = held
+                        position_stamps[d.track_id] = observation_stamp-position_ages[d.track_id]
+                        held_position_ids.add(d.track_id)
+        return ((color, metres, received_at, intrinsics, image, depth), detections,
+                positions, position_ages, position_stamps, held_position_ids)
 
     @serialized
     def tick(self):
@@ -225,7 +256,9 @@ class TrackerNode(Node):
             self.loading = None
         if self.future is not None and self.future.done():
             try:
-                self.snapshot, detections, self.positions = self.future.result()
+                (self.snapshot, detections, self.positions,
+                 self.position_ages, self.position_stamps,
+                 self.held_position_ids) = self.future.result()
                 self.selection.update(detections, self.snapshot[0].width, self.snapshot[2])
                 if self.fresh_snapshot():
                     if (self.cfg['auto_lock_single'] and self.cfg['depth_registered']
@@ -239,6 +272,9 @@ class TrackerNode(Node):
             except Exception as exc:
                 self.error = f'Inference failed: {type(exc).__name__}: {exc}'
                 self.snapshot = None
+                self.position_ages = {}
+                self.position_stamps = {}
+                self.held_position_ids = set()
                 self.selection.reset_stream()
                 self.last_key = ('failed',)
                 self.get_logger().error(self.error)
@@ -265,7 +301,6 @@ class TrackerNode(Node):
             color, depth, _, intrinsics, _, _ = self.snapshot
             msg.header.frame_id = color.header.frame_id
             msg.observation_stamp = copy.deepcopy(color.header.stamp)
-            msg.measurement_age_s = (stamp_seconds(msg.header.stamp)-stamp_seconds(color.header.stamp))
             chosen = self.selection.selected()
             if self.selection.target_id is None:
                 msg.status = TargetState.SEARCHING
@@ -278,17 +313,32 @@ class TrackerNode(Node):
                 msg.status = TargetState.TRACKING
                 msg.confidence = chosen.confidence
                 xyz = self.positions.get(chosen.track_id)
+                held = chosen.track_id in self.held_position_ids
+                measurement_age = msg.measurement_age_s + self.position_ages.get(chosen.track_id, 0.0)
+                if held and not 0 <= measurement_age <= self.cfg['position_hold_s']:
+                    xyz = None
                 if xyz is None:
                     msg.detail = ('Tracked; waiting for current body-part depth'
                                   if chosen not in self.selection.candidates
                                   else 'Tracked; body-part depth rejected')
                 else:
-                    msg.detail = 'Tracked; registered body-part depth'
+                    msg.detail = ('Tracked; short predicted depth hold'
+                                  if held else 'Tracked; registered body-part depth')
                 if xyz is not None:
+                    observation_stamp = self.position_stamps.get(chosen.track_id)
+                    if observation_stamp is not None and math.isfinite(observation_stamp):
+                        sec = int(observation_stamp)
+                        nanosec = int(round((observation_stamp-sec)*1e9))
+                        if nanosec >= 1000000000:
+                            sec += 1
+                            nanosec -= 1000000000
+                        msg.observation_stamp.sec = sec
+                        msg.observation_stamp.nanosec = nanosec
                     msg.position_valid = True
                     msg.position.x, msg.position.y, msg.position.z = xyz
                     msg.horizontal_distance_m = math.hypot(xyz[0], xyz[2])
                     msg.bearing_rad = math.atan2(xyz[0], xyz[2])
+                    msg.measurement_age_s = measurement_age
         self.pub.publish(msg)
         marker = Marker()
         marker.header = copy.deepcopy(msg.header)

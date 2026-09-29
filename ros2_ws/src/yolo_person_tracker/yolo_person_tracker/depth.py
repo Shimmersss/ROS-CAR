@@ -4,36 +4,77 @@ import numpy as np
 
 
 class DepthTrackFilter:
-    """Short-memory XYZ smoother for one ByteTrack identity."""
+    """Constant-velocity Kalman filter in the camera optical frame.
 
-    def __init__(self, alpha=.35, jump_reset_m=.8):
-        if not 0 < alpha <= 1:
-            raise ValueError('alpha must be in (0, 1]')
-        if jump_reset_m <= 0:
-            raise ValueError('jump_reset_m must be positive')
-        self.alpha = float(alpha)
-        self.jump_reset_m = float(jump_reset_m)
-        self.value = None
-        self.stamp = None
+    Velocity is relative to the moving camera, not world velocity. Missing
+    measurements permit only bounded prediction from the last real sample.
+    """
+
+    def __init__(self, measurement_std_m=.08, acceleration_std_mps2=2.,
+                 jump_reset_m=.8, reset_gap_s=.5):
+        for name, value in locals().copy().items():
+            if name != 'self' and (not math.isfinite(value) or value <= 0):
+                raise ValueError(f'{name} must be finite and positive')
+        self.measurement_variance = measurement_std_m**2
+        self.acceleration_variance = acceleration_std_mps2**2
+        self.jump_reset_m = jump_reset_m
+        self.reset_gap_s = reset_gap_s
+        self.reset()
 
     def reset(self):
-        self.value = None
-        self.stamp = None
+        self.state = None
+        self.covariance = None
+        self.stamp = None  # Last real measurement, never refreshed by prediction.
+
+    def _initialize(self, point, stamp):
+        self.state = np.concatenate((point, np.zeros(3)))
+        self.covariance = np.diag([self.measurement_variance]*3 + [1.]*3)
+        self.stamp = float(stamp)
+
+    def _predict(self, dt):
+        transition = np.eye(6)
+        transition[:3, 3:] = np.eye(3)*dt
+        acceleration = np.vstack((np.eye(3)*(.5*dt*dt), np.eye(3)*dt))
+        noise = acceleration @ acceleration.T * self.acceleration_variance
+        return (transition @ self.state,
+                transition @ self.covariance @ transition.T + noise)
 
     def update(self, xyz, stamp):
-        if xyz is None:
+        if xyz is None or not math.isfinite(stamp):
             return None
-        point = np.asarray(xyz, dtype=np.float32)
+        point = np.asarray(xyz, dtype=np.float64)
         if point.shape != (3,) or not np.isfinite(point).all():
             return None
-        if (self.value is None or self.stamp is None
-                or stamp < self.stamp
-                or float(np.linalg.norm(point-self.value)) > self.jump_reset_m):
-            self.value = point
+        if self.stamp is None or stamp <= self.stamp or stamp-self.stamp > self.reset_gap_s:
+            self._initialize(point, stamp)
         else:
-            self.value = self.alpha*point + (1-self.alpha)*self.value
-        self.stamp = float(stamp)
-        return tuple(float(v) for v in self.value)
+            predicted, covariance = self._predict(stamp-self.stamp)
+            innovation = point-predicted[:3]
+            if np.linalg.norm(innovation) > self.jump_reset_m:
+                self._initialize(point, stamp)
+            else:
+                noise = np.eye(3)*self.measurement_variance
+                gain = np.linalg.solve(covariance[:3, :3]+noise,
+                                       covariance[:, :3].T).T
+                self.state = predicted + gain @ innovation
+                # Joseph form preserves positive semidefiniteness under rounding.
+                residual = np.eye(6)
+                residual[:, :3] -= gain
+                self.covariance = residual @ covariance @ residual.T + gain @ noise @ gain.T
+                self.covariance = (self.covariance+self.covariance.T)*.5
+                self.stamp = float(stamp)
+        return tuple(float(v) for v in self.state[:3])
+
+    def hold(self, stamp, max_age):
+        """Predict without changing the last measurement or its age."""
+        if (self.stamp is None or not math.isfinite(stamp)
+                or not math.isfinite(max_age) or max_age < 0):
+            return None
+        age = float(stamp)-self.stamp
+        if age < 0 or age > min(max_age, self.reset_gap_s):
+            return None
+        state, _ = self._predict(age)
+        return tuple(float(v) for v in state[:3]), age
 
 
 def _measure_region(depth, bounds, intrinsics, min_fraction):
@@ -42,6 +83,23 @@ def _measure_region(depth, bounds, intrinsics, min_fraction):
     if roi.size == 0:
         return None
     valid = np.isfinite(roi) & (roi >= .2) & (roi <= 8.)
+    # Repair only small holes surrounded by real depth samples. Large missing
+    # regions remain invalid instead of being filled with a stale/background value.
+    if valid.sum() >= max(12, roi.size * .03) and not valid.all():
+        padded = np.pad(np.where(valid, roi, np.nan), 1, constant_values=np.nan)
+        neighbours = np.stack([
+            padded[:-2, :-2], padded[:-2, 1:-1], padded[:-2, 2:],
+            padded[1:-1, :-2], padded[1:-1, 1:-1], padded[1:-1, 2:],
+            padded[2:, :-2], padded[2:, 1:-1], padded[2:, 2:]], axis=0)
+        count = np.isfinite(neighbours).sum(axis=0)
+        fill = (~valid) & (count >= 5)
+        if fill.any():
+            filled = np.full(roi.shape, np.nan, dtype=np.float32)
+            has_neighbour = count > 0
+            filled[has_neighbour] = np.nanmedian(neighbours[:, has_neighbour], axis=0)
+            roi = roi.copy()
+            roi[fill] = filled[fill]
+            valid[fill] = np.isfinite(filled[fill])
     if valid.sum() < max(12, roi.size * min_fraction):
         return None
     values = roi[valid]
@@ -84,13 +142,25 @@ def measure(depth, box, intrinsics, min_fraction=0.15):
         (.05, .25, .45, .70),  # left side/arm
         (.55, .25, .95, .70),  # right side/arm
     )
-    best = None
+    results = []
     for ax1, ay1, ax2, ay2 in regions:
         left = max(0, int(x1 + ax1*bw)); right = min(w, int(x1 + ax2*bw))
         top = max(0, int(y1 + ay1*bh)); bottom = min(h, int(y1 + ay2*bh))
         result = _measure_region(depth, (left, top, right, bottom), intrinsics, min_fraction)
-        if result is not None and (best is None or
-                                   (result[0][2], -result[1]) <
-                                   (best[0][2], -best[1])):
-            best = result
-    return None if best is None else best[0]
+        if result is not None:
+            results.append(result)
+    if not results:
+        return None
+    # Prefer a depth cluster supported by several body parts. This rejects a
+    # single floor/wall patch even when it has more valid pixels than the person.
+    clusters = []
+    for result in results:
+        z = result[0][2]
+        cluster = [item for item in results
+                   if abs(item[0][2] - z) <= max(.15, .12*z)]
+        clusters.append(cluster)
+    cluster = min(clusters, key=lambda group: (np.median([item[0][2] for item in group]),
+                                                -len(group),
+                                                -sum(item[1] for item in group)))
+    points = np.asarray([item[0] for item in cluster], dtype=np.float32)
+    return tuple(float(v) for v in np.median(points, axis=0))
