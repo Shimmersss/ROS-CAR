@@ -4,6 +4,7 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import platform
@@ -12,23 +13,37 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPORT_ARGS = dict(format='engine', imgsz=640, batch=1, dynamic=False,
-                   quantize=16, nms=False, device=0, workspace=2,
+                   quantize=16, nms=False, device=0, workspace=1,
                    simplify=False, opset=17)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--execute', action='store_true', help='Actually build on target Jetson; otherwise print plan')
+    parser.add_argument('--workspace-gib', type=float, default=1.0,
+                        help='TensorRT workspace cap in GiB; reduce on shared-memory Jetson')
     args = parser.parse_args()
+    if not math.isfinite(args.workspace_gib) or args.workspace_gib <= 0:
+        parser.error('--workspace-gib must be finite and positive')
+    export_args = dict(EXPORT_ARGS, workspace=args.workspace_gib)
     source = ROOT/'models/weights/yolo26s.pt'
     target = ROOT/'models/weights/yolo26s-fp16.engine'
     report_path = target.with_suffix('.engine.json')
     if not args.execute:
-        print(json.dumps(dict(source=str(source), target=str(target), export_args=EXPORT_ARGS,
+        print(json.dumps(dict(source=str(source), target=str(target), export_args=export_args,
                               requires='Target Jetson, working CUDA torch, JetPack TensorRT 10.x, onnx; no remote actions'), indent=2))
         return
     if platform.system() != 'Linux' or platform.machine() != 'aarch64' or not Path('/etc/nv_tegra_release').is_file():
         raise SystemExit('Execute on the deployment Jetson; a Mac-built artifact is not a Jetson TensorRT engine.')
+    import fcntl
+    target.parent.mkdir(parents=True, exist_ok=True)
+    lock = (target.parent/'.yolo26-export.lock').open('w')
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise SystemExit('Another YOLO26 export is running; wait for its result.')
+    if shutil.disk_usage(target.parent).free < 4*1024**3:
+        raise SystemExit('Require at least 4 GiB free for export staging and engine.')
     if target.exists() or report_path.exists():
         raise SystemExit('Existing engine/report found; preserve or move it before rebuilding.')
     entry = next(item for item in json.loads((ROOT/'models/manifest.json').read_text())['models']
@@ -51,7 +66,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='yolo26-export-', dir=target.parent) as folder:
         staged = Path(folder)/'yolo26s-fp16.pt'
         shutil.copyfile(source, staged)
-        built = Path(YOLO(str(staged), task='detect').export(**EXPORT_ARGS))
+        built = Path(YOLO(str(staged), task='detect').export(**export_args))
         engine = YOLO(str(built), task='detect')
         engine.track(np.zeros((640,640,3), dtype=np.uint8), device=0, imgsz=640,
                      tracker='bytetrack.yaml', persist=True, classes=[0], conf=.1,
@@ -61,7 +76,7 @@ def main():
             raise RuntimeError('Engine lacks FP16 export metadata or end-to-end output')
         report = dict(created_utc=datetime.now(timezone.utc).isoformat(),
                       source_sha256=entry['sha256'], engine_sha256=hashlib.sha256(built.read_bytes()).hexdigest(),
-                      export_args=EXPORT_ARGS, input_binding_fp16=bool(engine.predictor.model.fp16),
+                      export_args=export_args, input_binding_fp16=bool(engine.predictor.model.fp16),
                       precision_note='FP16 builder enabled; input binding and some layers may remain FP32',
                       gpu=torch.cuda.get_device_name(0),
                       gpu_capability=list(torch.cuda.get_device_capability(0)),

@@ -4,11 +4,48 @@ from yolo_person_tracker.depth import DepthTrackFilter, measure
 
 
 class DepthTest(unittest.TestCase):
-    def test_temporal_filter_smooths_and_resets_large_jump(self):
-        f = DepthTrackFilter(alpha=.5, jump_reset_m=.8)
-        self.assertEqual(f.update((0., 0., 2.), 1.), (0., 0., 2.))
-        self.assertAlmostEqual(f.update((0., 0., 2.4), 2.)[2], 2.2, places=5)
-        self.assertEqual(f.update((0., 0., 4.), 3.), (0., 0., 4.))
+    def test_kalman_reduces_noise_and_tracks_velocity(self):
+        rng = np.random.default_rng(42)
+        f = DepthTrackFilter()
+        errors, raw = [], []
+        for i in range(180):
+            t = i*.05
+            truth = np.array([.12*t, -.03*t, 2.+.2*t])
+            point = truth+rng.normal(0, .08, 3)
+            estimate = np.array(f.update(point, t))
+            if i > 20:
+                errors.append(np.sum((estimate-truth)**2))
+                raw.append(np.sum((point-truth)**2))
+            self.assertGreaterEqual(np.linalg.eigvalsh(f.covariance).min(), -1e-12)
+        self.assertLess(np.mean(errors), np.mean(raw)*.7)
+        np.testing.assert_allclose(f.state[3:], [.12, -.03, .2], atol=.3)
+
+    def test_resets_jump_time_reversal_and_gap(self):
+        f = DepthTrackFilter()
+        for t, z in ((1., 2.), (1.1, 4.), (.5, 3.), (4., 5.)):
+            self.assertEqual(f.update((0., 0., z), t), (0., 0., z))
+            np.testing.assert_array_equal(f.state[3:], 0.)
+
+    def test_prediction_is_bounded_and_never_refreshes_measurement(self):
+        f = DepthTrackFilter()
+        for i in range(30):
+            f.update((i*.01, 0., 2.), i*.05)
+        before = f.state.copy()
+        stamp = f.stamp
+        predicted, age = f.hold(stamp+.2, .25)
+        self.assertGreater(predicted[0], before[0])
+        self.assertAlmostEqual(age, .2)
+        np.testing.assert_array_equal(f.state, before)
+        self.assertEqual(f.stamp, stamp)
+        self.assertIsNone(f.hold(stamp+.26, .25))
+        self.assertIsNone(f.update((0., 0., 2.), float('nan')))
+        self.assertEqual(f.stamp, stamp)
+
+    def test_invalid_parameters(self):
+        for key in ('measurement_std_m', 'acceleration_std_mps2', 'jump_reset_m', 'reset_gap_s'):
+            for value in (0., -1., float('nan'), float('inf')):
+                with self.assertRaises(ValueError):
+                    DepthTrackFilter(**{key: value})
 
     def test_temporal_filter_does_not_turn_invalid_into_position(self):
         f = DepthTrackFilter()

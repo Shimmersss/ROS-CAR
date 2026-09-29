@@ -4,45 +4,77 @@ import numpy as np
 
 
 class DepthTrackFilter:
-    """Short-memory XYZ smoother for one ByteTrack identity."""
+    """Constant-velocity Kalman filter in the camera optical frame.
 
-    def __init__(self, alpha=.35, jump_reset_m=.8):
-        if not 0 < alpha <= 1:
-            raise ValueError('alpha must be in (0, 1]')
-        if jump_reset_m <= 0:
-            raise ValueError('jump_reset_m must be positive')
-        self.alpha = float(alpha)
-        self.jump_reset_m = float(jump_reset_m)
-        self.value = None
-        self.stamp = None
+    Velocity is relative to the moving camera, not world velocity. Missing
+    measurements permit only bounded prediction from the last real sample.
+    """
+
+    def __init__(self, measurement_std_m=.08, acceleration_std_mps2=2.,
+                 jump_reset_m=.8, reset_gap_s=.5):
+        for name, value in locals().copy().items():
+            if name != 'self' and (not math.isfinite(value) or value <= 0):
+                raise ValueError(f'{name} must be finite and positive')
+        self.measurement_variance = measurement_std_m**2
+        self.acceleration_variance = acceleration_std_mps2**2
+        self.jump_reset_m = jump_reset_m
+        self.reset_gap_s = reset_gap_s
+        self.reset()
 
     def reset(self):
-        self.value = None
-        self.stamp = None
+        self.state = None
+        self.covariance = None
+        self.stamp = None  # Last real measurement, never refreshed by prediction.
+
+    def _initialize(self, point, stamp):
+        self.state = np.concatenate((point, np.zeros(3)))
+        self.covariance = np.diag([self.measurement_variance]*3 + [1.]*3)
+        self.stamp = float(stamp)
+
+    def _predict(self, dt):
+        transition = np.eye(6)
+        transition[:3, 3:] = np.eye(3)*dt
+        acceleration = np.vstack((np.eye(3)*(.5*dt*dt), np.eye(3)*dt))
+        noise = acceleration @ acceleration.T * self.acceleration_variance
+        return (transition @ self.state,
+                transition @ self.covariance @ transition.T + noise)
 
     def update(self, xyz, stamp):
-        if xyz is None:
+        if xyz is None or not math.isfinite(stamp):
             return None
-        point = np.asarray(xyz, dtype=np.float32)
+        point = np.asarray(xyz, dtype=np.float64)
         if point.shape != (3,) or not np.isfinite(point).all():
             return None
-        if (self.value is None or self.stamp is None
-                or stamp < self.stamp
-                or float(np.linalg.norm(point-self.value)) > self.jump_reset_m):
-            self.value = point
+        if self.stamp is None or stamp <= self.stamp or stamp-self.stamp > self.reset_gap_s:
+            self._initialize(point, stamp)
         else:
-            self.value = self.alpha*point + (1-self.alpha)*self.value
-        self.stamp = float(stamp)
-        return tuple(float(v) for v in self.value)
+            predicted, covariance = self._predict(stamp-self.stamp)
+            innovation = point-predicted[:3]
+            if np.linalg.norm(innovation) > self.jump_reset_m:
+                self._initialize(point, stamp)
+            else:
+                noise = np.eye(3)*self.measurement_variance
+                gain = np.linalg.solve(covariance[:3, :3]+noise,
+                                       covariance[:, :3].T).T
+                self.state = predicted + gain @ innovation
+                # Joseph form preserves positive semidefiniteness under rounding.
+                residual = np.eye(6)
+                residual[:, :3] -= gain
+                self.covariance = residual @ covariance @ residual.T + gain @ noise @ gain.T
+                self.covariance = (self.covariance+self.covariance.T)*.5
+                self.stamp = float(stamp)
+        return tuple(float(v) for v in self.state[:3])
 
     def hold(self, stamp, max_age):
-        """Return the last measured point for a bounded temporary gap."""
-        if self.value is None or self.stamp is None:
+        """Predict without changing the last measurement or its age."""
+        if (self.stamp is None or not math.isfinite(stamp)
+                or not math.isfinite(max_age) or max_age < 0):
             return None
-        age = float(stamp) - self.stamp
-        if age < 0 or age > max_age:
+        age = float(stamp)-self.stamp
+        if age < 0 or age > min(max_age, self.reset_gap_s):
             return None
-        return tuple(float(v) for v in self.value), age
+        state, _ = self._predict(age)
+        return tuple(float(v) for v in state[:3]), age
 
 
 def _measure_region(depth, bounds, intrinsics, min_fraction):
