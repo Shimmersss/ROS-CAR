@@ -12,8 +12,8 @@
     length_m: 0.5
     width_m: 0.4
     margin_m: 0.15
-    max_linear_mps: 0.15
-    max_reverse_mps: 0.15
+    max_linear_mps: 0.2
+    max_reverse_mps: 0.2
     max_angular_rps: 0.5
     reaction_s: 1.0
     deceleration_mps2: 0.3

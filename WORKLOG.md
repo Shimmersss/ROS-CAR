@@ -940,3 +940,43 @@
 - 首次 TensorRT 构建生成约 23 MB engine，Jetson 日志显示引擎生成约 848 秒、加载成功；构建期间出现低可用内存跳过 tactic 的警告，但最终引擎通过加载和空图 smoke test。正式运行仍未切换到该 engine；需后续有人在画面前时重复独立验证，并再评估内存与长期稳定性。
 - 2026-09-29 真人 TensorRT+卡尔曼只读验收：用户现场对准人体后，在隔离目录与 `/validation_yolo_20260929` namespace 运行 45 秒，未启动跟随/底盘，语音不变。收到 152 条检测消息，状态 TRACKING 414 次，产生 414 条有效 XYZ；Z 范围 0.854–0.891m，中位数约 0.882m。`measurement_age_s` 最大约 0.494s，表明卡尔曼短时预测未刷新真实测量年龄；节点 error 为空。结果 `/home/wheeltec/roscar-yolo-validation-20260929/artifacts/live-kalman-person.json`。TensorRT 加载有跨设备 plan 通用性警告，当前 Jetson 上加载和推理成功；正式部署应继续使用本机生成的 engine。
 
+## 2026-09-28：正式 ROS 域切换为离线语音
+
+- 用户授权上机替换当前 DeepSeek 语音流程。先在 Jetson `/home/wheeltec/ROSCAR-backups/voice-online-20260928-214514.tar.gz` 备份在线脚本、三个在线包源码和安装结果，再通过 Paramiko 同步本分支的 `offline_voice`、V5.1 路由/语音包及启动脚本到 `/home/wheeltec/ROSCAR-current`。
+- Jetson 正式工作区 `deepseek_ros2`、`voice_command_router`、`xfyun_speech`、`offline_voice` 四包构建成功；安装层检查确认聊天和路由实现不包含 `buzz`。项目总入口按原有 ROS 域 182、相机、跟随、底盘参数重启，语音后端改为 `VOICE_BACKEND=offline`，没有修改相机、跟随或底盘代码。
+- 当前正式语音节点为 `offline_asr`、`offline_chat`、`offline_tts`、`voice_command_router` 和唤醒串口；原 `deepseek_chat`、`xfyun_asr`、`xfyun_tts` 已停止。实测文本“请查询小车当前状态，只返回状态，不要运动”返回结构化 `QUERY_STATUS`，结果为 FOLLOW/STANDBY、11.32 V、无跟随目标，未发送运动命令；TTS 话题“离线语音测试”发布成功，节点无错误。
+- 切换后整车观察到约 1.8 GiB 可用内存、swap 使用约 49 MiB，Qwen3 1.7B 显示 100% GPU；未出现 OOM。真人说话识别、实际扬声器主观音质和运动口令仍需现场验收。若需回退，停止当前总入口并恢复备份，或将 `VOICE_BACKEND=online` 后按原参数重启。
+
+
+## 2026-09-29：离线中文 ASR 更新
+
+- 默认 ASR 切换为 sherpa-onnx SenseVoice Small INT8，固定中文、CPU 两线程；保留 Paraformer 后端和旧模型。
+- 修复等待收音时限截断起音的问题，加入 400 ms 句首缓冲、80 ms 起音和 30 秒等待；TTS 打断时不发布残缺识别。新增实际收音方法的三个回归测试，全部通过。
+- Jetson 已下载官方模型，`offline_voice` 原生构建成功；备份位于 `/home/wheeltec/ROSCAR-backups/asr-20260929-124403`，先热替换 ASR。之后 12:45:35 服务记录模块退出（143）并于 12:45:41 自动重启整套，临时 ASR 管理程序退出；当前由正常 launch 管理。启动日志确认 `sensevoice`，进程检查确认仅一个 ASR。未发送控制指令；未进行现场真人准确率验收。
+- 同一 5.592 秒样例：SenseVoice 解码 0.49 秒/峰值 356 MiB，Paraformer 0.87 秒/343 MiB。切换后全车可用内存约 856 MiB，swap 使用约 759 MiB；该快照不能证明长期负载稳定，需观察现场运行。
+- 回退步骤及临时进程生命周期已补充至离线语音部署文档。未提交或推送 Git。
+
+
+## 2026-09-29：按用户要求恢复讯飞 ASR
+
+- 默认混合方案为讯飞 ASR + 本地 Qwen + 本地 MeloTTS；保留完全离线开关 `ASR_BACKEND=offline`。未改变语音动作解析或运动参数。
+- 复用车上私有讯飞凭据；仅检查是否配置，不输出密钥。真实 WebSocket 静音请求返回 code=0、status=2，鉴权和接口通信成功；未发布识别结果至 ROS，未发送运动指令。
+- offline_voice 车上构建成功，脚本语法检查通过。旧方案备份至 `/home/wheeltec/ROSCAR-backups/xfyun-asr-20260929-130232/before.tar.gz`。旧后台 launch 未响应 SIGINT，随后向语音脚本发送 SIGTERM，触发现有清理与守护重启流程加载新方案。现场真人识别效果仍需验收。
+## 2026-09-29：语音控制改为固定规则
+
+- 按语音交接文档保留唤醒持续会话、遥控授权、跟随、停止、四方向驾驶、状态查询和导航未接入提示；识别不到固定指令时由路由器回复固定提示，不发运动命令。
+- 离线语音启动文件不再启动 `offline_chat`；语音脚本不再启动或检查 Ollama；项目总入口不再要求 Ollama 文件。讯飞 ASR 与本地 TTS 保留，历史聊天源码保留供回退。
+- 本地 `voice_command_router` 规则测试 14 项通过；修正其中一项沿用 0.15 m/s 旧上限的断言，使其与当前 0.2 m/s 上限一致。Shell 语法和 Python 编译检查通过。
+- 车上修改前备份为 `/home/wheeltec/ROSCAR-backups/fixed-voice-20260929-135822/before.tar.gz`；Jetson 上 `voice_command_router`、`offline_voice` 两包构建成功。服务正常重启后，进程与日志显示讯飞 ASR、路由器、本地 TTS，未启动聊天节点或项目隔离的 Ollama。未发送运动指令；真人语音仍需现场验收。
+## 2026-09-29：端侧 ASR 与 CUDA 可行性
+
+- 整车运行时可用内存约 3.4 GiB、swap 未使用；隔离下载并测试 Qwen3-ASR 0.6B INT8、FireRedASR2 CTC INT8。模型比较与限制详见 `docs/端侧ASR候选实测.md`。
+- 五条仓库播报样例中，FireRedASR2 与 Qwen3-ASR 均识别到方向或停止，SenseVoice 在停止样例误识别。FireRedASR2 CPU 峰值 RSS 约 929 MiB、解码 1.07–1.30 秒；Qwen3-ASR 约 1489 MiB、1.64–2.21 秒。样本不代表真人准确率。
+- 将 FireRedASR2 接为可选离线后端；车上备份 `/home/wheeltec/ROSCAR-backups/fire-red-asr-20260929-144623/before.tar.gz`，原生构建成功，独立 ROS 域启动确认加载。正式讯飞方案未切换，未发送运动命令。
+- 车上安装独立 CUDA 评测 wheel 后，实际加载报缺少 `libcublas.so.10`；当前 JetPack 6.2 为 CUDA 12.6，需另按官方文档构建兼容版本才能测 GPU 加速。正式 Python 环境未替换。
+
+## 2026-09-29：正式语音 ASR 切换为 Qwen3-ASR
+
+- 按用户要求将 `offline_voice` 增加 Qwen3-ASR 0.6B INT8 本地后端，并将配置及语音脚本默认入口改为离线 Qwen3；固定规则控制和本地 TTS 保持运行，讯飞 ASR 仍可通过 `ASR_BACKEND=xfyun` 回退。
+- 模型移入车上 `/home/wheeltec/ROSCAR-offline/models/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25`；改动前备份为 `/home/wheeltec/ROSCAR-backups/qwen3-asr-20260929-145122/before.tar.gz`。正式工作区 `offline_voice` 原生 Humble 构建成功，独立 ROS 域启动确认模型加载，正式守护服务重启后日志再次确认 `qwen3` 且无讯飞 ASR 进程。
+- 本地 Python 编译、ASR 收音回归测试 3 项、脚本语法和差异检查通过。正式切换后快照：7.4 GiB 内存中约 2.3 GiB 可用，swap 使用约 177 MiB，项目服务运行中。模型使用 CPU 两线程；真人准确率、持续运行和实际车辆动作留给现场测试。本轮未发布运动指令，也未提交或推送 Git。

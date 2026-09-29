@@ -59,12 +59,17 @@ if [[ "$WITH_VOICE" == true ]]; then
     offline)
       offline_root="${ROSCAR_OFFLINE_ROOT:-/home/wheeltec/ROSCAR-offline}"
       offline_models="${ROSCAR_OFFLINE_MODEL_ROOT:-$offline_root/models}"
-      for file in \
-        "$offline_root/ollama/bin/ollama" \
-        "$offline_root/venv/lib/python3.10/site-packages/sherpa_onnx/__init__.py" \
-        "$offline_models/sherpa-onnx-streaming-paraformer-bilingual-zh-en/encoder.int8.onnx" \
-        "$offline_models/sherpa-onnx-streaming-paraformer-bilingual-zh-en/decoder.int8.onnx" \
-        "$offline_models/vits-melo-tts-zh_en/model.onnx"; do
+      voice_files=(
+        "$offline_root/venv/lib/python3.10/site-packages/sherpa_onnx/__init__.py"
+        "$offline_models/vits-melo-tts-zh_en/model.onnx"
+      )
+      if [[ "${ASR_BACKEND:-offline}" == offline ]]; then
+        qwen_model="$offline_models/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25"
+        voice_files+=("$qwen_model/conv_frontend.onnx" "$qwen_model/encoder.int8.onnx" \
+          "$qwen_model/decoder.int8.onnx" "$qwen_model/tokenizer/vocab.json" \
+          "$qwen_model/tokenizer/merges.txt")
+      fi
+      for file in "${voice_files[@]}"; do
         [[ -f "$file" ]] || { echo "缺少离线语音依赖：$file" >&2; exit 1; }
       done
       ;;

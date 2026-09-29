@@ -13,4 +13,4 @@ exec ros2 run turn_on_wheeltec_robot wheeltec_robot_node --ros-args \
   -p serial_baud_rate:="${SERIAL_BAUD_RATE:-115200}" \
   -p car_mode:="$CAR_MODE" \
   -p command_timeout_s:=0.5 -p feedback_timeout_s:=0.5 \
-  -p max_linear_mps:=0.15 -p max_angular_rps:=0.5
+  -p max_linear_mps:=0.2 -p max_angular_rps:=0.5
