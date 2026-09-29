@@ -1,5 +1,6 @@
-"""Wake-triggered, entirely local streaming ASR."""
+"""Wake-triggered, entirely local ASR with selectable backends."""
 
+from collections import deque
 import os
 from pathlib import Path
 import time
@@ -21,13 +22,52 @@ class OfflineAsrNode(XfyunAsrNode):
         super().__init__()
         self.declare_parameter('model_dir', str(
             DEFAULT_MODEL_ROOT / 'sherpa-onnx-streaming-paraformer-bilingual-zh-en'))
+        self.declare_parameter('asr_backend', 'paraformer')
+        self.declare_parameter('sensevoice_model_dir', str(DEFAULT_MODEL_ROOT /
+            'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17'))
+        self.declare_parameter('fire_red_model_dir', str(DEFAULT_MODEL_ROOT /
+            'sherpa-onnx-fire-red-asr2-ctc-zh_en-int8-2026-02-25'))
+        self.declare_parameter('qwen3_model_dir', str(DEFAULT_MODEL_ROOT /
+            'sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25'))
         self.declare_parameter('num_threads', 2)
         self._recognizer = self._load_recognizer()
-        self.get_logger().info('离线 ASR 模型已加载')
+        self.get_logger().info(f'离线 ASR 模型已加载: {self._backend}')
 
     def _load_recognizer(self):
         import sherpa_onnx
 
+        self._backend = str(self.get_parameter('asr_backend').value)
+        if self._backend == 'qwen3':
+            directory = Path(self.get_parameter('qwen3_model_dir').value)
+            required = (directory / 'conv_frontend.onnx',
+                        directory / 'encoder.int8.onnx',
+                        directory / 'decoder.int8.onnx',
+                        directory / 'tokenizer/vocab.json',
+                        directory / 'tokenizer/merges.txt')
+            if not all(path.is_file() for path in required):
+                raise RuntimeError(f'Qwen3-ASR 模型文件缺失: {directory}')
+            return sherpa_onnx.OfflineRecognizer.from_qwen3_asr(
+                conv_frontend=str(required[0]), encoder=str(required[1]),
+                decoder=str(required[2]), tokenizer=str(directory / 'tokenizer'),
+                num_threads=int(self.get_parameter('num_threads').value),
+                max_new_tokens=128, provider='cpu')
+        if self._backend == 'fire_red_ctc':
+            directory = Path(self.get_parameter('fire_red_model_dir').value)
+            required = (directory / 'model.int8.onnx', directory / 'tokens.txt')
+            if not all(path.is_file() for path in required):
+                raise RuntimeError(f'FireRedASR2 模型文件缺失: {directory}')
+            return sherpa_onnx.OfflineRecognizer.from_fire_red_asr_ctc(
+                model=str(required[0]), tokens=str(required[1]),
+                num_threads=int(self.get_parameter('num_threads').value),
+                provider='cpu')
+        if self._backend == 'sensevoice':
+            directory = Path(self.get_parameter('sensevoice_model_dir').value)
+            return sherpa_onnx.OfflineRecognizer.from_sense_voice(
+                model=str(directory / 'model.int8.onnx'),
+                tokens=str(directory / 'tokens.txt'), language='zh', use_itn=True,
+                num_threads=int(self.get_parameter('num_threads').value), provider='cpu')
+        if self._backend != 'paraformer':
+            raise ValueError(f'Unsupported ASR backend: {self._backend}')
         model_dir = Path(self.get_parameter('model_dir').value)
         names = ('tokens.txt', 'encoder.int8.onnx', 'decoder.int8.onnx')
         missing = [name for name in names if not (model_dir / name).is_file()]
@@ -54,54 +94,66 @@ class OfflineAsrNode(XfyunAsrNode):
         max_utterance = float(self.get_parameter('max_utterance_sec').value)
         device = str(self.get_parameter('capture_device').value)
         capture = ArecordCapture(device, sample_rate)
-        stream = self._recognizer.create_stream()
+        # Keep only a short pre-roll before onset, not an entire noisy wait.
+        preroll = deque(maxlen=max(1, 400 // frame_ms))
+        frames = []
         speech_started = False
-        candidate_ms = 0
-        silence_ms = 0
+        candidate_ms = silence_ms = 0
         self._phase = 'LISTENING'
         try:
             capture.start()
             self._publish_state('LISTENING')
             started = time.monotonic()
-            while not self._stop.is_set() and not self._speaking:
+            speech_at = None
+            while not self._stop.is_set():
                 pcm = capture.read(frame_bytes)
+                if self._speaking:
+                    self.get_logger().info('收音被播报打断，丢弃本轮音频')
+                    return
                 rms = pcm_rms_s16le(pcm)
-                if rms >= threshold:
-                    candidate_ms += frame_ms
+                if not speech_started:
+                    preroll.append(pcm)
+                    candidate_ms = candidate_ms + frame_ms if rms >= threshold else 0
                     if candidate_ms >= onset_ms:
                         speech_started = True
-                    if speech_started:
-                        silence_ms = 0
-                elif speech_started:
-                    silence_ms += frame_ms
+                        speech_at = time.monotonic()
+                        frames.extend(preroll)
                 else:
-                    candidate_ms = 0
-
-                samples = np.frombuffer(pcm, dtype='<i2').astype(np.float32) / 32768.0
-                stream.accept_waveform(sample_rate, samples)
-                while self._recognizer.is_ready(stream):
-                    self._recognizer.decode_stream(stream)
-                elapsed = time.monotonic() - started
-                if not speech_started and elapsed >= speech_timeout:
+                    frames.append(pcm)
+                    silence_ms = 0 if rms >= threshold else silence_ms + frame_ms
+                now = time.monotonic()
+                # Do not cut a word whose onset straddles the waiting deadline.
+                if not speech_started and not candidate_ms and now - started >= speech_timeout:
+                    return
+                if speech_started and (silence_ms >= silence_limit or now - speech_at >= max_utterance):
                     break
-                if speech_started and silence_ms >= silence_limit:
-                    break
-                if elapsed >= max_utterance:
-                    break
-
+            if self._stop.is_set() or not speech_started:
+                return
             self._phase = 'RECOGNIZING'
             self._publish_state('RECOGNIZING')
-            stream.accept_waveform(sample_rate, np.zeros(int(sample_rate * .66), dtype=np.float32))
-            stream.input_finished()
-            while self._recognizer.is_ready(stream):
+            samples = np.frombuffer(b''.join(frames), dtype='<i2').astype(np.float32) / 32768.0
+            stream = self._recognizer.create_stream()
+            decode_at = time.monotonic()
+            if self._backend == 'qwen3':
+                stream.set_option('language', 'Chinese')
+            stream.accept_waveform(sample_rate, samples)
+            if self._backend in ('sensevoice', 'fire_red_ctc', 'qwen3'):
                 self._recognizer.decode_stream(stream)
-            text = self._recognizer.get_result(stream).strip()
-            # Noise or an empty wake event must never become a vehicle command.
-            if speech_started and text:
+                text = stream.result.text.strip()
+            else:
+                stream.accept_waveform(sample_rate, np.zeros(int(sample_rate * .66), dtype=np.float32))
+                stream.input_finished()
+                while self._recognizer.is_ready(stream):
+                    self._recognizer.decode_stream(stream)
+                text = self._recognizer.get_result(stream).strip()
+            if self._speaking or self._stop.is_set():
+                return
+            self.get_logger().info(
+                f'ASR backend={self._backend} audio_s={len(samples)/sample_rate:.2f} '
+                f'decode_s={time.monotonic()-decode_at:.2f}')
+            if text:
                 self._text_pub.publish(String(data=text))
                 self.get_logger().info(f'离线识别结果: {text}')
-            else:
-                self.get_logger().info('未检测到有效语音或识别结果为空')
         finally:
             capture.close()
 

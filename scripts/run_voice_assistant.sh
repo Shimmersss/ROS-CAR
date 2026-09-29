@@ -5,9 +5,13 @@ workspace_dir="${ROSCAR_WS:-/home/wheeltec/ROSCAR/ros2_ws}"
 project_dir="$(cd "${workspace_dir}/.." && pwd)"
 voice_env_file="${ROSCAR_VOICE_ENV:-${XDG_CONFIG_HOME:-${HOME}/.config}/roscar/voice.env}"
 voice_backend="${VOICE_BACKEND:-offline}"
+asr_backend="${ASR_BACKEND:-offline}"
+if [[ "${asr_backend}" != xfyun && "${asr_backend}" != offline ]]; then
+  echo "ASR_BACKEND 必须为 xfyun 或 offline。" >&2; exit 2
+fi
 offline_root="${ROSCAR_OFFLINE_ROOT:-/home/wheeltec/ROSCAR-offline}"
 
-if [[ "${voice_backend}" == online ]]; then
+if [[ "${voice_backend}" == online || "${asr_backend}" == xfyun ]]; then
   if [[ ! -f "${voice_env_file}" ]]; then
     echo "缺少私有凭据文件: ${voice_env_file}" >&2
     exit 1
@@ -17,28 +21,33 @@ if [[ "${voice_backend}" == online ]]; then
   source "${voice_env_file}"
   set +a
   missing=()
-  for variable_name in XFYUN_APP_ID XFYUN_API_KEY XFYUN_API_SECRET DEEPSEEK_API_KEY; do
+  required=(XFYUN_APP_ID XFYUN_API_KEY XFYUN_API_SECRET)
+  if [[ "${voice_backend}" == online ]]; then required+=(DEEPSEEK_API_KEY); fi
+  for variable_name in "${required[@]}"; do
     if [[ -z "${!variable_name:-}" ]]; then missing+=("${variable_name}"); fi
   done
   if (( ${#missing[@]} > 0 )); then
     echo "以下凭据尚未填写: ${missing[*]}" >&2
     exit 1
   fi
-elif [[ "${voice_backend}" == offline ]]; then
+fi
+
+if [[ "${voice_backend}" == offline ]]; then
   export ROSCAR_OFFLINE_MODEL_ROOT="${ROSCAR_OFFLINE_MODEL_ROOT:-${offline_root}/models}"
-  for model_file in \
-    "${ROSCAR_OFFLINE_MODEL_ROOT}/sherpa-onnx-streaming-paraformer-bilingual-zh-en/encoder.int8.onnx" \
-    "${ROSCAR_OFFLINE_MODEL_ROOT}/sherpa-onnx-streaming-paraformer-bilingual-zh-en/decoder.int8.onnx" \
-    "${ROSCAR_OFFLINE_MODEL_ROOT}/vits-melo-tts-zh_en/model.onnx"; do
+  model_files=("${ROSCAR_OFFLINE_MODEL_ROOT}/vits-melo-tts-zh_en/model.onnx")
+  if [[ "${asr_backend}" == offline ]]; then
+    qwen_model="${ROSCAR_OFFLINE_MODEL_ROOT}/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25"
+    model_files+=("${qwen_model}/conv_frontend.onnx" "${qwen_model}/encoder.int8.onnx" \
+      "${qwen_model}/decoder.int8.onnx" "${qwen_model}/tokenizer/vocab.json" \
+      "${qwen_model}/tokenizer/merges.txt")
+  fi
+  for model_file in "${model_files[@]}"; do
     [[ -f "${model_file}" ]] || { echo "缺少离线模型: ${model_file}" >&2; exit 1; }
   done
-  [[ -x "${offline_root}/ollama/bin/ollama" ]] || {
-    echo "缺少隔离安装的 Ollama: ${offline_root}/ollama/bin/ollama" >&2; exit 1;
-  }
   [[ -d "${offline_root}/venv/lib/python3.10/site-packages/sherpa_onnx" ]] || {
     echo "缺少隔离安装的 sherpa-onnx: ${offline_root}/venv" >&2; exit 1;
   }
-else
+elif [[ "${voice_backend}" != online ]]; then
   echo 'VOICE_BACKEND 必须为 offline 或 online。' >&2
   exit 2
 fi
@@ -77,7 +86,6 @@ if [[ "${voice_backend}" == online ]]; then
     enable_wake_driver:=true enable_tts:="${voice_tts_enabled}" "$@"
 fi
 
-ollama_pid=''
 launch_pid=''
 cleanup_offline() {
   trap - EXIT INT TERM
@@ -85,35 +93,13 @@ cleanup_offline() {
     kill -TERM -- "-${launch_pid}" 2>/dev/null || true
     wait "${launch_pid}" 2>/dev/null || true
   fi
-  if [[ -n "${ollama_pid}" ]]; then
-    kill "${ollama_pid}" 2>/dev/null || true
-    wait "${ollama_pid}" 2>/dev/null || true
-  fi
 }
 trap cleanup_offline EXIT INT TERM
-if ! curl --noproxy '*' --max-time 2 -fsS http://127.0.0.1:11435/api/tags >/dev/null 2>&1; then
-  mkdir -p "${offline_root}/models/ollama"
-  OLLAMA_HOST=127.0.0.1:11435 \
-    OLLAMA_MODELS="${offline_root}/models/ollama" \
-    "${offline_root}/ollama/bin/ollama" serve &
-  ollama_pid=$!
-  ready=false
-  for _ in {1..30}; do
-    if curl --noproxy '*' --max-time 2 -fsS http://127.0.0.1:11435/api/tags >/dev/null 2>&1; then
-      ready=true
-      break
-    fi
-    sleep 1
-  done
-  [[ "${ready}" == true ]] || { echo '本机离线 Ollama 启动失败。' >&2; exit 1; }
-fi
-if ! curl --noproxy '*' --max-time 3 -fsS http://127.0.0.1:11435/api/tags | \
-    python3 -c 'import json,sys; sys.exit("qwen3:1.7b" not in {m.get("name") for m in json.load(sys.stdin).get("models", [])})'; then
-  echo '本机离线 Ollama 尚未安装 qwen3:1.7b。' >&2
-  exit 1
-fi
+use_xfyun_asr=false
+[[ "${asr_backend}" == xfyun ]] && use_xfyun_asr=true
+echo "语音后端: ASR=${asr_backend}, 控制=固定规则, TTS=本地"
 setsid ros2 launch offline_voice offline_voice.launch.py \
-  enable_wake_driver:=true enable_tts:="${voice_tts_enabled}" "$@" &
+  use_xfyun_asr:="${use_xfyun_asr}" enable_wake_driver:=true enable_tts:="${voice_tts_enabled}" "$@" &
 launch_pid=$!
 wait "${launch_pid}"
 exec ros2 launch xfyun_speech voice_assistant.launch.py \

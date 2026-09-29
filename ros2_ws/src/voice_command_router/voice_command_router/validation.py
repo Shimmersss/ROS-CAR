@@ -17,8 +17,8 @@ class DriveCommand:
     duration_s: float
 
 
-MAX_FORWARD_MPS = 0.15
-MAX_REVERSE_MPS = 0.15
+MAX_FORWARD_MPS = 0.2
+MAX_REVERSE_MPS = 0.2
 MAX_ANGULAR_RPS = 0.5
 MAX_DURATION_S = 2.0
 
@@ -32,7 +32,7 @@ def validate_drive(linear_mps, angular_rps, duration_s):
     angular_rps = float(angular_rps)
     duration_s = float(duration_s)
     if not -MAX_REVERSE_MPS <= linear_mps <= MAX_FORWARD_MPS:
-        raise CommandValidationError('线速度超出 -0.15 到 0.15 m/s 范围')
+        raise CommandValidationError('线速度超出 -0.2 到 0.2 m/s 范围')
     if abs(angular_rps) > MAX_ANGULAR_RPS:
         raise CommandValidationError('角速度绝对值不能超过 0.5 rad/s')
     if not 0.05 <= duration_s <= MAX_DURATION_S:
@@ -105,11 +105,16 @@ def parse_local_text(text, *, forward_mps=0.08, reverse_mps=-0.08,
         return {'action': 'QUERY_STATUS', 'query': 'status'}
     if any(word in normalized for word in ('导航', '去客厅', '去门口', '目的地')):
         return {'action': 'QUERY_STATUS', 'query': 'unsupported_navigation'}
-    directions = {'前进':'forward', '向前':'forward', '往前':'forward',
+    directions = {'前进':'forward', '向前':'forward', '往前':'forward', '前':'forward',
                   '后退':'reverse', '倒车':'reverse', '倒退':'reverse',
-                  '向后':'reverse', '往后':'reverse',
-                  '左转':'left', '向左':'left', '左拐':'left',
-                  '右转':'right', '向右':'right', '右拐':'right'}
+                  '向后':'reverse', '往后':'reverse', '后':'reverse',
+                  '左转':'left', '向左':'left', '左拐':'left', '左':'left',
+                  '右转':'right', '向右':'right', '右拐':'right', '右':'right'}
+    # A short pause can leave two repetitions in one ASR utterance. Treat
+    # exact repeated direction words as one command; unrelated long text is
+    # still rejected below instead of guessing a vehicle action.
+    for token in sorted(directions, key=len, reverse=True):
+        normalized = re.sub(rf'(?:{re.escape(token)}){{2,}}$', token, normalized)
     number = r'(?:[0-9]+(?:\.[0-9]+)?|[零〇一二两三四五六七八九十]+(?:点[零〇一二两三四五六七八九]+)?)'
     match = re.fullmatch('('+'|'.join(directions)+')'+
         r'(?:(?:速度|速率)('+number+r')|('+number+r')(?:米每秒|米/秒|m/s))?'+

@@ -40,7 +40,6 @@ class VoiceCommandRouter(Node):
         self.declare_parameter('enabled', True)
         self.declare_parameter('local_parser_enabled', True)
         self.declare_parameter('input_topic', '/voice/asr_text')
-        self.declare_parameter('unhandled_topic', '/voice/unhandled_text')
         self.declare_parameter('command_topic', '/voice/command')
         self.declare_parameter('result_topic', '/voice/command_result')
         self.declare_parameter('control_request_topic', '/chassis/cmd_vel')
@@ -53,7 +52,6 @@ class VoiceCommandRouter(Node):
         self.declare_parameter('continuous_wake_text', '小车唤醒')
 
         get = lambda key: self.get_parameter(key).value
-        self._unhandled_pub = self.create_publisher(String, get('unhandled_topic'), 10)
         self._result_pub = self.create_publisher(VoiceCommandResult, get('result_topic'), 10)
         self._legacy_result_pub = self.create_publisher(String, '/voice/tool_result', 10)
         self._answer_pub = self.create_publisher(String, '/voice/assistant_text', 10)
@@ -136,26 +134,31 @@ class VoiceCommandRouter(Node):
 
 
     def _on_asr(self, message):
+        text = str(message.data).strip()
         if not self.get_parameter('local_parser_enabled').value:
-            self._unhandled_pub.publish(message)
+            self.get_logger().warning('本地语音规则已关闭，拒绝执行指令')
+            self._speak('语音控制规则已关闭')
             self._request_next_listen()
             return
         try:
             parsed = parse_local_text(
-                message.data,
+                text,
                 forward_mps=float(self.get_parameter('default_forward_mps').value),
                 reverse_mps=float(self.get_parameter('default_reverse_mps').value),
                 turn_rps=float(self.get_parameter('default_turn_rps').value),
                 duration_s=float(self.get_parameter('default_duration_s').value),
             )
         except CommandValidationError as exc:
+            self.get_logger().warning(f'语音文本: {text!r} -> 指令无效: {exc}')
             self._speak(f'这条操控指令无法执行：{exc}')
             self._request_next_listen()
             return
         if parsed is None:
-            self._unhandled_pub.publish(String(data=message.data.strip()))
+            self.get_logger().info(f'语音文本: {text!r} -> 不在固定指令列表中')
+            self._speak('没有识别到控制指令，请说开始遥控、前进、后退、左转、右转、停止或当前状态')
             self._request_next_listen()
             return
+        self.get_logger().info(f'语音文本: {text!r} -> 本地动作: {parsed}')
         self._on_command(self._new_command(**parsed))
         self._request_next_listen()
 
@@ -234,8 +237,12 @@ class VoiceCommandRouter(Node):
             self._publish_result(command, False, response.message or '授权失败')
             return
         self._authorized = True
-        self._last_drive = time.monotonic()
-        self._drive_until = self._last_drive + 2.0
+        # Keep the manual authorization alive while waiting for the next
+        # voice command.  The previous implementation started the motion
+        # timeout here, so authorization expired before the user could say
+        # the actual direction command.
+        self._last_drive = 0.0
+        self._drive_until = 0.0
         self._stop_requested = False
         self._publish_result(command, True, '已授权，可以发出运动指令')
 
@@ -328,16 +335,27 @@ class VoiceCommandRouter(Node):
                   and self._state.get('ready')):
                 self._pending_arm = None
                 self._call_trigger(self._arm, command, '模式授权', self._arm_done)
-        if self._authorized and (now-self._state_at > .3 or
+        # A delayed state update must not revoke a valid authorization.  The
+        # controller itself keeps publishing its state; only an explicit
+        # non-armed/non-external state should invalidate this session.
+        if self._authorized and self._state and (
                 self._state.get('mode') != 'ARMED' or
                 self._state.get('command_mode') != self._mode_request):
             self._stop_motion(self._new_command('STOP', request_id='internal-' + str(uuid.uuid4())), set_idle=True)
         if self._authorized and self._mode_request == 'EXTERNAL':
-            if now > self._drive_until or now - self._last_drive > float(self.get_parameter('control_timeout_s').value):
+            drive_expired = self._drive_until > 0.0 and now > self._drive_until
+            command_expired = (
+                self._last_drive > 0.0
+                and now - self._last_drive > float(self.get_parameter('control_timeout_s').value)
+            )
+            if drive_expired or command_expired:
                 self._velocity = (0.0, 0.0)
-                if not self._stop_requested:
-                    self._stop_requested = True
-                    self._stop_motion(self._new_command('STOP', request_id='internal-' + str(uuid.uuid4())), set_idle=True)
+                # Motion timeout is a velocity timeout, not an authorization
+                # timeout.  Keep EXTERNAL authorization so the next voice
+                # command can run without requiring ARM again.
+                self._drive_until = 0.0
+                self._last_drive = 0.0
+                self._stop_requested = False
         if self._mode_request != 'EXTERNAL':
             return
         msg = TwistStamped()
@@ -361,6 +379,9 @@ class VoiceCommandRouter(Node):
             'request_id': result.request_id, 'success': result.success,
             'detail': result.message,
         }, ensure_ascii=False)))
+        self.get_logger().info(
+            f'控制结果: action={result.action} success={result.success} '
+            f'mode={result.command_mode} guard={result.guard_mode} detail={result.message}')
         if result.request_id.startswith(('local-', 'legacy-')):
             self._speak(result.message)
 

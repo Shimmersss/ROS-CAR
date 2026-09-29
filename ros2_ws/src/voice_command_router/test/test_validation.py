@@ -58,8 +58,8 @@ def test_local_parser_modes_and_fallback():
 
 
 def test_drive_validation_allows_bounded_reverse():
-    assert validate_drive(-0.15, 0.0, 2.0).linear_mps == -0.15
+    assert validate_drive(-0.2, 0.0, 2.0).linear_mps == -0.2
     with pytest.raises(CommandValidationError):
-        validate_drive(-0.151, 0.0, 1.0)
+        validate_drive(-0.201, 0.0, 1.0)
     with pytest.raises(CommandValidationError):
         validate_drive(0.0, 0.0, 1.0)

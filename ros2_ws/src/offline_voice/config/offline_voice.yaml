@@ -4,9 +4,9 @@ offline_asr:
     sample_rate: 16000
     frame_ms: 40
     energy_threshold: 2800.0
-    speech_onset_ms: 160
+    speech_onset_ms: 80
     silence_ms: 1200
-    speech_timeout_sec: 5.0
+    speech_timeout_sec: 30.0
     max_utterance_sec: 15.0
     wake_topic: ''
     wake_text_topic: /voice_words
@@ -14,39 +14,19 @@ offline_asr:
     wake_cycle_delay_sec: 1.0
     speaking_topic: /voice/speaking
     output_topic: /voice/asr_text
+    asr_backend: qwen3
     num_threads: 2
-
-offline_chat:
-  ros__parameters:
-    local_base_url: http://127.0.0.1:11435
-    local_model: qwen3:1.7b
-    context_tokens: 2048
-    timeout_sec: 25.0
-    max_tokens: 160
-    history_turns: 3
-    input_topic: /voice/unhandled_text
-    answer_topic: /voice/assistant_text
-    tts_topic: /voice/tts_text
-    command_topic: /voice/command
-    command_result_topic: /voice/command_result
-    response_log_path: ''
-    enable_tools: true
-    wake_reply_enabled: true
-    wake_reply_topic: /voice_words
-    wake_reply_trigger: 小车唤醒
-    wake_reply_text: 我在
 
 voice_command_router:
   ros__parameters:
     enabled: true
     input_topic: /voice/asr_text
-    unhandled_topic: /voice/unhandled_text
     command_topic: /voice/command
     result_topic: /voice/command_result
     control_request_topic: /chassis/cmd_vel
     control_timeout_s: 2.0
-    default_forward_mps: 0.08
-    default_reverse_mps: -0.08
+    default_forward_mps: 0.2
+    default_reverse_mps: -0.2
     default_turn_rps: 0.25
     default_duration_s: 2.0
     base_frame: base_link

@@ -8,8 +8,8 @@ class SafetyConfig:
     length_m: float = .5
     width_m: float = .4
     margin_m: float = .15
-    max_linear_mps: float = .15
-    max_reverse_mps: float = .15
+    max_linear_mps: float = .2
+    max_reverse_mps: float = .2
     max_angular_rps: float = .5
     reaction_s: float = 1.0
     deceleration_mps2: float = .3
