@@ -21,7 +21,8 @@ case "${1:-}" in
     cat <<'HELP'
 用法：bash scripts/start_project.sh
     启动 Astra RGB-D、B 人体检测/ByteTrack、Foxglove 和语音。
-WITH_VOICE=false 关闭语音；WITH_CHASSIS=true 开启底盘串口收发。
+WITH_VOICE=false 关闭语音；VOICE_BACKEND=offline|online 选择离线语音或原在线语音。
+WITH_CHASSIS=true 开启底盘串口收发。
 底盘要求 SERIAL_PORT 和 CAR_MODE；WITH_FOLLOWER=true 时跟随器通过 motion_guard 受保护输出。
 DEPTH_REGISTERED=true 使用驱动当前 RGB-D 配准；坐标精度仍须现场量距验证。
 MODEL_PATH、YOLO_PYTHON、YOLO_DEVICE 可覆盖模型和推理环境。
@@ -50,8 +51,25 @@ if [[ "$WITH_CHASSIS" == true ]]; then
   }
 fi
 if [[ "$WITH_VOICE" == true ]]; then
-  voice_file="${ROSCAR_VOICE_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/roscar/voice.env}"
-  [[ -f "$voice_file" ]] || { echo "缺少语音私有配置：$voice_file" >&2; exit 1; }
+  case "${VOICE_BACKEND:-offline}" in
+    online)
+      voice_file="${ROSCAR_VOICE_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/roscar/voice.env}"
+      [[ -f "$voice_file" ]] || { echo "缺少语音私有配置：$voice_file" >&2; exit 1; }
+      ;;
+    offline)
+      offline_root="${ROSCAR_OFFLINE_ROOT:-/home/wheeltec/ROSCAR-offline}"
+      offline_models="${ROSCAR_OFFLINE_MODEL_ROOT:-$offline_root/models}"
+      for file in \
+        "$offline_root/ollama/bin/ollama" \
+        "$offline_root/venv/lib/python3.10/site-packages/sherpa_onnx/__init__.py" \
+        "$offline_models/sherpa-onnx-streaming-paraformer-bilingual-zh-en/encoder.int8.onnx" \
+        "$offline_models/sherpa-onnx-streaming-paraformer-bilingual-zh-en/decoder.int8.onnx" \
+        "$offline_models/vits-melo-tts-zh_en/model.onnx"; do
+        [[ -f "$file" ]] || { echo "缺少离线语音依赖：$file" >&2; exit 1; }
+      done
+      ;;
+    *) echo 'VOICE_BACKEND 必须为 offline 或 online。' >&2; exit 2;;
+  esac
 fi
 if systemctl is-active --quiet roscar-route-a.service 2>/dev/null; then
   echo '旧 A 服务仍占用相机，请先停止。' >&2; exit 1
@@ -78,6 +96,9 @@ packages=(astra_camera yolo_person_tracker perception_bringup)
 for package in "${packages[@]}"; do
   ros2 pkg prefix "$package" >/dev/null || { echo "未构建 ROS 包：$package" >&2; exit 1; }
 done
+if [[ "$WITH_VOICE" == true && "${VOICE_BACKEND:-offline}" == offline ]]; then
+  ros2 pkg prefix offline_voice >/dev/null || { echo '未构建 ROS 包：offline_voice' >&2; exit 1; }
+fi
 mkdir -p "$ROOT/artifacts/project"
 exec 8>"$ROOT/artifacts/project/start.lock"
 flock -n 8 || { echo '项目总入口已运行。' >&2; exit 1; }
