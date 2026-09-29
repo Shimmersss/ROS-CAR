@@ -86,11 +86,22 @@ def parse_local_text(text, *, forward_mps=0.08, reverse_mps=-0.08,
     A recognized but ambiguous command raises CommandValidationError.
     """
     normalized = re.sub(r'[\s，。！？!?、,]', '', str(text or '')).lower()
-    normalized = re.sub(r'^(请|小车|帮我)', '', normalized)
+    normalized = re.sub(r'^(?:好的|请|小车|帮我|再|继续)+', '', normalized)
+    common_phrases = {
+        '往前走': '前进', '向前走': '前进',
+        '往后走': '后退', '向后走': '后退',
+        '往前走一点': '前进一秒', '向前走一点': '前进一秒',
+        '前进一点': '前进一秒', '后退一点': '后退一秒',
+        '左转一点': '左转一秒', '右转一点': '右转一秒',
+    }
+    normalized = common_phrases.get(normalized, normalized)
     aliases = {
-        '停止': {'action': 'STOP'}, '急停': {'action': 'STOP'},
-        '停下': {'action': 'STOP'}, '退出遥控': {'action': 'STOP'},
-        '取消遥控': {'action': 'STOP'}, '不要动': {'action': 'STOP'},
+        '停止': {'action': 'STOP'}, '停': {'action': 'STOP'},
+        '停下': {'action': 'STOP'}, '停一下': {'action': 'STOP'},
+        '不要动': {'action': 'STOP'},
+        '急停': {'action': 'DISARM'}, '退出遥控': {'action': 'DISARM'},
+        '取消遥控': {'action': 'DISARM'},
+        '退出控制': {'action': 'DISARM'}, '退出语音控制': {'action': 'DISARM'},
         '开始遥控': {'action': 'ARM'}, '手动驾驶': {'action': 'ARM'},
         '手动控制': {'action': 'ARM'}, '进入手动': {'action': 'ARM'},
         '遥控模式': {'action': 'ARM'}, '进入遥控': {'action': 'ARM'},

@@ -980,3 +980,11 @@
 - 按用户要求将 `offline_voice` 增加 Qwen3-ASR 0.6B INT8 本地后端，并将配置及语音脚本默认入口改为离线 Qwen3；固定规则控制和本地 TTS 保持运行，讯飞 ASR 仍可通过 `ASR_BACKEND=xfyun` 回退。
 - 模型移入车上 `/home/wheeltec/ROSCAR-offline/models/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25`；改动前备份为 `/home/wheeltec/ROSCAR-backups/qwen3-asr-20260929-145122/before.tar.gz`。正式工作区 `offline_voice` 原生 Humble 构建成功，独立 ROS 域启动确认模型加载，正式守护服务重启后日志再次确认 `qwen3` 且无讯飞 ASR 进程。
 - 本地 Python 编译、ASR 收音回归测试 3 项、脚本语法和差异检查通过。正式切换后快照：7.4 GiB 内存中约 2.3 GiB 可用，swap 使用约 177 MiB，项目服务运行中。模型使用 CPU 两线程；真人准确率、持续运行和实际车辆动作留给现场测试。本轮未发布运动指令，也未提交或推送 Git。
+
+## 2026-09-29：连续收音与简化语音控制
+
+- 路由器改为单一会话管理者：重复硬件唤醒只刷新 30 秒会话；首次明确方向口令自动请求 `EXTERNAL` 与 `/control/arm`，必须等新鲜 `/control/state` 确认 `ARMED` 后执行同一条命令。“停止”停车但保留会话，“急停/退出控制”停车并结束会话。方向成功不逐条播报，常见短口令同义词增加；否定、疑问与含糊指令继续拒绝。
+- 新 `continuous_asr_node` 保持麦克风采集，Silero VAD 分句（结束静音 0.7 秒），Qwen3-ASR 在独立线程解码；最多排队两句，结果带会话代次和 6 秒时效，TTS 播放与回声冷却期间暂停分句。旧 `asr_node` 和讯飞入口保留；`CONTINUOUS_ASR=false` 可回退旧逐轮收音。官方 Silero 模型 643854 字节，SHA-256 `9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6`。
+- 本地 29 项相关测试通过；Python、Shell 语法与差异检查通过。Jetson 隔离工作区两包原生 Humble 构建成功，ROS 域 184 使用模拟 `arecord` 连续重放两句真实播报，每句均完整识别，解码约 1.8–2.0 秒；ROS 域 185 使用假的 guard 服务验证自动授权、重复唤醒、停止后重授权、急停、会话外拒绝与 `ARMED` 未确认时不发非零速度。
+- 正式项目备份为 `/home/wheeltec/ROSCAR-backups/continuous-voice-20260929-192944/before.tar.gz`，SHA-256 `460409fba541dd5b05e4af8633080dfd27c72089a4086b221f3b93c0fdcaeb34`。源码同步后在正式根目录构建两包并由 systemd 重启加载；核实正式节点为 `continuous_asr_node`，参数 `vad_silence_s=0.7`、`session_timeout_s=30`、`legacy_listen_polling=false`，服务 active，`/voice/session_active=false`、`/cmd_vel` 零速。一次误用 `ros2_ws/install` 构建未被正式入口读取，发现后在根目录 `install` 正确重建。隔离测试残留的两个进程组已清理，可用内存恢复；正式切换后快照约 2.8 GiB 可用、733 MiB swap 已用。
+- 本轮未发布实际运动指令；真人麦克风、嘈杂环境、实体底盘运动与长期稳定性仍待用户现场验收。

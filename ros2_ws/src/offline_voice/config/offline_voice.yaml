@@ -15,6 +15,13 @@ offline_asr:
     speaking_topic: /voice/speaking
     output_topic: /voice/asr_text
     asr_backend: qwen3
+    vad_model: /home/wheeltec/ROSCAR-offline/models/silero_vad.onnx
+    vad_threshold: 0.5
+    vad_min_speech_s: 0.12
+    vad_silence_s: 0.7
+    vad_max_speech_s: 8.0
+    tts_cooldown_s: 0.2
+    max_result_age_s: 6.0
     num_threads: 2
 
 voice_command_router:
@@ -25,6 +32,8 @@ voice_command_router:
     result_topic: /voice/command_result
     control_request_topic: /chassis/cmd_vel
     control_timeout_s: 2.0
+    session_timeout_s: 30.0
+    legacy_listen_polling: false
     default_forward_mps: 0.2
     default_reverse_mps: -0.2
     default_turn_rps: 0.25
