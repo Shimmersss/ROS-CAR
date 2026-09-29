@@ -14,7 +14,7 @@ source "$ROOT/ros2_ws/install/setup.bash"
 set -u
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-182}"
 export ROS_LOCALHOST_ONLY=0
-MODEL_PATH="${MODEL_PATH:-$ROOT/models/weights/yolo26s.pt}"
+MODEL_PATH="${MODEL_PATH:-$ROOT/models/weights/yolo26s-fp16.engine}"
 YOLO_PYTHON="${YOLO_PYTHON:-$ROOT/.venv-yolo/bin/python3}"
 [[ -f "$MODEL_PATH" ]] || { echo "缺少 B 模型：$MODEL_PATH" >&2; exit 2; }
 [[ -x "$YOLO_PYTHON" ]] || { echo "缺少 B Python 环境：$YOLO_PYTHON" >&2; exit 2; }
@@ -44,6 +44,8 @@ setsid ros2 launch perception_bringup perception.launch.py \
   color_topic:="${COLOR_TOPIC:-/camera/color/image_raw}" \
   depth_topic:="${DEPTH_TOPIC:-/camera/depth/image_raw}" \
   camera_info_topic:="${CAMERA_INFO_TOPIC:-/camera/color/camera_info}" \
+  kalman_measurement_std_m:="${KALMAN_MEASUREMENT_STD_M:-0.08}" \
+  kalman_acceleration_std_mps2:="${KALMAN_ACCELERATION_STD_MPS2:-2.0}" \
   visualization_fps:="${VISUALIZATION_FPS:-10}" \
   visualization_scale:="${VISUALIZATION_SCALE:-0.5}" &
 PIDS+=("$!")
