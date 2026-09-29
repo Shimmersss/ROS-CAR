@@ -858,6 +858,7 @@
 - 按用户要求，将语音交接文档、ROS 接口文档和 `motion_guard` 说明明确为：本版本不启动雷达，`radar_required` 固定为 `false`，模式切换、arm 和故障判定不等待 `/scan`、雷达 TF 或雷达净空结果。
 - 保留模式、请求/目标时效、重复发布者、底盘自身停车和人工急停要求；未修改雷达驱动代码，也未启动雷达。
 - 文档改动通过 `git diff --check` 审查。
+## 2026-09-28：V5.1 语音控制移除蜂鸣器入口
 
 ## 2026-09-28：V5.1 语音控制移除蜂鸣器入口
 
@@ -876,7 +877,6 @@
 - 在线整车栈同时运行且 Qwen3 GPU 加载时，Jetson RAM 约 5.4 GiB 已用、1.7 GiB 可用、swap 约 101 MiB；停止隔离语音后约 3.4 GiB 可用。离线启动脚本的独立 Ollama 与 ROS 进程组经停止测试均退出，原 `/home/wheeltec/ROSCAR-current` 的在线语音、相机、感知和底盘进程仍运行，正式部署未切换。
 - 本机 `offline_voice` 的 2 个 HTTP 客户端单测、14 包结构检查、Python 编译、Bash 语法和 `git diff --check` 通过；隔离 overlay 的 4 包 Jetson Humble 构建通过。根据用户要求，后续远端操作改为 WSL 中的 Paramiko 密钥连接。
 - 代码已在 WSL 专用分支本地提交；尝试用 WSL Git 推送到贡献者 fork 时因 WSL 未配置 GitHub HTTPS 凭据而停止，尚未推送远端。车上正式部署和原仓库工作树未改。
-=======
 
 - 2026-09-28 离线 ONI 评估入口：新增 `scripts/analyze_oni.cpp` / `scripts/analyze_oni.sh`，使用 Astra OpenNI 2.3 回放读取 RGB/Depth，输出帧数、时间跨度、分辨率和有效深度比例。最新 16:53 录制前 300 帧约 10.107 秒，640x480 RGB/Depth，深度 0.2–8m 有效率约 54.4%；短样本读取成功。完整 112 秒扫描在本机旧 x86 OpenNI 回放库上超过单次检查窗口，未宣称已完成全片逐帧识别率统计。
 
@@ -923,7 +923,6 @@
 - 远端另有 `/home/wheeltec/ROSCAR` 开发副本同步并完成依赖构建；实际运行副本为 `/home/wheeltec/ROSCAR-current`。清理了错误复制到 `ros2_ws/src/` 顶层的临时 Python 文件。最小审查：`git diff --check` 通过。
 
 
-=======
 
 ## 2026-09-29 YOLO 三维卡尔曼与 TensorRT
 

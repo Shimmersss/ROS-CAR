@@ -1,6 +1,7 @@
 # ROSCAR · 室内人体跟随感知
 
 当前稳定版本：V5.1。本分支试验端侧语音，默认入口改为离线 ASR/TTS 和本机 Qwen3；`VOICE_BACKEND=online` 保留原讯飞/DeepSeek 路径。语音控制支持模式切换、短时运动、停止和状态查询；蜂鸣器代码保留为独立模块，不接入语音控制。部署与回退见 [离线语音部署与回退](docs/离线语音部署与回退.md)。
+当前版本：V5.1。语音控制支持 V5 的模式切换、短时运动、停止和状态查询；蜂鸣器代码保留为独立模块，不接入语音控制。
 
 当前目标：Orin Nano Super 8GB 上的 B 人体感知、N10P 雷达、语音、底盘回传和 Foxglove。总入口不启动车辆跟随；B 的测距仍等待 RGB-D 配准实物验收。各模块验证范围见 WORKLOG。
 
@@ -18,6 +19,7 @@
 | Mac → Jetson 同步脚本、模型清单、测试脚本 | 已建立 |
 | 离线语音分支 | sherpa-onnx 流式 ASR、MeloTTS 与本机 Ollama/Qwen3；实机验收状态见 WORKLOG |
 | 原讯飞/DeepSeek 语音助手 | V5.1 已跑通；本分支通过 `VOICE_BACKEND=online` 回退 |
+| 讯飞流式 ASR/TTS → DeepSeek 语音助手 | Orin 真人语音 → 讯飞 IAT → DeepSeek 回答 → 讯飞 TTS 扬声器播报已跑通 |
 | 语音控制工具 | 支持受限运动、模式切换、停止和状态查询；不提供蜂鸣器工具 |
 | 相机与测距 | 彩色/深度 CameraInfo 已加载用户临时值；B 在线有有效 XYZ，仍需重新标定和物理量距 |
 | 底盘串口驱动 | 已在 Jetson 构建并运行，仅收发里程计；当前无速度发布者 |

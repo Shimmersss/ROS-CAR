@@ -116,3 +116,5 @@ setsid ros2 launch offline_voice offline_voice.launch.py \
   enable_wake_driver:=true enable_tts:="${voice_tts_enabled}" "$@" &
 launch_pid=$!
 wait "${launch_pid}"
+exec ros2 launch xfyun_speech voice_assistant.launch.py \
+  enable_wake_driver:=true enable_tts:="${voice_tts_enabled}" "$@"
