@@ -127,4 +127,4 @@
 
 - 对外 ROS 2 入口为 `ros2 launch roscar_api api.launch.py`，默认 IDLE/运动关闭/不启硬件。接口手册 `docs/ROS接口使用文档.md`；外部速度只发 `/chassis/cmd_vel`，模式服务 `/control/set_mode`，由唯一 motion_guard 输出 `/cmd_vel`。禁止与已有包含 guard 的组合入口重复启动。检测列表沿用同步 RGB-D，未跟踪框不参与目标锁定。
 - V5.1 语音入口保留 V5 的本地控制与 DeepSeek 结构化控制工具，但不再声明或接受蜂鸣器动作；`voice_assistant.launch.py` 不启动蜂鸣器适配节点。独立 `voice_command_router` 包内的蜂鸣器解析与 GPIO 源码保留，历史条目中关于语音蜂鸣器的描述不代表当前入口行为。
-- `codex/offline-voice-v5.2` 分支将 `run_voice_assistant.sh` 默认入口改为本机 sherpa-onnx ASR/TTS 与 Ollama/Qwen3，`VOICE_BACKEND=online` 才使用原讯飞/DeepSeek。离线依赖固定在 Jetson `/home/wheeltec/ROSCAR-offline`，部署和回退见 `docs/离线语音部署与回退.md`；当前正式 `/home/wheeltec/ROSCAR-current` 未切换，仍运行原在线栈。
+- 当前正式 `/home/wheeltec/ROSCAR-current` 的语音入口默认为本地 Qwen3-ASR 0.6B INT8、Silero VAD 连续收音、固定规则控制和本地 TTS；不启动 Ollama。路由器独占语音会话，首条明确运动口令自动请求模式和授权，必须读回 guard 的 `ARMED` 状态才发速度。`CONTINUOUS_ASR=false` 回退旧逐轮本地收音，`ASR_BACKEND=xfyun` 回退讯飞识别。离线依赖在 `/home/wheeltec/ROSCAR-offline`；部署和回退见 `docs/连续语音控制与回退.md`。

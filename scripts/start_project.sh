@@ -68,6 +68,7 @@ if [[ "$WITH_VOICE" == true ]]; then
         voice_files+=("$qwen_model/conv_frontend.onnx" "$qwen_model/encoder.int8.onnx" \
           "$qwen_model/decoder.int8.onnx" "$qwen_model/tokenizer/vocab.json" \
           "$qwen_model/tokenizer/merges.txt")
+        [[ "${CONTINUOUS_ASR:-true}" == true ]] && voice_files+=("$offline_models/silero_vad.onnx")
       fi
       for file in "${voice_files[@]}"; do
         [[ -f "$file" ]] || { echo "缺少离线语音依赖：$file" >&2; exit 1; }

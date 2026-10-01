@@ -57,6 +57,28 @@ def test_local_parser_modes_and_fallback():
     assert parse_local_text('介绍一下你自己') is None
 
 
+@pytest.mark.parametrize('text, action, duration', [
+    ('往前走', 'DRIVE', 2.0),
+    ('请小车向前走一点', 'DRIVE', 1.0),
+    ('再左转一点', 'DRIVE', 1.0),
+    ('停一下', 'STOP', None),
+    ('急停', 'DISARM', None),
+    ('退出语音控制', 'DISARM', None),
+    ('好的，小车停。', 'STOP', None),
+])
+def test_simple_session_phrases(text, action, duration):
+    parsed = parse_local_text(text)
+    assert parsed['action'] == action
+    if duration is not None:
+        assert parsed['duration_s'] == duration
+
+
+@pytest.mark.parametrize('text', ['不要前进', '能不能左转', '前进还是后退'])
+def test_ambiguous_motion_is_not_executed(text):
+    with pytest.raises(CommandValidationError):
+        parse_local_text(text)
+
+
 def test_drive_validation_allows_bounded_reverse():
     assert validate_drive(-0.2, 0.0, 2.0).linear_mps == -0.2
     with pytest.raises(CommandValidationError):

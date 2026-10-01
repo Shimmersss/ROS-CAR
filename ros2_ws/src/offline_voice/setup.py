@@ -22,6 +22,7 @@ setup(
     license='Proprietary',
     entry_points={'console_scripts': [
         'asr_node = offline_voice.asr_node:main',
+        'continuous_asr_node = offline_voice.continuous_asr_node:main',
         'tts_node = offline_voice.tts_node:main',
         'chat_node = offline_voice.chat_node:main',
     ]},
