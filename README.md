@@ -137,3 +137,6 @@ bash scripts/start_project.sh
 跟随节点现仅发 `/control/cmd_vel_request`，最终速度由 `motion_guard` 审查后发布。`ros2 launch motion_guard follow.launch.py` 默认仅感知模式，不启动底盘/传感器或自动授权；尺寸、安装 TF、停车模型未确认时禁止运动。启动、服务和故障边界见 [motion_guard](ros2_ws/src/motion_guard/README.md)。记录与隔离回放分别使用 `scripts/record_follow.sh`、`scripts/replay_follow.sh`。
 
 导航与自动绕障代码入口：`scripts/run_navigation.sh`，支持 SLAM 建图、AMCL 地图定位、Nav2 人体目标跟随及 Foxglove 地图/路径布局。默认不启用运动。详见 [导航与自动绕障](docs/导航与自动绕障.md)。
+# C 方案入口
+
+新增 Gemini Pro + YOLO26s-pose 人体骨架/跌倒显示路线，显式运行 `bash scripts/start_c.sh`；默认总入口仍为 B。设备、参数、启动与本机验证边界见 [方案 C 实现与验收](docs/方案C实现与验收.md)，Foxglove 布局为 `foxglove/c-layout.json`。真人验收待下次进行，本轮未部署小车。

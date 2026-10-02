@@ -72,8 +72,8 @@ try:
     assert not call(arm,Trigger.Request()).success # Unselected FOLLOW cannot fill request.
     flags['send']=True; flags['old']=True;pump(.2);assert g.request is None
     flags['old']=False;enable()
-    for field,value in [('linear.x',-.16),('linear.x',.16),('linear.y',.01),('linear.z',.01),('angular.x',.01),('angular.y',.01),('angular.z',.51),('angular.z',math.nan),('linear.x',math.inf)]:
-        flags['field']=field;flags['value']=value;pump(.15);assert g.mode=='FAULT';stopped()
+    for field,value in [('linear.x',-g.safety.max_reverse_mps-.01),('linear.x',g.safety.max_linear_mps+.01),('linear.y',.01),('linear.z',.01),('angular.x',.01),('angular.y',.01),('angular.z',g.safety.max_angular_rps+.01),('angular.z',math.nan),('linear.x',math.inf)]:
+        flags['field']=field;flags['value']=value;pump(.15);assert g.mode=='FAULT',(field,value,g.mode);stopped()
         assert not call(arm,Trigger.Request()).success
         flags['field']=None;pump(.2);assert g.mode=='FAULT';enable()
     flags['frame']='camera_optical';pump(.2);assert g.mode=='FAULT';stopped()

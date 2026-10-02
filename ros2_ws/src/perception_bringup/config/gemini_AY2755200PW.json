@@ -1,0 +1,62 @@
+{
+  "name": "SV1301S_U3",
+  "serial": "AY2755200PW",
+  "firmware": "RD3013",
+  "vid": 11205,
+  "pid": 1556,
+  "sdk": "1.10.16",
+  "color_intrinsic": {
+    "width": 640,
+    "height": 480,
+    "fx": 452.446991,
+    "fy": 452.446991,
+    "cx": 325.749512,
+    "cy": 245.025116
+  },
+  "depth_intrinsic": {
+    "width": 640,
+    "height": 400,
+    "fx": 478.763519,
+    "fy": 478.763519,
+    "cx": 322.038239,
+    "cy": 198.694153
+  },
+  "color_distortion": [
+    0.048700612,
+    -0.065307878,
+    -0.000110935427,
+    -3.75141499e-05,
+    0,
+    0,
+    0,
+    0
+  ],
+  "depth_distortion": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "depth_to_color_rotation": [
+    0.999992728,
+    -0.00283667189,
+    0.00255711377,
+    0.00283383881,
+    0.99999541,
+    0.00111067062,
+    -0.00256025232,
+    -0.00110341609,
+    0.999996126
+  ],
+  "depth_to_color_translation_mm": [
+    -10.078743,
+    0.0313293412,
+    -0.494629949
+  ],
+  "registration_verified": false,
+  "calibration_source": "Device getCalibrationCameraParamList entry 0; 2026-10-01; no Astra provisional calibration"
+}

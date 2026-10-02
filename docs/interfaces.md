@@ -89,3 +89,8 @@ Foxglove 导入 `foxglove/red-layout.json`（仓库根目录下）后，上方�
 base 话题的 `header.frame_id=base_link`（可配置），position 为 X 前、Y 左、Z 上，距离 `hypot(X,Y)`、偏角 `atan2(Y,X)`（左正）；header.stamp 为发布时刻，observation_stamp 沿用来源观测时间，TF 在观测时刻查询。位置只有源数据、标定确认和 TF 都有效时才有效；无效位置/距离/偏角为 NaN，Marker DELETE。消息结构不变，仅补充字段注释。
 
 未标定时默认不发布安装 TF，占位单位矩阵仅存于 camera_mount.yaml；原光学话题、检测图、锁定服务与 Marker 继续可用。**旧 person_follower 使用光学坐标语义，不能直接接 base 话题。** TF 节点仅接受真实 yolo 来源，不将 demo 当实际校准观测。整个 TF 节点退出时，新话题消费者仍需自行检测断流。
+## C 路线新增接口
+
+显式 `route:=yolo_pose` 使用 Pose 模型；继承原 `TargetState`（source 仍为 yolo）、检测框及锁定服务。新增 `/perception/person_states`（person_interfaces/PersonStateArray），采集时间和逐人轨迹、COCO17 2D/3D 关键点及有效位、姿态/跌倒阶段/原因；无效坐标 NaN。姿态枚举 0未知/1站立/2坐蹲/3躺卧/4跌倒，跌倒阶段 0无/1疑似/2确认。失效时 valid=false，人体列表为空。
+
+新增 `/perception/skeleton_markers`（visualization_msgs/MarkerArray）与 `/perception/performance`（RuntimeMetrics）。C 仅检测和显示，不消费跌倒消息到语音或控制。详细输入契约及参数见 [方案 C 实现与验收](方案C实现与验收.md)。

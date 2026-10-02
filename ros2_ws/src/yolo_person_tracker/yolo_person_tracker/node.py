@@ -41,6 +41,7 @@ class TrackerNode(Node):
         super().__init__('yolo_person_tracker', **kwargs)
         defaults = {
             'model_path': '', 'device': 'cpu', 'image_size': 640, 'nms_free': True,
+            'model_task': 'detect',
             'color_topic': '/camera/color/image_rect',
             'depth_topic': '/camera/aligned_depth_to_color/image_raw',
             'camera_info_topic': '/camera/color/camera_info',
@@ -137,7 +138,7 @@ class TrackerNode(Node):
             else:
                 self.loading = self.pool.submit(YoloBackend, self.cfg['model_path'],
                                                 self.cfg['device'], self.cfg['image_size'],
-                                                self.cfg['nms_free'])
+                                                self.cfg['nms_free'], self.cfg['model_task'])
         self.timer = self.create_timer(.05, self.tick, callback_group=self.state_group)
 
     @serialized
@@ -314,7 +315,9 @@ class TrackerNode(Node):
                 msg.confidence = chosen.confidence
                 xyz = self.positions.get(chosen.track_id)
                 held = chosen.track_id in self.held_position_ids
-                measurement_age = msg.measurement_age_s + self.position_ages.get(chosen.track_id, 0.0)
+                measurement_age = (self.get_clock().now().nanoseconds*1e-9
+                                   - stamp_seconds(color.header.stamp)
+                                   + self.position_ages.get(chosen.track_id, 0.0))
                 if held and not 0 <= measurement_age <= self.cfg['position_hold_s']:
                     xyz = None
                 if xyz is None:
@@ -353,13 +356,13 @@ class TrackerNode(Node):
             marker.lifetime.nanosec = 200000000
         self.marker_pub.publish(marker)
 
-    def publish_image(self, color, image, detections):
+    def publish_image(self, color, image, detections, overlay_image=None):
         now = time.monotonic()
         fps = self.cfg['visualization_fps']
         if fps == 0 or now-self.last_visualization_at < 1.0/fps:
             return
         self.last_visualization_at = now
-        annotated = image.copy()
+        annotated = (image if overlay_image is None else overlay_image).copy()
         for detection in detections:
             x1, y1, x2, y2 = map(int, detection.box)
             cv2.rectangle(annotated, (x1,y1), (x2,y2), (0,255,0), 2)

@@ -17,6 +17,7 @@ def launch_route(context):
         'astra': ('astra_body_adapter', 'bodylist_adapter'),
         'red': ('red_object_tracker', 'tracker'),
         'yolo': ('yolo_person_tracker', 'tracker'),
+        'yolo_pose': ('yolo_person_tracker', 'pose_tracker'),
         'demo': ('perception_bringup', 'demo'),
     }
     package, executable = routes[route]
@@ -24,7 +25,7 @@ def launch_route(context):
     parameters = []
     if route == 'demo':
         parameters = [config]
-    elif route in ('yolo', 'red'):
+    elif route in ('yolo', 'yolo_pose', 'red'):
         parameters = [{name: ParameterValue(LaunchConfiguration(name).perform(context), value_type=str) for name in
                        ('model_path', 'device', 'color_topic', 'depth_topic', 'camera_info_topic')}]
         parameters[0].update({
@@ -67,8 +68,11 @@ def launch_route(context):
             'akimbo_min_votes': int(LaunchConfiguration(
                 'akimbo_min_votes').perform(context)),
         }]
+    if route == 'yolo_pose':
+        parameters[0]['performance_enabled'] = LaunchConfiguration('performance_enabled').perform(context) == 'true'
+        parameters.append(LaunchConfiguration('pose_config').perform(context))
     node_options = {}
-    if route == 'yolo':
+    if route in ('yolo', 'yolo_pose'):
         python = LaunchConfiguration('yolo_python').perform(context)
         if python:
             # The installed console script may have a system-Python shebang.
@@ -79,7 +83,7 @@ def launch_route(context):
         namespace='perception', output='screen',
         parameters=parameters,
     )]
-    if route == 'yolo':
+    if route in ('yolo', 'yolo_pose'):
         nodes.append(Node(package='yolo_person_tracker', executable='target_transform',
                           namespace='perception', output='screen',
                           parameters=[LaunchConfiguration('camera_mount_config').perform(context)]))
@@ -106,7 +110,8 @@ def launch_radar(context):
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('route', default_value='yolo', choices=['astra', 'yolo', 'red', 'demo']),
+        DeclareLaunchArgument('route', default_value='yolo', choices=['astra', 'yolo', 'yolo_pose', 'red', 'demo']),
+        DeclareLaunchArgument('pose_config', default_value=PathJoinSubstitution([FindPackageShare('perception_bringup'), 'config', 'pose.yaml'])),
         DeclareLaunchArgument('performance_enabled', default_value='true', choices=['true', 'false']),
         DeclareLaunchArgument('with_radar', default_value='false', choices=['true', 'false']),
         DeclareLaunchArgument('radar_config', default_value=os.path.join(

@@ -5,6 +5,22 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-182}"
 export ROS_LOCALHOST_ONLY=0
 export ROSCAR_WS="$ROOT/ros2_ws"
+export PERCEPTION_ROUTE="${PERCEPTION_ROUTE:-b}"
+case "$PERCEPTION_ROUTE" in
+  b) camera_script=run_astra_camera.sh; model_name=yolo26s; layout=b-radar-layout.json ;;
+  c) camera_script=run_gemini_camera.sh; model_name=yolo26s-pose; layout=c-layout.json
+     if [[ "${1:-}" != --help && "${1:-}" != -h ]]; then
+       : "${GEMINI_SERIAL:?C 需要 GEMINI_SERIAL}"
+       : "${GEMINI_CALIBRATION:?C 需要 GEMINI_CALIBRATION}"
+     fi
+     export COLOR_TOPIC="${COLOR_TOPIC:-/camera/color/image_rect}"
+     export DEPTH_TOPIC="${DEPTH_TOPIC:-/camera/aligned_depth_to_color/image_raw}"
+     export CAMERA_INFO_TOPIC="${CAMERA_INFO_TOPIC:-/camera/color/camera_info_rect}"
+     export CAMERA_MOUNT_CONFIG="${CAMERA_MOUNT_CONFIG:-$ROOT/ros2_ws/src/perception_bringup/config/gemini_mount.yaml}"
+     export PERCEPTION_INSTALL="${PERCEPTION_INSTALL:-$ROOT/install}"
+     ;;
+  *) echo "PERCEPTION_ROUTE 必须为 b 或 c" >&2; exit 2 ;;
+esac
 export COLOR_TOPIC="${COLOR_TOPIC:-/camera/color/image_raw}"
 export DEPTH_TOPIC="${DEPTH_TOPIC:-/camera/depth/image_raw}"
 export CAMERA_INFO_TOPIC="${CAMERA_INFO_TOPIC:-/camera/color/camera_info}"
@@ -14,13 +30,14 @@ WITH_CHASSIS="${WITH_CHASSIS:-false}"
 export WITH_RADAR="${WITH_RADAR:-false}"
 WITH_FOLLOWER="${WITH_FOLLOWER:-false}"
 MOTION_ENABLED="${MOTION_ENABLED:-false}"
-MODEL_PATH="${MODEL_PATH:-$ROOT/models/weights/yolo26s-fp16.engine}"
+export MODEL_PATH="${MODEL_PATH:-$ROOT/models/weights/$model_name-fp16.engine}"
 YOLO_PYTHON="${YOLO_PYTHON:-$ROOT/.venv-yolo/bin/python3}"
 case "${1:-}" in
   --help|-h)
     cat <<'HELP'
 用法：bash scripts/start_project.sh
-    启动 Astra RGB-D、B 人体检测/ByteTrack、Foxglove 和语音。
+    默认启动 B；PERCEPTION_ROUTE=c 或 scripts/start_c.sh 启动 Gemini/Pose。
+C 必须指定 GEMINI_SERIAL 和 GEMINI_CALIBRATION；相机/配准实测后才设 DEPTH_REGISTERED=true。
 WITH_VOICE=false 关闭语音；VOICE_BACKEND=offline|online 选择离线语音或原在线语音。
 WITH_CHASSIS=true 开启底盘串口收发。
 底盘要求 SERIAL_PORT 和 CAR_MODE；WITH_FOLLOWER=true 时跟随器通过 motion_guard 受保护输出。
@@ -40,7 +57,7 @@ if [[ "$WITH_FOLLOWER" == true && "$MOTION_ENABLED" != true ]]; then
   echo 'WITH_FOLLOWER=true 时必须显式 MOTION_ENABLED=true。' >&2
   exit 2
 fi
-[[ -f "$MODEL_PATH" && -x "$YOLO_PYTHON" ]] || { echo '缺少 B 模型或 Python 环境。' >&2; exit 1; }
+[[ -f "$MODEL_PATH" && -x "$YOLO_PYTHON" ]] || { echo "缺少 $PERCEPTION_ROUTE 模型或 Python 环境。" >&2; exit 1; }
 for file in /opt/ros/humble/setup.bash /home/wheeltec/wheeltec_ros2/install/setup.bash \
   "$ROOT/install/setup.bash"; do
   [[ -f "$file" ]] || { echo "缺少环境：$file" >&2; exit 1; }
@@ -97,6 +114,10 @@ if [[ "$WITH_CHASSIS" == true ]]; then
   source "$ROOT/ros2_ws/chassis_install/setup.bash"
 fi
 set -u
+if [[ "$PERCEPTION_ROUTE" == c ]]; then
+  # shellcheck disable=SC1091
+  source "$ROOT/ros2_ws/gemini_driver/install/setup.bash"
+fi
 packages=(astra_camera yolo_person_tracker perception_bringup)
 [[ "$WITH_RADAR" == true ]] && packages+=(lslidar_driver)
 for package in "${packages[@]}"; do
@@ -129,7 +150,7 @@ start_module() {
   PIDS+=("$!")
   printf '启动 %-10s 日志：%s/artifacts/project/%s.log\n' "$name" "$ROOT" "$name"
 }
-start_module camera bash "$ROOT/scripts/run_astra_camera.sh"
+start_module camera bash "$ROOT/scripts/$camera_script"
 start_module perception bash "$ROOT/scripts/run_b_radar_foxglove.sh"
 if [[ "$WITH_FOLLOWER" == true ]]; then
   start_module follower bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch motion_guard follow.launch.py motion_enabled:=true expected_source:=yolo target_frame:=camera_color_optical_frame radar_required:=false auto_arm:=true geometry_confirmed:='${FOLLOW_GEOMETRY_CONFIRMED:-false}' mount_calibrated:='${FOLLOW_MOUNT_CALIBRATED:-false}' stopping_model_confirmed:='${FOLLOW_STOPPING_MODEL_CONFIRMED:-false}' target_distance_m:=1.0"
@@ -140,10 +161,10 @@ fi
 if [[ "$WITH_VOICE" == true ]]; then
   start_module voice bash "$ROOT/scripts/run_voice_assistant.sh"
 fi
-printf 'B 感知已派发；N10P=%s，底盘串口=%s，直接跟随=%s，语音=%s，配准确认=%s\n' \
-  "${WITH_RADAR:-false}" \
+printf '%s 感知已派发；N10P=%s，底盘串口=%s，直接跟随=%s，语音=%s，配准确认=%s\n' \
+  "$PERCEPTION_ROUTE" "${WITH_RADAR:-false}" \
   "$WITH_CHASSIS" "$WITH_FOLLOWER" "$WITH_VOICE" "${DEPTH_REGISTERED:-false}"
-printf 'Foxglove 网口：ws://192.168.100.2:8765；布局 foxglove/b-radar-layout.json\n'
+printf 'Foxglove 网口：ws://192.168.100.2:8765；布局 foxglove/%s\n' "$layout"
 set +e
 wait -n "${PIDS[@]}"
 result=$?

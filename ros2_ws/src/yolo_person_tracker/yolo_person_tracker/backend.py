@@ -8,10 +8,11 @@ class Detection:
     track_id: int | None
     box: tuple
     confidence: float
+    keypoints: tuple = ()  # COCO17 (u, v, confidence), same raw detection index.
 
 
 class YoloBackend:
-    def __init__(self, model_path, device, image_size, nms_free=True):
+    def __init__(self, model_path, device, image_size, nms_free=True, task='detect'):
         if not Path(model_path).is_file():
             raise ValueError('model_path must point to an existing local weight file')
         if Path(model_path).suffix not in ('.pt', '.engine'):
@@ -19,7 +20,12 @@ class YoloBackend:
         if Path(model_path).suffix == '.engine' and str(device) not in ('0', 'cuda:0'):
             raise ValueError('TensorRT engine requires device=0 on its build Jetson')
         from ultralytics import YOLO
-        self.model = YOLO(model_path, task='detect')
+        if task not in ('detect', 'pose'):
+            raise ValueError('task must be detect or pose')
+        self.model = YOLO(model_path, task=task)
+        if self.model.task != task:
+            raise ValueError(f'Configured {task} but checkpoint is {self.model.task}')
+        self.task = task
         from ultralytics.trackers.byte_tracker import BYTETracker
         from ultralytics.utils import YAML, ROOT, IterableSimpleNamespace
         self.tracker = BYTETracker(IterableSimpleNamespace(**YAML.load(ROOT / 'cfg/trackers/bytetrack.yaml')))
@@ -45,6 +51,13 @@ class YoloBackend:
         # Preserve every raw box, including tentative/unmatched low-score detections.
         tracks = self.tracker.update(boxes.cpu().numpy(), image)
         ids = {int(row[-1]): int(row[4]) for row in tracks}
-        return [Detection(ids.get(index), tuple(map(float, box)), float(conf))
-                for index, (box, conf) in enumerate(zip(boxes.xyxy.cpu().tolist(),
+        box_values = boxes.xyxy.cpu().tolist()
+        keypoints = [()] * len(box_values)
+        if getattr(self, 'task', 'detect') == 'pose':
+            if result.keypoints is None or tuple(result.keypoints.data.shape) != (len(box_values), 17, 3):
+                raise RuntimeError('Pose model must return COCO17 x/y/confidence per detection')
+            keypoints = [tuple(tuple(map(float, point)) for point in person)
+                         for person in result.keypoints.data.cpu().tolist()]
+        return [Detection(ids.get(index), tuple(map(float, box)), float(conf), keypoints[index])
+                for index, (box, conf) in enumerate(zip(box_values,
                                                        boxes.conf.cpu().tolist()))]

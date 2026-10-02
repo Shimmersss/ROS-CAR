@@ -1,0 +1,16 @@
+/**:
+  ros__parameters:
+    pose_confidence: 0.5
+    # Confirm physical upright mounting before permitting FALL_CONFIRMED.
+    pose_upright_confirmed: false
+    pose_horizontal_deg: 60.0
+    pose_standing_deg: 35.0
+    pose_drop_fraction: 0.25
+    pose_transition_s: 1.0
+    pose_lying_confirm_s: 1.0
+    pose_recovery_s: 2.0
+    pose_stable_s: 0.3
+    pose_max_gap_s: 0.5
+    pose_lying_aspect: 1.2
+    pose_knee_height_fraction: 0.2
+    pose_joint_jump_m: 0.5

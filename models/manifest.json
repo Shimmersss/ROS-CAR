@@ -19,6 +19,16 @@
       "local_path": "weights/yolo26s.pt",
       "status": "local_cpu_model_and_bytetrack_smoke_passed_not_jetson_validated",
       "license_note": "Ultralytics AGPL-3.0 / Enterprise; see https://www.ultralytics.com/license"
+    },
+    {
+      "name": "yolo26s-pose.pt",
+      "origin": "Ultralytics official assets v8.4.0, COCO-pretrained pose",
+      "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26s-pose.pt",
+      "size_bytes": 24151790,
+      "sha256": "a083adb42303728ae14c4bd6bd56d80da46f82fb2564dbd6f31dcc92ea321646",
+      "local_path": "weights/yolo26s-pose.pt",
+      "status": "local_cpu_pose_and_bytetrack_smoke_passed_not_jetson_validated",
+      "license_note": "Ultralytics AGPL-3.0 / Enterprise; see https://www.ultralytics.com/license"
     }
   ],
   "default_model": "yolo26s.pt"

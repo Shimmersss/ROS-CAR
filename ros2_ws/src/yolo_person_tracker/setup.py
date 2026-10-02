@@ -19,5 +19,7 @@ setup(
     description='YOLO26 tracking with registered depth and explicit selection.',
     license='Proprietary',
     entry_points={'console_scripts': ['tracker = yolo_person_tracker.node:main',
+                                       'pose_tracker = yolo_person_tracker.pose_node:main',
+                                       'gemini_registration = yolo_person_tracker.gemini_registration:main',
                                        'target_transform = yolo_person_tracker.target_tf:main']},
 )

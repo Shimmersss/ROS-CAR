@@ -1,0 +1,228 @@
+{
+  "configById": {
+    "Image!detections": {
+      "topic": "/perception/detections_preview/compressed",
+      "imageMode": {
+        "imageTopic": "/perception/detections_preview/compressed"
+      },
+      "foxglovePanelTitle": "C 人体骨架与状态"
+    },
+    "RawMessages!target": {
+      "topicPath": "/perception/target_state",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "目标状态：position_valid=false 时 XYZ 为 NaN"
+    },
+    "Plot!distance": {
+      "paths": [
+        {
+          "value": "/perception/target_state.horizontal_distance_m",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/perception/target_state.bearing_rad",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "isSynced": true,
+      "foxglovePanelTitle": "距离 m / 偏角 rad"
+    },
+    "3D!radar": {
+      "fixedFrame": "laser",
+      "followTf": "laser",
+      "topics": {
+        "/radar/points": {
+          "visible": true
+        },
+        "/scan": {
+          "visible": false
+        }
+      },
+      "foxglovePanelTitle": "N10P 实测二维扫描（laser 平面）"
+    },
+    "RawMessages!radar": {
+      "topicPath": "/radar/status",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "N10P 健康状态"
+    },
+    "Image!raw": {
+      "topic": "/perception/color_preview/compressed",
+      "imageMode": {
+        "imageTopic": "/perception/color_preview/compressed"
+      },
+      "foxglovePanelTitle": "Astra 彩色预览（JPEG，低带宽）"
+    },
+    "Plot!xyz": {
+      "paths": [
+        {
+          "value": "/perception/target_state.position.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/perception/target_state.position.y",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/perception/target_state.position.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "isSynced": true,
+      "foxglovePanelTitle": "B 目标 XYZ（光学系，锁定且深度有效时）"
+    },
+    "3D!target": {
+      "fixedFrame": "camera_color_optical_frame",
+      "followTf": "camera_color_optical_frame",
+      "topics": {
+        "/perception/target_marker": {
+          "visible": true
+        }
+      },
+      "foxglovePanelTitle": "B 目标三维位置（有有效测距才显示）"
+    },
+    "3D!map": {
+      "fixedFrame": "map",
+      "followTf": "map",
+      "topics": {
+        "/map": {
+          "visible": true
+        },
+        "/plan": {
+          "visible": true
+        },
+        "/local_plan": {
+          "visible": true
+        }
+      },
+      "foxglovePanelTitle": "SLAM 地图/路径（建图与 TF 启动后显示）"
+    },
+    "RawMessages!odom": {
+      "topicPath": "/odom",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "底盘里程计回传"
+    },
+    "RawMessages!voice": {
+      "topicPath": "/voice/assistant_text",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "语音助手回答"
+    },
+    "RawMessages!asr": {
+      "topicPath": "/voice/asr_text",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "语音识别文本"
+    },
+    "Plot!velocity": {
+      "paths": [
+        {
+          "value": "/odom.twist.twist.linear.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/odom.twist.twist.angular.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "isSynced": true,
+      "foxglovePanelTitle": "底盘反馈速度（运动关闭时应为零）"
+    },
+    "RawMessages!asrstate": {
+      "topicPath": "/voice/asr_state",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "语音识别运行状态（1 Hz）"
+    },
+    "RawMessages!ttsstate": {
+      "topicPath": "/voice/tts_state",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "语音播报运行状态（1 Hz）"
+    },
+    "RawMessages!voicewords": {
+      "topicPath": "/voice_words",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "唤醒事件"
+    },
+    "RawMessages!voicechat": {
+      "topicPath": "/voice/chat_state",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "DeepSeek 对话状态"
+    },
+    "RawMessages!voiceresult": {
+      "topicPath": "/voice/command_result",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "语音控制执行结果"
+    },
+    "RawMessages!persons": {
+      "topicPath": "/perception/person_states",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "逐人状态 / 跌倒阶段"
+    },
+    "3D!skeleton": {
+      "fixedFrame": "camera_color_optical_frame",
+      "followTf": "camera_color_optical_frame",
+      "topics": {
+        "/perception/skeleton_markers": {
+          "visible": true
+        },
+        "/perception/target_marker": {
+          "visible": true
+        }
+      },
+      "foxglovePanelTitle": "C 有效三维骨架"
+    },
+    "Plot!performance": {
+      "paths": [
+        {
+          "value": "/perception/performance.output_fps",
+          "enabled": true
+        },
+        {
+          "value": "/perception/performance.processing_ms",
+          "enabled": true
+        },
+        {
+          "value": "/perception/performance.observation_age_ms",
+          "enabled": true
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "isSynced": true,
+      "foxglovePanelTitle": "C FPS / 推理耗时 / 观测年龄"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "linkedGlobalVariables": [],
+  "playbackConfig": {
+    "speed": 1,
+    "messageOrder": "receiveTime"
+  },
+  "layout": {
+    "direction": "column",
+    "first": {
+      "direction": "row",
+      "first": "Image!detections",
+      "second": "RawMessages!persons",
+      "splitPercentage": 65
+    },
+    "second": {
+      "direction": "row",
+      "first": "3D!skeleton",
+      "second": {
+        "direction": "column",
+        "first": "RawMessages!target",
+        "second": "Plot!performance",
+        "splitPercentage": 50
+      },
+      "splitPercentage": 65
+    },
+    "splitPercentage": 60
+  }
+}

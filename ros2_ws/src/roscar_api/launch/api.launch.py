@@ -59,5 +59,5 @@ def generate_launch_description():
     booleans = {'motion_enabled','with_perception','with_follower','with_radar','with_chassis','depth_registered','radar_required'}
     return LaunchDescription([DeclareLaunchArgument(k, default_value=v,
         **({'choices':['true','false']} if k in booleans else
-           {'choices':['yolo','red','astra']} if k == 'route' else {}))
+           {'choices':['yolo','yolo_pose','red','astra']} if k == 'route' else {}))
         for k,v in defaults.items()] + [OpaqueFunction(function=start)])

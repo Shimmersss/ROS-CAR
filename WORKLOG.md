@@ -995,3 +995,18 @@
 - 用户现场日志出现“真。”“嗯。”等无关识别，路由器之前会播报整段可用指令提示。现对未匹配固定指令或无法解析的含糊口令只记录日志，不发 TTS，继续监听；有效动作被运动门禁拒绝时仍播报失败原因。
 - 本地 29 项相关测试、Python 编译与差异检查通过；车上隔离 ROS 域 185 假 guard 测试确认“嗯。”“真。”“前任”不产生 TTS，随后“前进”仍能自动授权，原有停止、急停和授权未确认安全路径通过。
 - 改动前备份 `/home/wheeltec/ROSCAR-backups/silent-unknown-20260929-222043/before.tar.gz`，SHA-256 `52768f17c09e5c68d213a74c67347ccf2b5bb84f049c4d921fc16a63556caa63`。正式 `voice_command_router` 原生 Humble 构建成功；重启服务后读回新版源码与安装包哈希一致、连续 ASR 已加载、会话未激活、`/cmd_vel` 零速。未执行真人语音和实际底盘运动测试。
+
+
+## 2026-10-01：本机新增 C Gemini/Pose 路线
+
+- 用户确认 C 继承 B，其检测模型替换为 YOLO26s-pose；画面内所有跟踪人体输出站立、坐蹲、躺卧、跌倒、未知。本阶段只检测和显示，不接语音/运动；真人验收按用户回复延后，本轮不部署或切换小车。默认入口仍 B，C 显式 `route:=yolo_pose` / `scripts/start_c.sh`。
+- Mac USB 与现有 Orbbec SDK v1.10.16 实测设备内部名 SV1301S_U3、序列号 AY2755200PW、固件 RD3013，深度 2bc5:0614 / UVC 2bc5:0511。10 秒 300 张原生 640×400 深度帧；保存样本有效深度约 51.6–52.2%。SDK libuvc 彩色打开失败 -3，改由 AVFoundation USB Camera 获得真实 640×480 JPEG；两路分别采样，不宣称同步 RGB-D 或物理配准已通过。SDK 不支持新版显式硬件同步。
+- 深度单开时 Pipeline 内参为空；从设备 getCalibrationCameraParamList 第0项取得实际 RGB 640×480 / 深度640×400内参、畸变、深度到彩色外参，保存到序列号专用 JSON。显式软件校正/投影/z-buffer 保留原输入时间，严格核对序列号、尺寸、frame、编码、时间和标定；不继承 Astra 临时内参。Gemini 安装外参独立且未确认，DEPTH_REGISTERED 默认 false。
+- 官方 Pose 权重 24,151,790 字节与官方 release digest 一致，SHA-256 a083adb42303728ae14c4bd6bd56d80da46f82fb2564dbd6f31dcc92ea321646；真实 Mac CPU 官方 bus.jpg 4 人各17点，重复静态帧 ID 延续，Gemini 实拍无人。不是现场人体/跌倒验收或 Jetson 性能验证；FP16 Pose 导出只准备入口，未在 Jetson 执行。
+- 新增 PersonState/PersonStateArray、骨架 MarkerArray、逐人有界时序规则与性能统计，延续 ByteTrack 原检测索引、epoch ID、B 目标/选人/滤波/TF 契约。关节只用当帧真实邻域深度，拒绝洞/背景/跳变；静态躺卧不补报跌倒，安装未确认最多疑似；断流/遮挡/缺点中断连续计时。
+- 官方 legacy Gemini ROS2 驱动固定 f7e71d9ce806e788cb48d8580aac2c778fba4214，独立下载源码在 Linux ARM64 Humble 编译 2 包成功（约71秒）；补齐 upstream 未声明的 nlohmann-json 与相关依赖，并为已安装 Ubuntu libuvc/glog 生成缺失 pkg-config 元数据。原驱动源码未改。证据 artifacts/gemini-driver-build.log；没有驱动实机运行证据。
+- 最小审查修正骨架叠加污染原始预览、DELETE frame、ROS固定数组浮点类型、空/失效人体列表、缺配置错误及 C overlay 路径。回归发现 B measurement_age 从 NaN 起算，已按观测时间与真实测量年龄修复；两项既有测试限值假设与当前0.2m/s默认不一致，测试改读配置/固定PTY夹具限值，未改运动默认值；并发测试先确认状态订阅发现再计响应，保留原并发/过期要求。
+- 本机 Python 逻辑37项、C入口3项通过；结构检查、ShellCheck、git diff --check通过。ROS最终回归结果在本条后补充。资料见 docs/方案C实现与验收.md；真实证据 artifacts/gemini-input-report.json、gemini-probe/、gemini-color.jpg、c-model-smoke.json。
+- 最终 C 专项 `bash scripts/test_c_container.sh` 退出码0：14主动包编译（约11秒）、37项 B/C逻辑、C骨架/3D/失效/epoch/锁定/性能、真实ROS配准节点的单位/时间/尺寸/frame拒绝、B同步RGB-D/TF/并发、A适配器、35项语音测试、A/B/C/red/demo/非法route及对外API C默认IDLE/零速/缺模型拒绝全部通过。日志 artifacts/c-acceptance.log。
+- 完整旧 `scripts/test_container.sh` 未取得单次全绿：旧API/guard测试间歇触发 request_timestamp 看门狗，旧并发测试曾受话题发现/完成时序影响。没有放宽产品时效或运动门禁；记录 artifacts/c-regression-watchdog-failure.log、c-regression-guard-timing-failure.log、c-acceptance-legacy-api-timing-failure.log。此前分段已观察到3底盘包构建、真实PTY、保护与回放测试通过，但不据此称整个旧套件本轮全通过。C最终专项按独立ROS域验证通过。
+- 临时容器均 --rm，复用原有Humble镜像/本机Python/Orbbec SDK；任务产生的可重建相机下载源码和临时探针可执行文件清理，保留源码交付、Pose权重、设备标定和验证证据。实物配准/量距、真人动作、Foxglove客户端及Jetson部署/GPU仍待验收。
