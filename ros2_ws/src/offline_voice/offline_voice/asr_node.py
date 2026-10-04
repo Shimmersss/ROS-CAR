@@ -10,7 +10,8 @@ import rclpy
 from std_msgs.msg import String
 
 from xfyun_speech.asr_node import XfyunAsrNode
-from xfyun_speech.audio import ArecordCapture, pcm_rms_s16le
+from xfyun_speech.audio import pcm_rms_s16le
+from .frontend import NeuralEndpoint, qwen_hotword_options
 
 
 DEFAULT_MODEL_ROOT = Path(os.environ.get(
@@ -30,6 +31,17 @@ class OfflineAsrNode(XfyunAsrNode):
         self.declare_parameter('qwen3_model_dir', str(DEFAULT_MODEL_ROOT /
             'sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25'))
         self.declare_parameter('num_threads', 2)
+        self.declare_parameter('vad_backend', 'silero')
+        self.declare_parameter('vad_model', str(DEFAULT_MODEL_ROOT / 'silero_vad.onnx'))
+        self.declare_parameter('endpoint_silence_s', 0.6)
+        self.declare_parameter('hotwords_enabled', False)
+        self.declare_parameter('robot_hotwords', ['前进', '后退', '左转', '右转', '停止', '停下', '急停', '别动', '跟随', '启动', '状态', '电量', '一下', '一点', '稍微'])
+        self._endpoint = None
+        if self.get_parameter('vad_backend').value == 'silero':
+            self._endpoint = NeuralEndpoint(self.get_parameter('vad_model').value,
+                float(self.get_parameter('endpoint_silence_s').value), max_speech_s=float(self.get_parameter('max_utterance_sec').value))
+        elif self.get_parameter('vad_backend').value != 'rms':
+            raise ValueError('vad_backend must be silero or explicit rms fallback')
         self._recognizer = self._load_recognizer()
         self.get_logger().info(f'离线 ASR 模型已加载: {self._backend}')
 
@@ -50,7 +62,10 @@ class OfflineAsrNode(XfyunAsrNode):
                 conv_frontend=str(required[0]), encoder=str(required[1]),
                 decoder=str(required[2]), tokenizer=str(directory / 'tokenizer'),
                 num_threads=int(self.get_parameter('num_threads').value),
-                max_new_tokens=128, provider='cpu')
+                max_new_tokens=128, provider='cpu', **qwen_hotword_options(
+                    sherpa_onnx.OfflineRecognizer.from_qwen3_asr,
+                    self.get_parameter('robot_hotwords').value,
+                    self.get_parameter('hotwords_enabled').value))
         if self._backend == 'fire_red_ctc':
             directory = Path(self.get_parameter('fire_red_model_dir').value)
             required = (directory / 'model.int8.onnx', directory / 'tokens.txt')
@@ -83,6 +98,11 @@ class OfflineAsrNode(XfyunAsrNode):
         )
 
     def _listen_once(self, trigger_source):
+        if self._endpoint is not None:
+            return self._listen_neural(trigger_source)
+        return self._listen_rms(trigger_source)
+
+    def _listen_rms(self, trigger_source):
         del trigger_source
         sample_rate = int(self.get_parameter('sample_rate').value)
         frame_ms = int(self.get_parameter('frame_ms').value)
@@ -93,7 +113,7 @@ class OfflineAsrNode(XfyunAsrNode):
         speech_timeout = float(self.get_parameter('speech_timeout_sec').value)
         max_utterance = float(self.get_parameter('max_utterance_sec').value)
         device = str(self.get_parameter('capture_device').value)
-        capture = ArecordCapture(device, sample_rate)
+        capture = self._capture(device, sample_rate)
         # Keep only a short pre-roll before onset, not an entire noisy wait.
         preroll = deque(maxlen=max(1, 400 // frame_ms))
         frames = []
@@ -105,7 +125,7 @@ class OfflineAsrNode(XfyunAsrNode):
             self._publish_state('LISTENING')
             started = time.monotonic()
             speech_at = None
-            while not self._stop.is_set():
+            while not self._stop.is_set() and not self._cancel.is_set():
                 pcm = capture.read(frame_bytes)
                 if self._speaking:
                     self.get_logger().info('收音被播报打断，丢弃本轮音频')
@@ -118,6 +138,7 @@ class OfflineAsrNode(XfyunAsrNode):
                         speech_started = True
                         speech_at = time.monotonic()
                         frames.extend(preroll)
+                        self._publish_state('SPEECH')
                 else:
                     frames.append(pcm)
                     silence_ms = 0 if rms >= threshold else silence_ms + frame_ms
@@ -125,9 +146,11 @@ class OfflineAsrNode(XfyunAsrNode):
                 # Do not cut a word whose onset straddles the waiting deadline.
                 if not speech_started and not candidate_ms and now - started >= speech_timeout:
                     return
-                if speech_started and (silence_ms >= silence_limit or now - speech_at >= max_utterance):
+                if speech_started and now - speech_at >= max_utterance:
+                    return  # Reject an incomplete utterance at the hard limit.
+                if speech_started and silence_ms >= silence_limit:
                     break
-            if self._stop.is_set() or not speech_started:
+            if self._stop.is_set() or self._cancel.is_set() or not speech_started:
                 return
             self._phase = 'RECOGNIZING'
             self._publish_state('RECOGNIZING')
@@ -146,7 +169,7 @@ class OfflineAsrNode(XfyunAsrNode):
                 while self._recognizer.is_ready(stream):
                     self._recognizer.decode_stream(stream)
                 text = self._recognizer.get_result(stream).strip()
-            if self._speaking or self._stop.is_set():
+            if self._speaking or self._stop.is_set() or self._cancel.is_set():
                 return
             self.get_logger().info(
                 f'ASR backend={self._backend} audio_s={len(samples)/sample_rate:.2f} '
@@ -154,6 +177,55 @@ class OfflineAsrNode(XfyunAsrNode):
             if text:
                 self._text_pub.publish(String(data=text))
                 self.get_logger().info(f'离线识别结果: {text}')
+        finally:
+            capture.close()
+
+
+    def _listen_neural(self, trigger_source):
+        del trigger_source
+        endpoint = self._endpoint
+        endpoint.reset()
+        capture = self._capture(str(self.get_parameter('capture_device').value), 16000)
+        started, speech_at, audio = time.monotonic(), None, None
+        self._phase = 'LISTENING'
+        try:
+            capture.start()
+            self._publish_state('LISTENING')
+            while not self._stop.is_set() and not self._cancel.is_set():
+                pcm = capture.read(1280)
+                if self._speaking:
+                    return
+                audio = endpoint.accept(np.frombuffer(pcm, dtype='<i2').astype(np.float32) / 32768.)
+                now = time.monotonic()
+                if endpoint.speech_started and speech_at is None:
+                    speech_at = now
+                    self._publish_state('SPEECH')
+                if audio is not None:
+                    break
+                if speech_at is None and now - started >= float(self.get_parameter('speech_timeout_sec').value):
+                    return
+                if speech_at is not None and now - speech_at >= float(self.get_parameter('max_utterance_sec').value):
+                    return
+            if audio is None or self._cancel.is_set() or self._stop.is_set():
+                return
+            capture.close()
+            self._phase = 'RECOGNIZING'
+            self._publish_state('RECOGNIZING')
+            stream = self._recognizer.create_stream()
+            if self._backend == 'qwen3':
+                stream.set_option('language', 'Chinese')
+            stream.accept_waveform(16000, audio)
+            if self._backend in ('qwen3', 'fire_red_ctc', 'sensevoice'):
+                self._recognizer.decode_stream(stream)
+                text = stream.result.text.strip()
+            else:
+                stream.accept_waveform(16000, np.zeros(10560, dtype=np.float32))
+                stream.input_finished()
+                while self._recognizer.is_ready(stream):
+                    self._recognizer.decode_stream(stream)
+                text = self._recognizer.get_result(stream).strip()
+            if text and not (self._cancel.is_set() or self._speaking or self._stop.is_set()):
+                self._text_pub.publish(String(data=text))
         finally:
             capture.close()
 

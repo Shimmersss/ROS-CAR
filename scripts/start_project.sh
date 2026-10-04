@@ -36,10 +36,6 @@ set -u
 for value in "$WITH_VOICE" "$WITH_CHASSIS" "$WITH_RADAR" "$WITH_FOLLOWER" "$MOTION_ENABLED" "${DEPTH_REGISTERED:-false}" "$AUTO_LOCK_SINGLE"; do
   [[ "$value" == true || "$value" == false ]] || { echo '开关必须为 true/false' >&2; exit 2; }
 done
-if [[ "$WITH_FOLLOWER" == true && "$MOTION_ENABLED" != true ]]; then
-  echo 'WITH_FOLLOWER=true 时必须显式 MOTION_ENABLED=true。' >&2
-  exit 2
-fi
 [[ -f "$MODEL_PATH" && -x "$YOLO_PYTHON" ]] || { echo '缺少 B 模型或 Python 环境。' >&2; exit 1; }
 for file in /opt/ros/humble/setup.bash /home/wheeltec/wheeltec_ros2/install/setup.bash \
   "$ROOT/install/setup.bash"; do
@@ -53,8 +49,7 @@ fi
 if [[ "$WITH_VOICE" == true ]]; then
   case "${VOICE_BACKEND:-offline}" in
     online)
-      voice_file="${ROSCAR_VOICE_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/roscar/voice.env}"
-      [[ -f "$voice_file" ]] || { echo "缺少语音私有配置：$voice_file" >&2; exit 1; }
+      echo "统一安全链路要求 VOICE_BACKEND=offline，云端识别可用 ASR_BACKEND=xfyun。" >&2; exit 2
       ;;
     offline)
       offline_root="${ROSCAR_OFFLINE_ROOT:-/home/wheeltec/ROSCAR-offline}"
@@ -62,6 +57,11 @@ if [[ "$WITH_VOICE" == true ]]; then
       voice_files=(
         "$offline_root/venv/lib/python3.10/site-packages/sherpa_onnx/__init__.py"
         "$offline_models/vits-melo-tts-zh_en/model.onnx"
+        "$offline_models/silero_vad.onnx"
+        "$offline_models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/encoder-epoch-13-avg-2-chunk-8-left-64.int8.onnx"
+        "$offline_models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/decoder-epoch-13-avg-2-chunk-8-left-64.onnx"
+        "$offline_models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/joiner-epoch-13-avg-2-chunk-8-left-64.int8.onnx"
+        "$offline_models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/tokens.txt"
       )
       if [[ "${ASR_BACKEND:-offline}" == offline ]]; then
         qwen_model="$offline_models/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25"
@@ -131,7 +131,7 @@ start_module() {
 start_module camera bash "$ROOT/scripts/run_astra_camera.sh"
 start_module perception bash "$ROOT/scripts/run_b_radar_foxglove.sh"
 if [[ "$WITH_FOLLOWER" == true ]]; then
-  start_module follower bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch motion_guard follow.launch.py motion_enabled:=true expected_source:=yolo target_frame:=camera_color_optical_frame radar_required:=false auto_arm:=true geometry_confirmed:='${FOLLOW_GEOMETRY_CONFIRMED:-false}' mount_calibrated:='${FOLLOW_MOUNT_CALIBRATED:-false}' stopping_model_confirmed:='${FOLLOW_STOPPING_MODEL_CONFIRMED:-false}' target_distance_m:=1.0"
+  start_module follower bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch motion_guard follow.launch.py motion_enabled:='$MOTION_ENABLED' expected_source:=yolo target_frame:=camera_color_optical_frame radar_required:=false auto_arm:=false geometry_confirmed:='${FOLLOW_GEOMETRY_CONFIRMED:-false}' mount_calibrated:='${FOLLOW_MOUNT_CALIBRATED:-false}' stopping_model_confirmed:='${FOLLOW_STOPPING_MODEL_CONFIRMED:-false}' target_distance_m:=1.0"
 fi
 if [[ "$WITH_CHASSIS" == true ]]; then
   start_module chassis bash "$ROOT/scripts/run_chassis_io.sh"

@@ -25,16 +25,22 @@ def generate_launch_description():
                          'serial_baud_rate': 115200}],
             condition=IfCondition(LaunchConfiguration('enable_wake_driver')),
         ),
+        Node(package='offline_voice', executable='audio_node',
+             name='voice_audio_capture', output='screen', parameters=[config]),
+        Node(package='offline_voice', executable='emergency_node',
+             name='emergency_kws', output='screen', parameters=[config]),
+        Node(package='voice_command_router', executable='motion_adapter',
+             name='chassis_motion_adapter', output='screen', parameters=[config]),
         Node(
             package='offline_voice', executable='asr_node',
-            name='offline_asr', output='screen', parameters=[config],
+            name='offline_asr', output='screen', parameters=[config, {'audio_source': 'topic'}],
             condition=UnlessCondition(LaunchConfiguration('use_xfyun_asr')),
         ),
         Node(
             package='xfyun_speech', executable='asr_node',
             # Retain the parameter namespace and existing topic/service contract.
             name='offline_asr', output='screen',
-            parameters=[config, {'speech_timeout_sec': 5.0, 'speech_onset_ms': 160}],
+            parameters=[config, {'audio_source': 'topic', 'speech_timeout_sec': 5.0, 'speech_onset_ms': 160}],
             condition=IfCondition(LaunchConfiguration('use_xfyun_asr')),
         ),
         Node(

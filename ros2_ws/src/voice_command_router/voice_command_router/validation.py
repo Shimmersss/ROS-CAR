@@ -77,7 +77,7 @@ def _number(value):
 
 _NUMBER = r'(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+|[零〇一二两三四五六七八九十]+(?:点[零〇一二两三四五六七八九0-9]+)?)'
 _DURATION = rf'(?:持续|维持)?(?P<duration>{_NUMBER}|半)(?:秒钟|秒|s)'
-_PREFIX = re.compile(r'^(?:麻烦你|麻烦|请你|请|帮我|小车|现在|马上|立即|先)')
+_PREFIX = re.compile(r'^(?:麻烦你|麻烦|请你|请|帮我|小车|现在|马上|立即|先|稍微)')
 _SOFT_SUFFIX = r'(?:一下|一点|一点点)?'
 _DIRECTIONS = {
     'forward': r'(?:前进|(?:向|往|朝)前(?:面|方)?(?:短暂)?(?:移动|挪动|挪|走|行驶|开动|开)?|前)',
@@ -134,14 +134,14 @@ def _drive_pattern(direction):
 _DRIVE_PATTERNS = {key: _drive_pattern(key) for key in _DIRECTIONS}
 
 
-def parse_local_text(text, *, forward_mps=0.08, reverse_mps=-0.08,
-                     turn_rps=0.25, duration_s=2.0):
+def parse_intent(text):
     """Parse common Chinese driving phrases without network access.
 
     Returns a small action dictionary or ``None`` for ordinary conversation.
     A recognized but ambiguous command raises CommandValidationError.
     """
     normalized = unicodedata.normalize('NFKC', str(text or '')).lower()
+    micro = bool(re.search(r'一下|一点|稍微|短暂', normalized))
     if len(normalized) > 256:
         raise CommandValidationError('指令过长，请一次只说一个动作')
     normalized = re.sub(r'[\s，。、,!！]', '', normalized)
@@ -153,6 +153,14 @@ def parse_local_text(text, *, forward_mps=0.08, reverse_mps=-0.08,
         if stripped == normalized:
             break
         normalized = stripped
+    if normalized == '急停':
+        return {'action': 'ESTOP'}
+    if normalized in ('不用了', '退出语音', '休眠'):
+        return {'action': 'END_SESSION'}
+    if normalized == '解除紧急制动':
+        return {'action': 'RESET_ESTOP'}
+    if normalized == '复位故障':
+        return {'action': 'RESET_FAULT'}
     if _STOP.fullmatch(normalized):
         return {'action': 'STOP'}
     if _STATUS.fullmatch(normalized.rstrip('?？')):
@@ -170,6 +178,9 @@ def parse_local_text(text, *, forward_mps=0.08, reverse_mps=-0.08,
     repeated = re.fullmatch(r'(前进|后退|倒车|倒退|左转|右转|向前|往前|向后|往后|向左|左拐|向右|右拐|前|后|左|右)\1+', normalized)
     if repeated:
         normalized = repeated[1]
+    in_place = normalized.startswith('原地')
+    if in_place:
+        normalized = normalized[2:]
     for direction, patterns in _DRIVE_PATTERNS.items():
         match = next((m for pattern in patterns if (m := pattern.fullmatch(normalized))), None)
         if match:
@@ -181,15 +192,44 @@ def parse_local_text(text, *, forward_mps=0.08, reverse_mps=-0.08,
     slots = match.groupdict()
     speed_text = slots['speed'] or slots['unit_speed'] or slots['per_second']
     speed = _number(speed_text) if speed_text is not None else None
-    duration = _number(slots['duration']) if slots['duration'] else duration_s
-    if direction == 'forward':
-        linear, angular = (speed if speed is not None else forward_mps), 0.0
-    elif direction == 'reverse':
-        linear, angular = -(speed if speed is not None else abs(reverse_mps)), 0.0
-    elif direction == 'left':
-        linear, angular = 0.0, speed if speed is not None else abs(turn_rps)
+    duration = _number(slots['duration']) if slots['duration'] else None
+    linear = direction in ('forward', 'reverse')
+    # Validate stated slots without inventing vehicle kinematics/defaults.
+    validate_drive((speed if speed is not None else 0.08) if linear else 0.,
+                   0. if linear else (speed if speed is not None else 0.25),
+                   duration if duration is not None else 1.)
+    if in_place and linear:
+        raise CommandValidationError('原地动作必须明确为转向')
+    return {'action': 'MOVE' if linear else 'TURN', 'direction': direction.upper(),
+            'style': 'IN_PLACE' if in_place else 'MICRO' if micro else 'NORMAL',
+            'speed': speed, 'duration_s': duration}
+
+
+def parse_local_text(text, *, forward_mps=0.08, reverse_mps=-0.08,
+                     turn_rps=0.25, duration_s=2.0):
+    """Deprecated compatibility view for old text regressions; not a ROS route.
+
+    Runtime uses parse_intent -> MotionRequest -> chassis adapter.
+    """
+    parsed = parse_intent(text)
+    if parsed is None:
+        return None
+    if parsed['action'] == 'ESTOP':
+        return {'action': 'STOP'}
+    if parsed['action'] not in ('MOVE', 'TURN'):
+        return parsed
+    speed = parsed['speed']
+    direction = parsed['direction']
+    duration = parsed['duration_s'] if parsed['duration_s'] is not None else duration_s
+    linear = angular = 0.
+    if direction == 'FORWARD':
+        linear = speed if speed is not None else forward_mps
+    elif direction == 'REVERSE':
+        linear = -(speed if speed is not None else abs(reverse_mps))
+    elif direction == 'LEFT':
+        angular = speed if speed is not None else abs(turn_rps)
     else:
-        linear, angular = 0.0, -(speed if speed is not None else abs(turn_rps))
+        angular = -(speed if speed is not None else abs(turn_rps))
     command = validate_drive(linear, angular, duration)
     return {'action': 'DRIVE', 'linear_mps': command.linear_mps,
             'angular_rps': command.angular_rps, 'duration_s': command.duration_s}

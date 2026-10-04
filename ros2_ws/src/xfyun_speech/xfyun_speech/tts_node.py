@@ -8,6 +8,7 @@ import threading
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool, String
+from std_srvs.srv import Trigger
 
 from .audio import AplaySink
 from .auth import build_signed_websocket_url
@@ -34,6 +35,10 @@ class XfyunTtsNode(Node):
         self._speaking_pub = self.create_publisher(Bool, '/voice/speaking', 10)
         self._queue = queue.Queue(maxsize=5)
         self._stop = threading.Event()
+        self._cancel_all = threading.Event()
+        self._active_cancel = self._cancel_all
+        self._active_sink = None
+        self.create_service(Trigger, '/voice/cancel_speech', self._on_cancel_speech)
         self._state_value = 'IDLE'
         self._state_timer = self.create_timer(1.0, self._republish_state)
         self._worker = threading.Thread(target=self._worker_loop, daemon=True)
@@ -63,9 +68,23 @@ class XfyunTtsNode(Node):
             text = text[:limit] + '。'
             self.get_logger().warning(f'TTS 文本超过 {limit} 字，已截断')
         try:
-            self._queue.put_nowait(text)
+            self._queue.put_nowait((text, self._cancel_all))
         except queue.Full:
             self.get_logger().warning('TTS 队列已满，丢弃新文本')
+
+    def _on_cancel_speech(self, request, response):
+        del request
+        self._cancel_all.set()
+        self._cancel_all = threading.Event()
+        while True:
+            try:
+                self._queue.get_nowait()
+                self._queue.task_done()
+            except queue.Empty:
+                break
+        self._abort_audio()
+        response.success, response.message = True, 'Speech cancelled'
+        return response
 
     def _worker_loop(self):
         while not self._stop.is_set():
@@ -75,18 +94,37 @@ class XfyunTtsNode(Node):
                 continue
             if text is None:
                 break
+            text, self._active_cancel = text
+            if self._active_cancel.is_set():
+                self._queue.task_done()
+                continue
             try:
                 self._speak(text)
             except Exception as exc:
                 self.get_logger().error(str(exc))
                 self._publish_state(f'ERROR: {exc}')
             finally:
+                self._active_sink = None
                 self._publish_speaking(False)
                 if not self._stop.is_set():
                     self._publish_state('IDLE')
                 self._queue.task_done()
 
+    def _speech_cancelled(self):
+        return self._stop.is_set() or self._active_cancel.is_set()
+
+    def _abort_audio(self):
+        if self._active_sink:
+            self._active_sink.abort()
+
+    def _track_sink(self, sink):
+        self._active_sink = sink
+        if self._speech_cancelled():
+            sink.abort()
+
     def _speak(self, text):
+        if self._speech_cancelled():
+            return
         try:
             import websocket
         except ImportError as exc:
@@ -112,6 +150,7 @@ class XfyunTtsNode(Node):
         )
         url = build_signed_websocket_url(endpoint, api_key, api_secret)
         sink = AplaySink(device, sample_rate)
+        self._track_sink(sink)
         ws = None
         self._publish_speaking(True)
         self._publish_state('SPEAKING')
@@ -120,7 +159,7 @@ class XfyunTtsNode(Node):
             sink.start()
             ws.send(json.dumps(request, ensure_ascii=False))
             complete = False
-            while not complete and not self._stop.is_set():
+            while not complete and not self._speech_cancelled():
                 raw = ws.recv()
                 if isinstance(raw, bytes):
                     raw = raw.decode('utf-8')
@@ -136,6 +175,7 @@ class XfyunTtsNode(Node):
 
     def destroy_node(self):
         self._stop.set()
+        self._abort_audio()
         try:
             self._queue.put_nowait(None)
         except queue.Full:

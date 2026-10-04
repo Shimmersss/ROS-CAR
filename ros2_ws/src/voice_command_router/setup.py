@@ -20,6 +20,7 @@ setup(
     entry_points={
         'console_scripts': [
             'router_node = voice_command_router.router_node:main',
+            'motion_adapter = voice_command_router.motion_adapter_node:main',
             'buzzer_gpio_node = voice_command_router.buzzer_gpio_node:main',
         ],
     },

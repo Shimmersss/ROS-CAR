@@ -1,7 +1,8 @@
 # ROSCAR · 室内人体跟随感知
 
-当前稳定版本：V5.1。本分支试验端侧语音，默认入口改为离线 ASR/TTS 和本机 Qwen3；`VOICE_BACKEND=online` 保留原讯飞/DeepSeek 路径。语音控制支持模式切换、短时运动、停止和状态查询；蜂鸣器代码保留为独立模块，不接入语音控制。部署与回退见 [离线语音部署与回退](docs/离线语音部署与回退.md)。
-当前版本：V5.1。语音控制支持 V5 的模式切换、短时运动、停止和状态查询；蜂鸣器代码保留为独立模块，不接入语音控制。
+当前开发分支：`codex/fixed-voice-rules`。2026-10-04 已按优化方案加入统一运动授权、锁存急停、独立 KWS、共享录音、Silero VAD、语义运动适配与有限语音会话；默认保留 Qwen3-ASR 0.6B INT8 / CPU2 和固定规则。源码尚未部署到小车，运动与标定开关默认关闭。实施、无车验证、复现步骤和现场待办见 [语音优化无车实施与验收](docs/语音优化无车实施与验收.md)。
+
+主脚本使用 `VOICE_BACKEND=offline`；可显式选 `ASR_BACKEND=xfyun` 回退云端识别。旧在线 DeepSeek 控制入口不再通过主脚本启动，历史版本说明见 WORKLOG。
 
 当前目标：Orin Nano Super 8GB 上的 B 人体感知、N10P 雷达、语音、底盘回传和 Foxglove。总入口不启动车辆跟随；B 的测距仍等待 RGB-D 配准实物验收。各模块验证范围见 WORKLOG。
 
@@ -17,8 +18,8 @@
 | B 节点 | 已在 Jetson 运行 YOLO26s/ByteTrack，真人检测和临时内参三维坐标有在线样本；连续跟踪与绝对精度待验收 |
 | demo | 显式模拟数据：9 秒目标可见、3 秒丢失，用于验证消息与展示 |
 | Mac → Jetson 同步脚本、模型清单、测试脚本 | 已建立 |
-| 离线语音分支 | sherpa-onnx 流式 ASR、MeloTTS 与本机 Ollama/Qwen3；实机验收状态见 WORKLOG |
-| 原讯飞/DeepSeek 语音助手 | V5.1 已跑通；本分支通过 `VOICE_BACKEND=online` 回退 |
+| 语音开发分支 | Qwen3-ASR、固定语义规则、独立 KWS、Silero VAD、MeloTTS；本轮仅本机验证，未部署 |
+| 原讯飞/DeepSeek 语音助手 | V5.1 历史实现；当前主脚本只提供讯飞 ASR 的显式回退 |
 | 讯飞流式 ASR/TTS → DeepSeek 语音助手 | Orin 真人语音 → 讯飞 IAT → DeepSeek 回答 → 讯飞 TTS 扬声器播报已跑通 |
 | 语音控制工具 | 支持受限运动、模式切换、停止和状态查询；不提供蜂鸣器工具 |
 | 相机与测距 | 彩色/深度 CameraInfo 已加载用户临时值；B 在线有有效 XYZ，仍需重新标定和物理量距 |

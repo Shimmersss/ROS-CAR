@@ -3,6 +3,15 @@
 1. 每次项目更新后更新 WORKLOG.md，并做与改动范围相称的最小审查；仅在长期规则或项目入口变化时更新 AGENTS.md，避免堆积历史日志。
 2. 缺少必要环境时主动补齐；不得将静态检查描述为编译通过或实机验证。
 
+## 当前语音开发约定（2026-10-04，未部署）
+
+- 以 `docs/语音优化无车实施与验收.md` 为本轮入口和验收边界。没有小车时只做本机软件/模拟/数字音频回放，不宣称板端收音、AEC、制动或物理运动通过。
+- 固定规则运行链使用 `parse_intent -> MotionRequest -> Capability Validator/Ackermann adapter`；旧 `parse_local_text` 仅供兼容文本回归。禁止 LLM 生成底盘运动控制。
+- `motion_guard` 是唯一最终 `/cmd_vel` 发布者和运动授权来源。启动 IDLE/DISARMED，禁止 auto_arm；显式授权必须绑定当前模式返回的 epoch，且有新鲜零请求与 KWS 健康心跳。停止/故障/模式切换/重启使旧票据失效。
+- ESTOP 锁存持久化，普通 STOP/模式切换不能清除；复位仅回到未授权状态。KWS 常开，包括 TTS 期间；共享录音只允许一个 ALSA 所有者。
+- Qwen3-ASR CPU2、MeloTTS 不替换；热词、阿克曼转向、微动标定及总运动开关默认关闭，未经真人实车验收不得默认开启。测试中的校准/免 KWS 参数只用于隔离模拟域。
+- 主入口 `VOICE_BACKEND=offline`；讯飞 ASR 仅通过显式 `ASR_BACKEND=xfyun` 回退，不能通过旧 online 路径恢复 LLM 控制。
+
 ## B 路线当前入口约定
 
 - B 管理入口默认 `models/weights/yolo26s-fp16.engine`，由目标 Jetson 导出；缺文件必须报错，不静默回退。显式 `MODEL_PATH=.../yolo26s.pt` 可做基线对比。

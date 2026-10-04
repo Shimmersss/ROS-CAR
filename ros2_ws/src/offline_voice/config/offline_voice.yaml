@@ -14,6 +14,10 @@ offline_asr:
     wake_cycle_delay_sec: 1.0
     speaking_topic: /voice/speaking
     output_topic: /voice/asr_text
+    audio_source: topic
+    vad_backend: silero
+    endpoint_silence_s: 0.6
+    hotwords_enabled: false
     asr_backend: qwen3
     num_threads: 2
 
@@ -23,13 +27,26 @@ voice_command_router:
     input_topic: /voice/asr_text
     command_topic: /voice/command
     result_topic: /voice/command_result
-    control_request_topic: /chassis/cmd_vel
-    control_timeout_s: 2.0
-    default_forward_mps: 0.2
-    default_reverse_mps: -0.2
-    default_turn_rps: 0.25
-    default_duration_s: 2.0
-    base_frame: base_link
+    followup_window_s: 8.0
+
+voice_audio_capture:
+  ros__parameters:
+    capture_device: plughw:CARD=XFMDPV0018,DEV=0
+
+chassis_motion_adapter:
+  ros__parameters:
+    chassis: ackermann
+    turn_calibrated: false
+    micro_calibrated: false
+    forward_mps: 0.2
+    reverse_mps: 0.2
+    turn_linear_mps: 0.08
+    turn_rps: 0.2
+    min_turn_radius_m: 0.4
+    duration_s: 2.0
+    micro_mps: 0.05
+    micro_turn_rps: 0.1
+    micro_duration_s: 0.5
 
 offline_tts:
   ros__parameters:
