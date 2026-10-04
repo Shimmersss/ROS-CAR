@@ -1,0 +1,172 @@
+{
+  "date": "2026-10-04",
+  "kind": "synthetic_continuous_stream_offset_probe",
+  "sherpa_onnx_version": "1.13.8",
+  "frame_samples": 640,
+  "sample_rate": 16000,
+  "tail_silence_s": 1,
+  "fixture": "artifacts/voice-lab/synthetic/stop.wav",
+  "fixture_sha256": "709084175c74de61ef08edf82aacc97c13a293780643db7be0ba88333d9b3b19",
+  "keywords_sha256": "569b54b93b72b3403430d60785928a311b7c6ca34d1ed0fcb5e17f40704f7489",
+  "model": "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20",
+  "limitations": "Synthetic positive fixture only; audio coordinates are not physical STOP latency or human recall. ROS integration isolates a new-stream positive fixture; production thresholds remain unchanged.",
+  "model_sha256": {
+    "decoder-epoch-13-avg-2-chunk-16-left-64.onnx": "63a22dd60f40fff082ac3e09afa507f6787da36df76ded2fbe145fa233e22c21",
+    "decoder-epoch-13-avg-2-chunk-8-left-64.onnx": "63a22dd60f40fff082ac3e09afa507f6787da36df76ded2fbe145fa233e22c21",
+    "encoder-epoch-13-avg-2-chunk-16-left-64.int8.onnx": "408bbd740838c42d5bf6d1c5b80b3c88b616c7860b92d980328b5b068c76ae48",
+    "encoder-epoch-13-avg-2-chunk-16-left-64.onnx": "540ff509ed89bd22afe04bf7049a54bb1c95c6d8a18742ea9691910cdb5f859e",
+    "encoder-epoch-13-avg-2-chunk-8-left-64.int8.onnx": "2ca84d6bfe73e1ea3c9c49f600f7cad1c9ddd423c53c906b8bfe802444dd78d5",
+    "encoder-epoch-13-avg-2-chunk-8-left-64.onnx": "307e2f5e87e9d6df4fd058239f4437b6236db7699b9c61decb490f89fb4226d0",
+    "joiner-epoch-13-avg-2-chunk-16-left-64.int8.onnx": "190d4067b4cc20b72a42a1916e69d92052000fb7051a427ebb1bc72a69207dc1",
+    "joiner-epoch-13-avg-2-chunk-16-left-64.onnx": "76f7a24ed0c08633af14b2ee377f747af880d3b65eeba2cd3f31f3380fb73e8d",
+    "joiner-epoch-13-avg-2-chunk-8-left-64.int8.onnx": "190d4067b4cc20b72a42a1916e69d92052000fb7051a427ebb1bc72a69207dc1",
+    "joiner-epoch-13-avg-2-chunk-8-left-64.onnx": "76f7a24ed0c08633af14b2ee377f747af880d3b65eeba2cd3f31f3380fb73e8d"
+  },
+  "rows": [
+    {
+      "prefix_silence_frames": 96,
+      "detected": true,
+      "events": [
+        {
+          "keyword": "停止",
+          "chunk_start_after_fixture_s": 1.24
+        }
+      ]
+    },
+    {
+      "prefix_silence_frames": 97,
+      "detected": true,
+      "events": [
+        {
+          "keyword": "停止",
+          "chunk_start_after_fixture_s": 1.36
+        }
+      ]
+    },
+    {
+      "prefix_silence_frames": 98,
+      "detected": true,
+      "events": [
+        {
+          "keyword": "停止",
+          "chunk_start_after_fixture_s": 1.32
+        }
+      ]
+    },
+    {
+      "prefix_silence_frames": 99,
+      "detected": true,
+      "events": [
+        {
+          "keyword": "停止",
+          "chunk_start_after_fixture_s": 1.28
+        }
+      ]
+    },
+    {
+      "prefix_silence_frames": 100,
+      "detected": true,
+      "events": [
+        {
+          "keyword": "停止",
+          "chunk_start_after_fixture_s": 1.24
+        }
+      ]
+    },
+    {
+      "prefix_silence_frames": 101,
+      "detected": false,
+      "events": []
+    },
+    {
+      "prefix_silence_frames": 102,
+      "detected": false,
+      "events": []
+    },
+    {
+      "prefix_silence_frames": 103,
+      "detected": false,
+      "events": []
+    },
+    {
+      "prefix_silence_frames": 104,
+      "detected": true,
+      "events": [
+        {
+          "keyword": "停止",
+          "chunk_start_after_fixture_s": 1.24
+        }
+      ]
+    },
+    {
+      "prefix_silence_frames": 105,
+      "detected": true,
+      "events": [
+        {
+          "keyword": "停止",
+          "chunk_start_after_fixture_s": 1.36
+        }
+      ]
+    },
+    {
+      "prefix_silence_frames": 106,
+      "detected": true,
+      "events": [
+        {
+          "keyword": "停止",
+          "chunk_start_after_fixture_s": 1.32
+        }
+      ]
+    },
+    {
+      "prefix_silence_frames": 107,
+      "detected": true,
+      "events": [
+        {
+          "keyword": "停止",
+          "chunk_start_after_fixture_s": 1.28
+        }
+      ]
+    },
+    {
+      "prefix_silence_frames": 108,
+      "detected": true,
+      "events": [
+        {
+          "keyword": "停止",
+          "chunk_start_after_fixture_s": 1.24
+        }
+      ]
+    },
+    {
+      "prefix_silence_frames": 109,
+      "detected": true,
+      "events": [
+        {
+          "keyword": "停止",
+          "chunk_start_after_fixture_s": 1.36
+        }
+      ]
+    },
+    {
+      "prefix_silence_frames": 110,
+      "detected": true,
+      "events": [
+        {
+          "keyword": "停止",
+          "chunk_start_after_fixture_s": 1.32
+        }
+      ]
+    },
+    {
+      "prefix_silence_frames": 111,
+      "detected": true,
+      "events": [
+        {
+          "keyword": "停止",
+          "chunk_start_after_fixture_s": 1.28
+        }
+      ]
+    }
+  ]
+}

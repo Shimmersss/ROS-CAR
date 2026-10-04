@@ -8,6 +8,6 @@ string action
 string direction
 string style
 bool speed_specified
-float32 speed
+float64 speed
 bool duration_specified
-float32 duration_s
+float64 duration_s

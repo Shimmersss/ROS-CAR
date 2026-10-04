@@ -72,24 +72,28 @@ def main():
     counter = 0
     next_audio = time.monotonic()
 
-    def pump(seconds, pcm=None, feed=True):
-        nonlocal counter, next_audio
+    def publish_frame(pcm):
+        nonlocal counter
+        frame = AudioFrame()
+        frame.stamp = probe.get_clock().now().to_msg()
+        frame.sequence, frame.sample_rate, frame.channels = counter, 16000, 1
+        frame.pcm_s16le = list(pcm)
+        target = TargetState(); target.header.stamp = frame.stamp
+        target.header.frame_id = 'astra_depth_optical_frame'; target.source = 'astra'
+        target.status = TargetState.TRACKING; target.position_valid = True
+        target.position.z = 3.; target.horizontal_distance_m = 3.; target.measurement_age_s = float('nan')
+        targets.publish(target)
+        audio.publish(frame)
+        counter += 1
+
+    def pump(seconds, feed=True):
+        nonlocal next_audio
         end = time.monotonic() + seconds
         if next_audio < time.monotonic() - .1:
             next_audio = time.monotonic()
         while time.monotonic() < end:
             if feed and time.monotonic() >= next_audio:
-                frame = AudioFrame()
-                frame.stamp = probe.get_clock().now().to_msg()
-                frame.sequence, frame.sample_rate, frame.channels = counter, 16000, 1
-                frame.pcm_s16le = list(pcm or bytes(1280))
-                target = TargetState(); target.header.stamp = frame.stamp
-                target.header.frame_id = 'astra_depth_optical_frame'; target.source = 'astra'
-                target.status = TargetState.TRACKING; target.position_valid = True
-                target.position.z = 3.; target.horizontal_distance_m = 3.; target.measurement_age_s = float('nan')
-                targets.publish(target)
-                audio.publish(frame)
-                counter += 1
+                publish_frame(bytes(1280))
                 next_audio += .04
             ex.spin_once(timeout_sec=.003)
 
@@ -131,18 +135,30 @@ def main():
         wake.publish(String(data='小车唤醒')); pump(.2)
         assert router.session.active(time.monotonic()) and states[-1]['authority_state'] == 'DISARMED'
         ticket = authorize()
+        asr.publish(String(data='前进速度0.2两秒')); pump(.2)
+        assert any(v[0] == .2 for v in velocities[-5:]), velocities[-5:]
+        asr.publish(String(data='左转速度0.2两秒')); pump(.2)
+        assert any(v == (.08, .2) for v in velocities[-5:]), velocities[-5:]
         asr.publish(String(data='左转一下')); pump(.3)
         assert any(v[0] == .05 and v[1] == .1 for v in velocities[-10:]), velocities[-10:]
         pump(.6); stopped()
         tts.publish(String(data='请继续说明')); pump(.15)
         assert playback.playing
+        # Isolate the known-positive fixture from prior synthetic silence.
+        # This tests event delivery during TTS, not KWS recall at arbitrary
+        # stream offsets; offset-dependent misses are recorded separately.
+        kws.engine.reset()
         # TTS active flag is irrelevant to the separate KWS subscription.
         wav = Path(os.environ.get('VOICE_TEST_STOP_WAV', str(Path(__file__).resolve().parents[1] / 'artifacts/voice-lab/synthetic/stop.wav')))
         with wave.open(str(wav)) as stream:
             assert (stream.getframerate(), stream.getnchannels(), stream.getsampwidth()) == (16000, 1, 2)
             data = stream.readframes(stream.getnframes())
         for offset in range(0, len(data), 1280):
-            pump(.04, data[offset:offset + 1280].ljust(1280, b'\0'))
+            # Each WAV chunk must be published exactly once, independent of
+            # the silence timer phase and executor scheduling jitter.
+            publish_frame(data[offset:offset + 1280].ljust(1280, b'\0'))
+            next_audio = time.monotonic() + .04
+            pump(.04, feed=False)
         pump(.6)
         assert events and events[0]['tts_was_playing'] and states[-1]['authority_state'] == 'ESTOP', (events, states[-1])
         stopped()
@@ -177,7 +193,7 @@ def main():
         # Canceled TTS jobs are drained; a new generation can still speak.
         assert call('/voice/cancel_speech').success
         assert playback._active_cancel.is_set()
-        print('PASS real ROS authority/adapter/router/KWS: boot disarmed, wake refresh, zero handshake, micro curve, TTS-time KWS ESTOP, latch/reset, stale ticket, audio-loss FAULT, explicit recovery, speech cancellation')
+        print('PASS real ROS authority/adapter/router/KWS: boot disarmed, wake refresh, zero handshake, numeric limits, micro curve, isolated positive KWS fixture during TTS, latch/reset, stale ticket, audio-loss FAULT, explicit recovery, speech cancellation')
     finally:
         playback._stop.set()
         for node in reversed(nodes):
