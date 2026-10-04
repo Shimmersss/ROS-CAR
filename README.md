@@ -105,6 +105,7 @@ python3 scripts/sync_to_jetson.py --host 用户名@IP --dest /home/用户名/ROS
 
 ## 文档入口
 
+- [语音控制使用说明书](docs/语音控制使用说明书.md)：唤醒、授权、行驶口令、跟随、停车及复位流程，适用于当前未部署的固定规则分支。
 - [完整方案](人体跟随感知方案.md) · [两方案对比 PNG](docs/diagrams/人体跟随两方案对比.png)
 - [架构与包边界](docs/architecture.md) · [消息接口](docs/interfaces.md)
 - [分阶段开发计划](docs/roadmap.md) · [Mac / Jetson 工作流](docs/development.md)
