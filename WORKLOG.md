@@ -1,5 +1,13 @@
 # 工作记录
 
+## 2026-10-04：语音优化 P0 统一授权与锁存（仅本机）
+
+- 按用户提供的 Orin Nano 小车语音优化文档修改运动入口；启动 IDLE/DISARMED，MOTION_ENABLED 和几何/制动/安装确认默认 false，拒绝 auto_arm。跟随生产者遵守新鲜 ARMED_FOLLOW 全局状态。
+- 新增纯逻辑 Motion Authority、ESTOP 原子持久化、明确 reset_estop/reset_fault；停止和模式切换撤销旧票据，复位不恢复运动。模式服务返回 epoch，显式 AuthorizeMotion 仅在新鲜零请求/健康紧急通道就绪时有效；重启使用新编号。
+- 新接口同时预留 AudioFrame/MotionRequest，供后续共享录音与阿克曼语义适配使用。旧 /control/arm 默认拒绝，独立底盘示例及回归改为绑定票据的授权。
+- 状态机单测、真实 ROS 模式/故障门控、自定义坐标系/SIGTERM 和 C++ 驱动 PTY 回归通过；本机 chroot 的跨进程测试使用 CycloneDDS，未描述为板端 DDS 或实际运动通过。厂商源码未改，编译使用隔离副本。
+- 未连接或部署到小车。已有 docs/离线语音部署与回退.md 的改动保留且不提交。本提交后的语音前端、有限会话与语义适配仍在同一任务中继续实现。
+
 ## 2026-10-04：停止 Jev 试验，优化固定语音规则（仅本机）
 
 - 按用户要求退出 `codex/jev-decision-lab`，从主线 `59847c0` 新建 `codex/fixed-voice-rules`；模型试验代码未合并，原分支保留历史。已有 `docs/离线语音部署与回退.md` 本地改动保留且不纳入本次提交。

@@ -2,3 +2,4 @@ string mode
 ---
 bool success
 string message
+uint64 authority_epoch
