@@ -9,6 +9,17 @@
 - YOLO 三维位置使用独立恒速卡尔曼；`kalman_measurement_std_m` / `kalman_acceleration_std_mps2` 替代 `depth_smoothing_alpha`。预测必须保留真实测量年龄和超时失效。
 - 与语音并行协作时只改 YOLO 相关文件，不重启整套服务；板端验证优先使用隔离目录和独立命名空间。
 
+## C 深度融合约定
+
+- C 默认 `fusion_enabled=true`，统一关联当帧关节和区域真实深度；关节缺失保持 NaN。目标是框中心射线上的虚拟代表点，不是骨盆或地面点，后续地面定位不得直接混入同一观测。`pose.yaml` 中关闭融合可恢复原 C 路径；B 区域测距保持兼容。参数与验收边界见 `docs/方案C实现与验收.md`。
+
+- C 单目地面定位默认要求双踝一致，禁止无接地证据的框底回退。身高先验默认关闭，需绑定已确认的 epoch:track_id 且持续站立；UNKNOWN 不套站立先验。预测发布必须按真实测量年龄复核保持期限。
+
+- C ReID默认关闭；显式REID_ENABLED/REID_MODEL_PATH启用本地OSNet ONNX及校验文件，不自动下载。另需REID_LOCK_ENABLED=true才接入身份锁定恢复：禁用邻框接续，连续新鲜身份确认后才关联当前轨迹，歧义/失效保持LOST，释放清除身份。持久身份与epoch:track_id分离，不转移身高先验或旧轨迹滤波状态。入口与测试见docs/方案C身份ReID接入与验收.md。
+
+- C统一定位使用独立 `/perception/person_positions` 与 `target_state_unified`，参考点为双踝中点的地面投影；不把原框中心代表点混入。原躯体深度需先通过同轨迹近期确认的关系换算为脚下参考点，才与脚部观测作保守相关融合；映射有龄期且不跨身份。各来源必须有一致性和新鲜度；未确认安装/地面不发布有效统一位置，身高先验不进入统一输出。
+- C三维姿态仅使用真实有效关节；`pose3d_gravity_confirmed` / `pose3d_ground_confirmed` 默认false，依据不足降级二维并标注basis，异常几何未知。二维时序持续更新，三维时序独立保存，短时缺深度暂停确认计时、超时仅清三维候选；不跨像素/米搬用基线。已确认三维事件需三维直立证据恢复。参数及边界见 `docs/方案C统一定位与三维姿态.md`。
+
 ## 当前上下文（2026-09-14）
 
 - 目标：室内人体跟随小车，计划使用 Orin Nano Super 8GB，通过 Mac 上的 Foxglove 和 SSH 调试。
@@ -132,4 +143,5 @@
 
 - C 显式 `route:=yolo_pose` / `scripts/start_c.sh`，默认项目仍为 B。C 复用 B 的跟踪/测距/选人契约，使用官方 YOLO26s-pose；禁止静默回退 detect。`TargetState.source=yolo` 保留消费者兼容。
 - Gemini 使用独立固定版本驱动及设备自身标定，不继承 Astra S 临时内参。要求明确序列号与标定文件，物理配准和安装外参分别确认；不能只改 frame_id。
+- C 单目地面定位为独立 `ground_localizer`：输出脚下接地点，`target_state_ground.source=yolo_ground`，不混入 `yolo` 光学目标或卡尔曼；安装外参与地面平面须分别确认，默认 NOT_READY；身高先验不是实测个体身高。设计和边界见 `docs/方案C实现与验收.md`。
 - 骨架/跌倒首版只发布人体状态与可视化，不接语音或运动。相机直立未确认最多疑似；静态躺卧不补报跌倒。新增入口及边界见 `docs/方案C实现与验收.md`。

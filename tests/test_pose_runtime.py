@@ -1,5 +1,6 @@
 """Synthetic ROS C integration; does not claim real camera/person fall acceptance."""
 import copy
+import sys
 import time
 import numpy as np
 import rclpy
@@ -27,10 +28,12 @@ class Backend:
 
 
 def main():
+    fusion_enabled = '--fusion-off' not in sys.argv
     rclpy.init();backend=Backend()
     node=PoseTrackerNode(backend=backend,namespace='perception',parameter_overrides=[
         Parameter('depth_registered',value=True),Parameter('max_age_s',value=1.),
-        Parameter('pose_upright_confirmed',value=True),Parameter('visualization_scale',value=1.)])
+        Parameter('pose_upright_confirmed',value=True),Parameter('visualization_scale',value=1.),
+        Parameter('fusion_enabled',value=fusion_enabled)])
     ex=SingleThreadedExecutor();ex.add_node(node)
     persons=[];states=[];markers=[];metrics=[]
     node.create_subscription(PersonStateArray,'person_states',persons.append,10)
@@ -47,7 +50,8 @@ def main():
         info=CameraInfo();info.width=info.height=100;info.header.frame_id='camera_color_optical_frame'
         info.p=[100.,0.,50.,0.,0.,100.,50.,0.,0.,0.,1.,0.];ip.publish(info);spin(.03)
         c=node.bridge.cv2_to_imgmsg(np.zeros((100,100,3),np.uint8),'bgr8');c.header.frame_id=info.header.frame_id;c.header.stamp=node.get_clock().now().to_msg()
-        d=node.bridge.cv2_to_imgmsg(np.full((100,100),value,np.uint16),'16UC1');d.header=copy.deepcopy(c.header)
+        pixels = value if isinstance(value, np.ndarray) else np.full((100,100),value,np.uint16)
+        d=node.bridge.cv2_to_imgmsg(pixels,'16UC1');d.header=copy.deepcopy(c.header)
         cp.publish(c);dp.publish(d);spin();return c
     def call(name):
         client=node.create_client(Trigger,name);assert client.wait_for_service(timeout_sec=1)
@@ -58,9 +62,26 @@ def main():
         spin(.3);c=send()
         assert persons[-1].valid and persons[-1].header==c.header
         p=persons[-1].persons[0];assert p.track_id=='0:7' and p.posture==p.STANDING
+        assert p.body_depth_valid and abs(p.body_depth_m-2.)<1e-6
         assert all(p.keypoints_3d_valid) and p.keypoints_3d[5].z==2.
         assert markers[-1].markers[0].action==Marker.ADD
         assert call('lock_target').success;spin();assert states[-1].position_valid
+        if fusion_enabled:
+            sparse=np.zeros((100,100),np.uint16)
+            sparse[17:24,37:44]=2000;sparse[17:24,57:64]=2000
+            c=send(sparse)
+            p=persons[-1].persons[0]
+            assert states[-1].position_valid, states[-1]
+            assert states[-1].observation_stamp==c.header.stamp, states[-1]
+            assert sum(p.keypoints_3d_valid)==2 and 'depth=pose_anchors' in p.detail
+            assert not p.keypoints_3d_valid[11] and np.isnan(p.keypoints_3d[11].z)
+            assert persons[-1].header==c.header
+            send(0)
+            assert not any(persons[-1].persons[0].keypoints_3d_valid)
+            assert not persons[-1].persons[0].body_depth_valid and np.isnan(persons[-1].persons[0].body_depth_m)
+            assert 'depth=invalid' in persons[-1].persons[0].detail
+            # The original short position hold must expire, never refresh on holes.
+            spin(.35);assert not states[-1].position_valid
         backend.detections=[Detection(7,(10,5,90,95),.9,())];send()
         assert persons[-1].persons[0].posture==0 and states[-1].position_valid
         assert all(not x for x in persons[-1].persons[0].keypoints_3d_valid)
@@ -75,7 +96,7 @@ def main():
         assert persons[-1].persons[0].track_id==f'{node.selection.epoch}:7'
         assert node.cfg['model_task']=='pose'
         assert not any(name=='/cmd_vel' for name,_ in node.get_topic_names_and_types())
-        print('C ROS pose/3D/invalid/stale/epoch/lock/metrics integration PASS (synthetic inputs)')
+        print(f'C ROS fusion={fusion_enabled}/pose/3D/invalid/stale/epoch/lock/metrics integration PASS (synthetic inputs)')
     finally:
         ex.shutdown();node.destroy_node();rclpy.shutdown()
 

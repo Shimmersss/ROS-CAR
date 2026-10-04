@@ -10,10 +10,13 @@ from rclpy.parameter import Parameter
 from rclpy.executors import MultiThreadedExecutor
 from geometry_msgs.msg import Point
 from visualization_msgs.msg import Marker, MarkerArray
-from person_interfaces.msg import PersonState, PersonStateArray, RuntimeMetrics
+from person_interfaces.msg import PersonState, PersonStateArray, RuntimeMetrics, PersonIdentityArray
 from .node import TrackerNode, serialized
-from .pose import PoseConfig, PostureTracker, EDGES, LABELS, points2d, joints3d
+from .pose import PoseConfig, EDGES, LABELS, points2d, joints3d
 from .input_contract import stamp_seconds
+from .fusion import FusionConfig, fuse_depth
+from .identity_selection import IdentitySelection
+from .pose3d import Pose3DConfig, EnhancedPostureTracker
 
 
 class PoseTrackerNode(TrackerNode):
@@ -22,14 +25,33 @@ class PoseTrackerNode(TrackerNode):
         overrides = [p for p in overrides if p.name != 'model_task']
         overrides.append(Parameter('model_task', value='pose'))
         super().__init__(parameter_overrides=overrides, **kwargs)
+        self.declare_parameter('reid_lock_enabled', False)
+        self.declare_parameter('reid_lock_confirm_frames', 3)
+        self.declare_parameter('reid_lock_max_age_s', .5)
+        self.reid_lock_enabled = self.get_parameter('reid_lock_enabled').value
+        if self.reid_lock_enabled:
+            self.selection = IdentitySelection(
+                self.get_parameter('reid_lock_confirm_frames').value,
+                self.get_parameter('reid_lock_max_age_s').value)
+            self.create_subscription(PersonIdentityArray, 'person_identities',
+                                     self.on_identities, 10, callback_group=self.state_group)
         values = {}
         for name, value in vars(PoseConfig()).items():
             self.declare_parameter('pose_'+name, value)
             values[name] = self.get_parameter('pose_'+name).value
         self.pose_config = PoseConfig(**values)
+        fusion_values = {}
+        for name, value in vars(FusionConfig()).items():
+            self.declare_parameter('fusion_'+name, value)
+            fusion_values[name] = self.get_parameter('fusion_'+name).value
+        self.fusion_config = FusionConfig(**fusion_values)
         self.declare_parameter('performance_enabled', True)
         self.performance_enabled=self.get_parameter('performance_enabled').value
-        self.postures = PostureTracker(self.pose_config)
+        spatial_values={}
+        for name,value in vars(Pose3DConfig()).items():
+            self.declare_parameter('pose3d_'+name,value)
+            spatial_values[name]=self.get_parameter('pose3d_'+name).value
+        self.postures = EnhancedPostureTracker(self.pose_config,Pose3DConfig(**spatial_values))
         self.person_pub = self.create_publisher(PersonStateArray, 'person_states', 10)
         self.skeleton_pub = self.create_publisher(MarkerArray, 'skeleton_markers', 10)
         self.metrics_pub = self.create_publisher(RuntimeMetrics, 'performance', 10)
@@ -44,6 +66,20 @@ class PoseTrackerNode(TrackerNode):
         if self.performance_enabled:
             self.create_timer(1., self.publish_metrics, callback_group=self.state_group)
 
+    def measure_frame(self, metres, detections, intrinsics):
+        if not self.fusion_config.enabled:
+            return super().measure_frame(metres, detections, intrinsics)
+        observations = {
+            d.track_id: fuse_depth(
+                metres, d.box, d.keypoints, intrinsics,
+                confidence=self.pose_config.confidence,
+                min_fraction=self.cfg['depth_min_fraction'],
+                other_boxes=[other.box for index, other in enumerate(detections) if index != i],
+                config=self.fusion_config)
+            for i, d in enumerate(detections) if d.track_id is not None
+        }
+        return ({identity: result.target for identity, result in observations.items()}, observations)
+
     def process_pair(self, *args):
         start=time.monotonic()
         result=super().process_pair(*args)
@@ -52,7 +88,19 @@ class PoseTrackerNode(TrackerNode):
         return result
 
     @serialized
+    def on_identities(self, msg):
+        self.selection.observe(
+            msg.header.stamp.sec*1000000000+msg.header.stamp.nanosec,
+            msg.header.frame_id,
+            [(p.track_id, p.person_id, p.verified, p.visible) for p in msg.persons],
+            self.get_clock().now().nanoseconds,
+            valid=msg.enabled and msg.valid and not self.error
+                  and self.snapshot is not None and self.fresh_snapshot())
+
+    @serialized
     def tick(self):
+        if self.reid_lock_enabled and (self.error or self.snapshot is None or not self.fresh_snapshot()):
+            self.selection.invalidate()
         super().tick()
         if self.error or self.snapshot is None or not self.fresh_snapshot():
             self.postures.reset()
@@ -77,6 +125,10 @@ class PoseTrackerNode(TrackerNode):
         self.active_markers=current
 
     def publish_image(self, color, image, detections):
+        if self.reid_lock_enabled:
+            self.selection.record_frame(
+                color.header.stamp.sec*1000000000+color.header.stamp.nanosec,
+                color.header.frame_id)
         if self.pose_epoch != self.selection.epoch:
             self.postures.reset(); self.previous_joints.clear(); self.pose_epoch=self.selection.epoch
         msg=PersonStateArray(); msg.header=copy.deepcopy(color.header); msg.valid=True
@@ -97,7 +149,19 @@ class PoseTrackerNode(TrackerNode):
                                  for p,ok in zip(points,valid)]
             person.keypoint_confidences=[float(p[2]) if np.isfinite(p[2]) else 0. for p in points]
             xyz=np.full((17,3),np.nan)
+            observation = self.snapshot[6].get(detection.track_id)
+            person.body_depth_m=math.nan
             if self.cfg['depth_registered']:
+                body=(observation.target if observation is not None else None)
+                source=observation.source if observation is not None else ''
+                if not self.fusion_config.enabled and detection.track_id not in self.held_position_ids:
+                    body=self.positions.get(detection.track_id);source='legacy_regions_filtered'
+                if body is not None and math.isfinite(body[2]):
+                    person.body_depth_valid=True;person.body_depth_m=float(body[2]);person.body_depth_source=source
+            if self.cfg['depth_registered'] and self.fusion_config.enabled:
+                if observation is not None:
+                    xyz = observation.joints.copy()
+            elif self.cfg['depth_registered']:
                 # Never use the predicted/held target position as fresh joint evidence.
                 reference=self.positions.get(detection.track_id) if detection.track_id not in self.held_position_ids else None
                 xyz=joints3d(self.snapshot[1],detection.keypoints,self.snapshot[3],self.pose_config.confidence,reference)
@@ -108,14 +172,18 @@ class PoseTrackerNode(TrackerNode):
                 xyz[jump]=np.nan
             person.keypoints_3d=[Point(x=float(p[0]),y=float(p[1]),z=float(p[2])) for p in xyz]
             person.keypoints_3d_valid=list(map(bool,np.isfinite(xyz).all(axis=1)))
-            person.posture,person.fall_stage,person.detail=self.postures.update(identity,stamp,detection.box,detection.keypoints)
+            person.posture,person.fall_stage,person.detail=self.postures.update(identity,stamp,detection.box,detection.keypoints,xyz)
+            if self.fusion_config.enabled:
+                reason = (f'depth={observation.source}; {observation.reason}' if observation is not None
+                          else 'depth=invalid; registration unconfirmed')
+                person.detail += '; ' + reason
             msg.persons.append(person)
             tint=(0,0,255) if person.fall_stage else (255,255,0)
             for a,b in EDGES:
                 if valid[a] and valid[b]:
                     cv2.line(annotated,tuple(map(int,points[a,:2])),tuple(map(int,points[b,:2])),tint,2)
             x,y=map(int,detection.box[:2])
-            cv2.putText(annotated,f'{LABELS[person.posture]} fall={person.fall_stage}',(x,max(30,y+18)),cv2.FONT_HERSHEY_SIMPLEX,.5,tint,1)
+            cv2.putText(annotated,f'{LABELS[person.posture]} fall={person.fall_stage} {person.detail.split(chr(59),1)[0]}',(x,max(30,y+18)),cv2.FONT_HERSHEY_SIMPLEX,.5,tint,1)
             marker=Marker(); marker.header=copy.deepcopy(color.header)
             marker.ns=identity; marker.id=0; marker.type=Marker.LINE_LIST; marker.action=Marker.ADD
             marker.pose.orientation.w=1.; marker.scale.x=.025

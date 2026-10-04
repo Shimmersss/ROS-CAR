@@ -200,6 +200,12 @@ class TrackerNode(Node):
             self.snapshot = None
             self.selection.candidates = []
 
+    def measure_frame(self, metres, detections, intrinsics):
+        """Worker-owned measurements and optional per-frame subclass evidence."""
+        return ({d.track_id: measure(metres, d.box, intrinsics,
+                                    min_fraction=self.cfg['depth_min_fraction'])
+                 for d in detections if d.track_id is not None}, {})
+
     def process_pair(self, color, depth, received_at, intrinsics, reset):
         # One worker owns all backend calls; no callback can reset/update ByteTrack concurrently.
         bridge = CvBridge()
@@ -218,7 +224,9 @@ class TrackerNode(Node):
         position_ages = {}
         position_stamps = {}
         held_position_ids = set()
+        evidence = {}
         if self.cfg['depth_registered']:
+            measurements, evidence = self.measure_frame(metres, detections, intrinsics)
             for d in detections:
                 if d.track_id is None:
                     continue
@@ -229,8 +237,7 @@ class TrackerNode(Node):
                         acceleration_std_mps2=self.cfg['kalman_acceleration_std_mps2'],
                         jump_reset_m=self.cfg['depth_jump_reset_m'],
                         reset_gap_s=self.cfg['max_age_s']))
-                measured = measure(metres, d.box, intrinsics,
-                                   min_fraction=self.cfg['depth_min_fraction'])
+                measured = measurements.get(d.track_id)
                 xyz = filt.update(measured, observation_stamp)
                 if xyz is not None:
                     positions[d.track_id] = xyz
@@ -242,7 +249,7 @@ class TrackerNode(Node):
                         positions[d.track_id], position_ages[d.track_id] = held
                         position_stamps[d.track_id] = observation_stamp-position_ages[d.track_id]
                         held_position_ids.add(d.track_id)
-        return ((color, metres, received_at, intrinsics, image, depth), detections,
+        return ((color, metres, received_at, intrinsics, image, depth, evidence), detections,
                 positions, position_ages, position_stamps, held_position_ids)
 
     @serialized
@@ -299,7 +306,7 @@ class TrackerNode(Node):
         elif self.snapshot is None or not self.fresh_snapshot():
             msg.status, msg.detail = TargetState.STALE, 'Waiting for fresh synchronized RGB-D inference'
         else:
-            color, depth, _, intrinsics, _, _ = self.snapshot
+            color, depth, _, intrinsics, _, _, _ = self.snapshot
             msg.header.frame_id = color.header.frame_id
             msg.observation_stamp = copy.deepcopy(color.header.stamp)
             chosen = self.selection.selected()
@@ -310,6 +317,9 @@ class TrackerNode(Node):
                               else 'Call lock_target to select central track')
             elif chosen is None:
                 msg.status, msg.detail = TargetState.LOST, 'Selected track absent; explicit relock required after stream reset'
+                if getattr(self, 'reid_lock_enabled', False):
+                    msg.detail = ('Waiting for fresh confirmed identity: '
+                                  + (self.selection.person_id or 'initial association'))
             else:
                 msg.status = TargetState.TRACKING
                 msg.confidence = chosen.confidence
@@ -329,7 +339,9 @@ class TrackerNode(Node):
                                   if held else 'Tracked; registered body-part depth')
                 if xyz is not None:
                     observation_stamp = self.position_stamps.get(chosen.track_id)
-                    if observation_stamp is not None and math.isfinite(observation_stamp):
+                    # Fresh measurements retain the exact ROS sensor stamp above;
+                    # a float round-trip loses nanoseconds at Unix epoch scale.
+                    if held and observation_stamp is not None and math.isfinite(observation_stamp):
                         sec = int(observation_stamp)
                         nanosec = int(round((observation_stamp-sec)*1e9))
                         if nanosec >= 1000000000:

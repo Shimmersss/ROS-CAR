@@ -140,3 +140,9 @@ bash scripts/start_project.sh
 # C 方案入口
 
 新增 Gemini Pro + YOLO26s-pose 人体骨架/跌倒显示路线，显式运行 `bash scripts/start_c.sh`；默认总入口仍为 B。设备、参数、启动与本机验证边界见 [方案 C 实现与验收](docs/方案C实现与验收.md)，Foxglove 布局为 `foxglove/c-layout.json`。真人验收待下次进行，本轮未部署小车。
+
+C另有可选的独立[ReID身份观察层](docs/方案C身份ReID接入与验收.md)，通过 `REID_ENABLED=true` 和本地 `REID_MODEL_PATH` 显式启用；默认关闭，不自动接管锁定或转移身高先验。
+
+C可选身份锁定恢复：在ReID启用的基础上设置 `REID_LOCK_ENABLED=true`；默认关闭，缺失/歧义保持LOST，确认后使用新轨迹自身测距。详见 [ReID接口与验收](docs/方案C身份ReID接入与验收.md)。
+
+C现已增加 [近远统一接地点与三维姿态增强](docs/方案C统一定位与三维姿态.md)，C入口自动加载，安装/重力/地面确认仍默认关闭；原光学目标保留，统一位置使用独立话题。

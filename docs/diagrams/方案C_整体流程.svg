@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1600" viewBox="0 0 1800 1600">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L9,5 L0,10" fill="none" stroke="#64748b" stroke-width="1.4"/></marker></defs>
+<rect width="1800" height="1600" fill="#f4f7fc"/>
+<g font-family="PingFang SC,Microsoft YaHei,sans-serif">
+<text x="80" y="78" font-size="46" fill="#0f172a" font-weight="600" text-anchor="start">C 方案整体流程</text>
+<text x="80" y="122" font-size="26" fill="#64748b" font-weight="400" text-anchor="start">Gemini RGB-D  ×  YOLO26s-pose  ×  ByteTrack  ×  OSNet ReID</text>
+<text x="1720" y="78" font-size="23" fill="#64748b" font-weight="400" text-anchor="end">2026-10-04</text>
+<rect x="480" y="160" width="840" height="105" rx="18" fill="white" stroke="#2563eb" stroke-width="2"/>
+<text x="900.0" y="200" font-size="29" fill="#2563eb" font-weight="600" text-anchor="middle">① 读取 Gemini 图像</text>
+<text x="900.0" y="238" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">校正彩色图，将深度对齐到彩色图，检查时间戳</text>
+<path d="M900 265 V290" fill="none" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="480" y="295" width="840" height="105" rx="18" fill="white" stroke="#2563eb" stroke-width="2"/>
+<text x="900.0" y="335" font-size="29" fill="#2563eb" font-weight="600" text-anchor="middle">② 检测人体、骨架和轨迹</text>
+<text x="900.0" y="373" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">YOLO26s-pose 检测人体和 17 个关节，ByteTrack 分配轨迹 ID</text>
+<path d="M900 400 V435 H330 V470" fill="none" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M900 400 V470" fill="none" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M900 435 H1470 V470" fill="none" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="70" y="480" width="520" height="160" rx="18" fill="white" stroke="#7c3aed" stroke-width="2"/>
+<text x="330.0" y="520" font-size="29" fill="#7c3aed" font-weight="600" text-anchor="middle">③ 识别人并选择目标</text>
+<text x="330.0" y="558" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">OSNet 比较外观，骨架帮助检查画面质量</text>
+<text x="330.0" y="591" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">判断新旧轨迹是不是同一个人</text>
+<text x="330.0" y="624" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">身份识别和自动恢复锁定需手动开启</text>
+<rect x="640" y="480" width="520" height="160" rx="18" fill="white" stroke="#2563eb" stroke-width="2"/>
+<text x="900.0" y="520" font-size="29" fill="#2563eb" font-weight="600" text-anchor="middle">④ 读取人体深度</text>
+<text x="900.0" y="558" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">同时采样人体区域和关节附近的深度</text>
+<text x="900.0" y="591" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">排除背景和其他人的深度</text>
+<text x="900.0" y="624" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">得到人体距离和有深度的关节坐标</text>
+<rect x="1210" y="480" width="520" height="160" rx="18" fill="white" stroke="#0f766e" stroke-width="2"/>
+<text x="1470.0" y="520" font-size="29" fill="#0f766e" font-weight="600" text-anchor="middle">⑤ 判断每个人的状态</text>
+<text x="1470.0" y="558" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">结合二维骨架和有效三维关节</text>
+<text x="1470.0" y="591" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">站立 / 坐蹲 / 躺卧 / 跌倒 / 未知</text>
+<text x="1470.0" y="624" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">深度不够时使用二维骨架</text>
+<path d="M1160 560 H1200" fill="none" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M330 640 V690" fill="none" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="70" y="700" width="520" height="190" rx="18" fill="white" stroke="#7c3aed" stroke-width="2"/>
+<text x="330.0" y="740" font-size="29" fill="#7c3aed" font-weight="600" text-anchor="middle">跟丢后怎么找回</text>
+<text x="330.0" y="778" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">记住已选中目标的身份</text>
+<text x="330.0" y="811" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">跟丢或认不准时，目标位置无效</text>
+<text x="330.0" y="844" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">连续确认是同一个人后，恢复锁定</text>
+<text x="330.0" y="877" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">恢复后重新使用当前轨迹的位置</text>
+<path d="M900 640 V690" fill="none" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="640" y="700" width="520" height="190" rx="18" fill="white" stroke="#2563eb" stroke-width="2"/>
+<text x="900.0" y="740" font-size="29" fill="#2563eb" font-weight="600" text-anchor="middle">原测距接入统一位置</text>
+<text x="900.0" y="778" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">把原人体深度换算到脚下参考点</text>
+<text x="900.0" y="811" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">和双踝深度、地面估计一起融合</text>
+<text x="900.0" y="844" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">原位置话题保留，方便对照</text>
+<text x="900.0" y="877" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">不直接平均两种含义不同的坐标</text>
+<path d="M1470 640 V690" fill="none" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1210" y="700" width="520" height="190" rx="18" fill="white" stroke="#0f766e" stroke-width="2"/>
+<text x="1470.0" y="740" font-size="29" fill="#0f766e" font-weight="600" text-anchor="middle">怎么判断跌倒</text>
+<text x="1470.0" y="778" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">先站立或坐蹲，再快速下降并转横</text>
+<text x="1470.0" y="811" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">持续低位躺卧后才判为跌倒</text>
+<text x="1470.0" y="844" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">本来就躺着不算跌倒；看不清则未知</text>
+<text x="1470.0" y="877" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">使用三维判断前需标定重力和地面</text>
+<path d="M900 890 V940" fill="none" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="640" y="950" width="520" height="190" rx="18" fill="white" stroke="#2563eb" stroke-width="2"/>
+<text x="900.0" y="990" font-size="29" fill="#2563eb" font-weight="600" text-anchor="middle">近处和远处怎么定位</text>
+<text x="900.0" y="1028" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">近处：结合脚部与人体深度</text>
+<text x="900.0" y="1061" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">远处：用双踝位置和地面估算</text>
+<text x="900.0" y="1094" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">脚被挡住时，短时使用当前人体深度</text>
+<text x="900.0" y="1127" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">躯体与脚部的对应关系最多保留 0.75 秒</text>
+<rect x="70" y="950" width="520" height="190" rx="18" fill="white" stroke="#7c3aed" stroke-width="2"/>
+<text x="330.0" y="990" font-size="29" fill="#7c3aed" font-weight="600" text-anchor="middle">ID 和位置怎么配合</text>
+<text x="330.0" y="1028" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">ByteTrack 记录当前轨迹</text>
+<text x="330.0" y="1061" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">ReID 判断是不是原来那个人</text>
+<text x="330.0" y="1094" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">只锁定一个目标，但分析画面里所有人</text>
+<text x="330.0" y="1127" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">不把旧坐标或身高参数直接给新轨迹</text>
+<rect x="1210" y="950" width="520" height="190" rx="18" fill="white" stroke="#0f766e" stroke-width="2"/>
+<text x="1470.0" y="990" font-size="29" fill="#0f766e" font-weight="600" text-anchor="middle">哪些情况不能直接判断</text>
+<text x="1470.0" y="1028" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">没有深度的关节不补造三维坐标</text>
+<text x="1470.0" y="1061" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">地面位置不能当作全身三维骨架</text>
+<text x="1470.0" y="1094" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">二维连续判断，三维缺深度时暂停计时</text>
+<text x="1470.0" y="1127" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">换算到同一脚下位置后再融合</text>
+<path d="M330 890 H615 V1180 H900 V1210" fill="none" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M900 1140 V1210" fill="none" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M1470 890 H1750 V1180 H900" fill="none" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="260" y="1220" width="1280" height="135" rx="18" fill="white" stroke="#0f172a" stroke-width="2"/>
+<text x="900.0" y="1260" font-size="29" fill="#0f172a" font-weight="600" text-anchor="middle">⑥ 发布 ROS 消息，在 Foxglove 查看</text>
+<text x="900.0" y="1298" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">查看骨架视频、三维关节、每个人的身份和状态，以及跌倒判断原因</text>
+<text x="900.0" y="1331" font-size="23" fill="#334155" font-weight="400" text-anchor="middle">原目标位置和地面位置分开显示；人消失或数据超时后，位置失效</text>
+<rect x="70" y="1400" width="1660" height="135" rx="18" fill="#e8eef8"/>
+<text x="105" y="1442" font-size="25" fill="#1e3a5f" font-weight="600" text-anchor="start">目前：代码已接通，14 个包构建、138 项逻辑测试及相关 ROS 测试通过。</text>
+<text x="105" y="1483" font-size="24" fill="#334155" font-weight="400" text-anchor="start">还需实测：相机安装、多人的识别效果、近远测距误差、跌倒误报和漏报、Jetson 速度。</text>
+<text x="105" y="1518" font-size="23" fill="#334155" font-weight="400" text-anchor="start">安装、重力和地面仍未确认；本轮没有部署到小车，也没有接入运动控制。</text>
+</g></svg>

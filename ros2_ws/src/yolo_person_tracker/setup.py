@@ -12,6 +12,7 @@ setup(
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
         ('share/' + package_name + '/config', glob('config/*.yaml')),
     ],
+    package_data={'yolo_person_tracker.vendor': ['TORCHREID_LICENSE', 'SOURCE.json']},
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='ROSCAR maintainers',
@@ -21,5 +22,8 @@ setup(
     entry_points={'console_scripts': ['tracker = yolo_person_tracker.node:main',
                                        'pose_tracker = yolo_person_tracker.pose_node:main',
                                        'gemini_registration = yolo_person_tracker.gemini_registration:main',
-                                       'target_transform = yolo_person_tracker.target_tf:main']},
+                                       'target_transform = yolo_person_tracker.target_tf:main',
+                                       'ground_localizer = yolo_person_tracker.ground_node:main',
+                                       'unified_localizer = yolo_person_tracker.unified_node:main',
+                                       'reid_observer = yolo_person_tracker.reid_node:main']},
 )

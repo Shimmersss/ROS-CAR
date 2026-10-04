@@ -195,6 +195,31 @@
       "xAxisVal": "timestamp",
       "isSynced": true,
       "foxglovePanelTitle": "C FPS / 推理耗时 / 观测年龄"
+    },
+    "RawMessages!identities": {
+      "topicPath": "/perception/person_identities",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "ReID 身份与可选锁定恢复"
+    },
+    "RawMessages!unified": {
+      "topicPath": "/perception/person_positions",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "统一接地点：来源 / 误差估计 / 拒绝原因"
+    },
+    "RawMessages!unifiedTarget": {
+      "topicPath": "/perception/target_state_unified",
+      "defaultExpanded": true,
+      "foxglovePanelTitle": "统一目标（base 地面点，非原光学目标）"
+    },
+    "3D!unified": {
+      "fixedFrame": "base_link",
+      "followTf": "base_link",
+      "topics": {
+        "/perception/position_markers": {
+          "visible": true
+        }
+      },
+      "foxglovePanelTitle": "近远统一接地点（需安装标定）"
     }
   },
   "globalVariables": {},
@@ -207,22 +232,40 @@
   "layout": {
     "direction": "column",
     "first": {
-      "direction": "row",
-      "first": "Image!detections",
-      "second": "RawMessages!persons",
-      "splitPercentage": 65
+      "direction": "column",
+      "first": {
+        "direction": "row",
+        "first": "Image!detections",
+        "second": {
+          "direction": "column",
+          "first": "RawMessages!persons",
+          "second": "RawMessages!identities",
+          "splitPercentage": 60
+        },
+        "splitPercentage": 65
+      },
+      "second": {
+        "direction": "row",
+        "first": "3D!skeleton",
+        "second": {
+          "direction": "column",
+          "first": "RawMessages!target",
+          "second": "Plot!performance",
+          "splitPercentage": 50
+        },
+        "splitPercentage": 65
+      },
+      "splitPercentage": 60
     },
     "second": {
       "direction": "row",
-      "first": "3D!skeleton",
+      "first": "3D!unified",
       "second": {
         "direction": "column",
-        "first": "RawMessages!target",
-        "second": "Plot!performance",
-        "splitPercentage": 50
-      },
-      "splitPercentage": 65
+        "first": "RawMessages!unified",
+        "second": "RawMessages!unifiedTarget"
+      }
     },
-    "splitPercentage": 60
+    "splitPercentage": 75
   }
 }

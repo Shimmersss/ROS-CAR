@@ -1,6 +1,9 @@
 /**:
   ros__parameters:
     pose_confidence: 0.5
+    # Explicit launch switch also requires reid_enabled. No identity lock by default.
+    reid_lock_confirm_frames: 3
+    reid_lock_max_age_s: 0.5
     # Confirm physical upright mounting before permitting FALL_CONFIRMED.
     pose_upright_confirmed: false
     pose_horizontal_deg: 60.0
@@ -14,3 +17,25 @@
     pose_lying_aspect: 1.2
     pose_knee_height_fraction: 0.2
     pose_joint_jump_m: 0.5
+    # C-only real-depth fusion. False restores the original C/B sampling path.
+    fusion_enabled: true
+    fusion_min_anchor_joints: 2
+    fusion_cluster_abs_m: 0.15
+    fusion_cluster_rel: 0.12
+    fusion_torso_scale: 0.65
+
+    # 3D enhancement falls back to 2D until gravity is physically confirmed.
+    pose3d_enabled: true
+    pose3d_gravity_confirmed: false
+    pose3d_ground_confirmed: false
+    # Unit up vector expressed in the rectified optical frame; placeholders only.
+    pose3d_up_x: 0.0
+    pose3d_up_y: -1.0
+    pose3d_up_z: 0.0
+    pose3d_camera_height_m: 1.0
+    pose3d_depth_max_m: 3.0
+    pose3d_metric_drop_m: 0.30
+    pose3d_low_center_m: 0.65
+
+    # Keep pixel history continuous; pause metric evidence briefly on depth loss.
+    pose3d_depth_gap_s: 0.35

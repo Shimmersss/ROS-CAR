@@ -29,6 +29,26 @@
       "local_path": "weights/yolo26s-pose.pt",
       "status": "local_cpu_pose_and_bytetrack_smoke_passed_not_jetson_validated",
       "license_note": "Ultralytics AGPL-3.0 / Enterprise; see https://www.ultralytics.com/license"
+    },
+    {
+      "name": "osnet_x0_25_msmt17.pth",
+      "origin": "Torchreid official MSMT17 OSNet-x0.25 checkpoint; local ONNX export if applicable",
+      "source": "https://github.com/KaiyangZhou/deep-person-reid/blob/f8cd150fdf77e8d9e1ed143b7f308c2c609ded50/docs/MODEL_ZOO.md",
+      "size_bytes": 3057863,
+      "sha256": "6f57607fed9f502b9efed546108132ee715df5a5b6e6932c6269bacb47f59f99",
+      "local_path": "weights/osnet_x0_25_msmt17.pth",
+      "status": "mac_and_arm64_container_cpu_static_crop_smoke_passed_not_field_or_jetson_validated",
+      "license_note": "Architecture MIT, original license included. Model/dataset usage follows upstream terms."
+    },
+    {
+      "name": "osnet_x0_25_msmt17.onnx",
+      "origin": "Torchreid official MSMT17 OSNet-x0.25 checkpoint; local ONNX export if applicable",
+      "source": "https://github.com/KaiyangZhou/deep-person-reid/blob/f8cd150fdf77e8d9e1ed143b7f308c2c609ded50/docs/MODEL_ZOO.md",
+      "size_bytes": 891011,
+      "sha256": "417218eb180df62da2eb178972118583149c69e52fe3b5d2003fd891e159f1a1",
+      "local_path": "weights/osnet_x0_25_msmt17.onnx",
+      "status": "mac_and_arm64_container_cpu_static_crop_smoke_passed_not_field_or_jetson_validated",
+      "license_note": "Architecture MIT, original license included. Model/dataset usage follows upstream terms."
     }
   ],
   "default_model": "yolo26s.pt"

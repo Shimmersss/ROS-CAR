@@ -71,6 +71,10 @@ def launch_route(context):
     if route == 'yolo_pose':
         parameters[0]['performance_enabled'] = LaunchConfiguration('performance_enabled').perform(context) == 'true'
         parameters.append(LaunchConfiguration('pose_config').perform(context))
+        identity_lock = LaunchConfiguration('reid_lock_enabled').perform(context) == 'true'
+        if identity_lock and LaunchConfiguration('reid_enabled').perform(context) != 'true':
+            raise ValueError('reid_lock_enabled requires reid_enabled:=true')
+        parameters.append({'reid_lock_enabled': identity_lock})
     node_options = {}
     if route in ('yolo', 'yolo_pose'):
         python = LaunchConfiguration('yolo_python').perform(context)
@@ -87,6 +91,26 @@ def launch_route(context):
         nodes.append(Node(package='yolo_person_tracker', executable='target_transform',
                           namespace='perception', output='screen',
                           parameters=[LaunchConfiguration('camera_mount_config').perform(context)]))
+    if route == 'yolo_pose':
+        # Independent observer: unconfirmed mount/ground leaves it NOT_READY without touching C outputs.
+        nodes.append(Node(package='yolo_person_tracker', executable='ground_localizer',
+                          namespace='perception', output='screen',
+                          parameters=[LaunchConfiguration('camera_mount_config').perform(context),
+                                      {'camera_info_topic': LaunchConfiguration('camera_info_topic').perform(context),
+                                       'reid_lock_enabled': identity_lock}]))
+    if route == 'yolo_pose':
+        nodes.append(Node(package='yolo_person_tracker', executable='unified_localizer',
+                          namespace='perception', output='screen',
+                          parameters=[LaunchConfiguration('camera_mount_config').perform(context),
+                                      {'camera_info_topic': LaunchConfiguration('camera_info_topic').perform(context),
+                                       'reid_lock_enabled': identity_lock}]))
+    if route == 'yolo_pose':
+        nodes.append(Node(package='yolo_person_tracker', executable='reid_observer',
+                          namespace='perception', output='screen',
+                          parameters=[LaunchConfiguration('reid_config').perform(context), {
+                              'enabled': LaunchConfiguration('reid_enabled').perform(context) == 'true',
+                              'model_path': ParameterValue(LaunchConfiguration('reid_model_path').perform(context), value_type=str),
+                              'color_topic': LaunchConfiguration('color_topic').perform(context)}]))
     return nodes
 
 
@@ -111,6 +135,11 @@ def launch_radar(context):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('route', default_value='yolo', choices=['astra', 'yolo', 'yolo_pose', 'red', 'demo']),
+        DeclareLaunchArgument('reid_enabled', default_value='false', choices=['true', 'false']),
+        DeclareLaunchArgument('reid_lock_enabled', default_value='false', choices=['true', 'false']),
+        DeclareLaunchArgument('reid_model_path', default_value=''),
+        DeclareLaunchArgument('reid_config', default_value=PathJoinSubstitution([
+            FindPackageShare('perception_bringup'), 'config', 'reid.yaml'])),
         DeclareLaunchArgument('pose_config', default_value=PathJoinSubstitution([FindPackageShare('perception_bringup'), 'config', 'pose.yaml'])),
         DeclareLaunchArgument('performance_enabled', default_value='true', choices=['true', 'false']),
         DeclareLaunchArgument('with_radar', default_value='false', choices=['true', 'false']),

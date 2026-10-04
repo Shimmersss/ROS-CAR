@@ -3,6 +3,15 @@ import math
 import numpy as np
 
 
+BODY_REGIONS = (
+    (.30, .25, .70, .60),  # torso
+    (.20, .10, .80, .40),  # head/shoulders
+    (.20, .55, .80, .95),  # legs/lower body
+    (.05, .25, .45, .70),  # left side/arm
+    (.55, .25, .95, .70),  # right side/arm
+)
+
+
 class DepthTrackFilter:
     """Constant-velocity Kalman filter in the camera optical frame.
 
@@ -77,7 +86,7 @@ class DepthTrackFilter:
         return tuple(float(v) for v in state[:3]), age
 
 
-def _measure_region(depth, bounds, intrinsics, min_fraction):
+def _measure_region(depth, bounds, intrinsics, min_fraction, repair_small_holes=True):
     left, top, right, bottom = bounds
     roi = depth[top:bottom, left:right]
     if roi.size == 0:
@@ -85,7 +94,7 @@ def _measure_region(depth, bounds, intrinsics, min_fraction):
     valid = np.isfinite(roi) & (roi >= .2) & (roi <= 8.)
     # Repair only small holes surrounded by real depth samples. Large missing
     # regions remain invalid instead of being filled with a stale/background value.
-    if valid.sum() >= max(12, roi.size * .03) and not valid.all():
+    if repair_small_holes and valid.sum() >= max(12, roi.size * .03) and not valid.all():
         padded = np.pad(np.where(valid, roi, np.nan), 1, constant_values=np.nan)
         neighbours = np.stack([
             padded[:-2, :-2], padded[:-2, 1:-1], padded[:-2, 2:],
@@ -116,39 +125,38 @@ def _measure_region(depth, bounds, intrinsics, min_fraction):
     return ((u-cx)*z/fx, (v-cy)*z/fy, z), float(valid.sum()) / roi.size
 
 
-def measure(depth, box, intrinsics, min_fraction=0.15):
-    """Return XYZ from the best stable depth patch inside one YOLO person box.
-
-    The patch candidates cover torso, upper/lower body, and left/right body
-    regions. This keeps the measurement associated with the selected YOLO
-    detection while allowing a missing torso depth patch to recover from an
-    arm, shoulder, head, or leg patch.
-    """
+def region_candidates(depth, box, intrinsics, min_fraction=.15, repair_small_holes=True):
+    """Collect B's five candidates; C can explicitly require unfilled samples."""
     x1, y1, x2, y2 = map(float, box)
     if not all(map(math.isfinite, (x1, y1, x2, y2))) or x2 <= x1 or y2 <= y1:
-        return None
+        return []
     h, w = depth.shape
     bw, bh = x2-x1, y2-y1
     fx, fy, cx, cy = intrinsics
     if not all(map(math.isfinite, intrinsics)) or fx <= 0 or fy <= 0:
-        return None
+        return []
     # Keep every candidate strictly inside the same YOLO detection. The nearest
     # stable patch is preferred: a background wall or floor can have more
     # valid pixels than a person's back, but should never win the association.
-    regions = (
-        (.30, .25, .70, .60),  # torso
-        (.20, .10, .80, .40),  # head/shoulders
-        (.20, .55, .80, .95),  # legs/lower body
-        (.05, .25, .45, .70),  # left side/arm
-        (.55, .25, .95, .70),  # right side/arm
-    )
     results = []
-    for ax1, ay1, ax2, ay2 in regions:
+    for ax1, ay1, ax2, ay2 in BODY_REGIONS:
         left = max(0, int(x1 + ax1*bw)); right = min(w, int(x1 + ax2*bw))
         top = max(0, int(y1 + ay1*bh)); bottom = min(h, int(y1 + ay2*bh))
-        result = _measure_region(depth, (left, top, right, bottom), intrinsics, min_fraction)
+        result = _measure_region(depth, (left, top, right, bottom), intrinsics,
+                                 min_fraction, repair_small_holes)
         if result is not None:
             results.append(result)
+    return results
+
+
+def measure(depth, box, intrinsics, min_fraction=0.15):
+    """B's unchanged region selection and representative-point calculation."""
+    results = region_candidates(depth, box, intrinsics, min_fraction)
+    return select_region_candidates(results)
+
+
+def select_region_candidates(results):
+    """B's nearest stable depth cluster; shared without resampling the image."""
     if not results:
         return None
     # Prefer a depth cluster supported by several body parts. This rejects a

@@ -13,6 +13,11 @@ from std_msgs.msg import String
 
 
 def main():
+    rejected=subprocess.run(['ros2','launch','perception_bringup','perception.launch.py',
+        'route:=yolo_pose','reid_lock_enabled:=true','reid_enabled:=false'],
+        stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=15)
+    assert rejected.returncode != 0 and 'reid_lock_enabled requires' in rejected.stdout, rejected.stdout
+    print('PASS identity-lock launch rejects missing observer enablement')
     rclpy.init();node=Node('c_api_probe');states=[];persons=[];guards=[];vel=[]
     node.create_subscription(TargetState,'/perception/target_state',states.append,10)
     node.create_subscription(PersonStateArray,'/perception/person_states',persons.append,10)

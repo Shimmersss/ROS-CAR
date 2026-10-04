@@ -49,6 +49,10 @@ setsid ros2 launch perception_bringup perception.launch.py \
   color_topic:="${COLOR_TOPIC:-/camera/color/image_raw}" \
   depth_topic:="${DEPTH_TOPIC:-/camera/depth/image_raw}" \
   camera_info_topic:="${CAMERA_INFO_TOPIC:-/camera/color/camera_info}" \
+  reid_enabled:="${REID_ENABLED:-false}" \
+  reid_lock_enabled:="${REID_LOCK_ENABLED:-false}" \
+  reid_model_path:="${REID_MODEL_PATH:-$ROOT/models/weights/osnet_x0_25_msmt17.onnx}" \
+  reid_config:="${REID_CONFIG:-$ROOT/ros2_ws/src/perception_bringup/config/reid.yaml}" \
   pose_config:="${POSE_CONFIG:-$ROOT/ros2_ws/src/perception_bringup/config/pose.yaml}" \
   camera_mount_config:="${CAMERA_MOUNT_CONFIG:-$ROOT/ros2_ws/src/perception_bringup/config/camera_mount.yaml}" \
   kalman_measurement_std_m:="${KALMAN_MEASUREMENT_STD_M:-0.08}" \

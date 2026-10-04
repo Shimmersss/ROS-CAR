@@ -1010,3 +1010,113 @@
 - 最终 C 专项 `bash scripts/test_c_container.sh` 退出码0：14主动包编译（约11秒）、37项 B/C逻辑、C骨架/3D/失效/epoch/锁定/性能、真实ROS配准节点的单位/时间/尺寸/frame拒绝、B同步RGB-D/TF/并发、A适配器、35项语音测试、A/B/C/red/demo/非法route及对外API C默认IDLE/零速/缺模型拒绝全部通过。日志 artifacts/c-acceptance.log。
 - 完整旧 `scripts/test_container.sh` 未取得单次全绿：旧API/guard测试间歇触发 request_timestamp 看门狗，旧并发测试曾受话题发现/完成时序影响。没有放宽产品时效或运动门禁；记录 artifacts/c-regression-watchdog-failure.log、c-regression-guard-timing-failure.log、c-acceptance-legacy-api-timing-failure.log。此前分段已观察到3底盘包构建、真实PTY、保护与回放测试通过，但不据此称整个旧套件本轮全通过。C最终专项按独立ROS域验证通过。
 - 临时容器均 --rm，复用原有Humble镜像/本机Python/Orbbec SDK；任务产生的可重建相机下载源码和临时探针可执行文件清理，保留源码交付、Pose权重、设备标定和验证证据。实物配准/量距、真人动作、Foxglove客户端及Jetson部署/GPU仍待验收。
+
+## 2026-10-02：记录 C 融合方案并评估论文/开源项目
+
+- 先将讨论方案记录为 `docs/方案C多源人体感知融合设计.md`：覆盖近距离骨架辅助深度、远距离地面/关节几何、轨迹与身份分层、二维/三维状态融合；明确参考点、来源、误差、时间和未实现边界。
+- 新增 `docs/方案C文献与开源项目评估.md`，依据 CCF 官方目录核对 TPAMI/TIP A 类期刊，筛选 SPNet、Metric3Dv2、OSNet 期刊扩展、HybrIK-X、MS-AAGCN、EfficientGCN 共 6 篇；KPR(ECCV)、Mono-RPF(ICRA)和 ROS2 接入项目单列，不混算期刊数量。OSNet 区分作者 2021 标注与正式 2022 卷期。
+- 只读核查 9 个 GitHub 仓库的 README、提交、许可元数据与接口，读取 SPNet/KPR/Mono-RPF 三个相关源文件。发现 EfficientGCN 官方 GitHub 仅留迁移说明；Mono-RPF 局部源码有 reserve 后索引写入及过程噪声索引的静态风险，未运行验证。快照保留于 `artifacts/c-literature-20261002.json`，文档中保留可追溯链接和固定提交。
+- 核对当前 `joints3d` 的人体参考深度前置条件，将其列为联合观测改进点；修正 C 验收文档“躯干深度”表述为实际的五区域测距，同步方案主文档链接。未修改生产算法、入口、接口或 AGENTS.md。
+- 本轮为文档/研究工作，不下载权重、不安装环境、不执行外部仓库代码、不访问小车。未创建临时容器/镜像或构建产物；保留文档和约 212 KB 核验快照。最小审查完成：4 份相关文档的本地链接/代码块、两份新增文档空白、9 个固定提交与证据一致性、git diff --check 均通过；仅文档更新，未运行软件构建或算法测试。
+
+
+## 2026-10-02：C 第一阶段骨架辅助真实深度融合
+
+- 按用户“做吧”推进已说明的第一阶段，仅本机代码、测试和文档；未访问/部署小车、未采集新的真人动作。地面反投影、ReID、三维状态判断留在后续阶段，当前姿态与跌倒仍用二维规则。
+- C 新增 `fusion.py`，统一收集当前帧 17 点真实邻域、肩髋缩小多边形及五个区域候选。优先独立且一致的肩髋深度，依次允许躯干区域、膝踝、无重叠时区域兜底；其他检测框像素排除，冲突拒绝，不用孤立手部或重复像素建立骨架深度依据。所有关节保持自己的真实深度，缺失 NaN，不补洞、不借预测。
+- C 目标代表点改为框中心射线＋融合轴向深度，避免不同采样部位的像素坐标直接混合；它是虚拟点而非骨盆、质心或地面位置，后续几何定位须另建观测关系。沿用原卡尔曼测量噪声、短时保持和测量年龄，不因相关采样重复增加置信度。每人 detail 增加来源/拒绝原因；消息结构、锁定及 epoch 保持兼容。
+- `pose.yaml` 默认 fusion_enabled=true，可关闭后重启对照原 C。B 五区域代码只提取共用采样/选择函数，200 个固定种子场景与提交 fb164b56d22032c74e2fc33090624765f16c3f15 的原函数 XYZ 逐值一致。合成对照证据 artifacts/c-depth-fusion-comparison.json：两肩稀疏深度从无效恢复 2m；肩髋2m/背景4m场景从背景4m改为2m；无深度保持无效。不是实际相机准确度或 Jetson 性能结论。
+- 新增 15 项融合逻辑测试（总52项），覆盖稀疏肩/膝深度、背景、各关节独立Z、空洞、孤立手部、重复关键点、深度冲突、低置信度、混合邻域、骨架区域兜底、无骨架回退、多人重叠及非法输入。ROS 增加融合开/关、稀疏恢复、NaN、精确观测时间及保持超时验证。
+- 最小审查修正 snapshot 扩展后的解包；ROS 新测试发现原新鲜时间戳经浮点还原会损失纳秒，改为新测量直接保留传感器原时间，只有旧测量保持沿用原转换。首次失败证据 artifacts/c-depth-fusion-stamp-failure.log。另一次旧并发测试等待完成超时，未改产品门限/测试时限，完整复跑通过；失败证据 artifacts/c-depth-fusion-concurrency-failure.log，不宣称已定位该间歇超时根因。
+- 最终 `ROSCAR_C_TEST_LOG=.../c-depth-fusion-acceptance.log bash scripts/test_c_container.sh` 退出0：Linux ARM64 Humble 14主动包构建、52项感知逻辑、C开/关融合ROS、Gemini配准契约、B测距/选人/失效、TF、并发、A适配器、35项语音测试、所有感知路由及C对外API默认IDLE/缺模型/零速通过。不是完整旧 test_container.sh 全套或真实设备验收。
+- 同步方案主文档、C验收、融合设计和研究实施状态；AGENTS仅新增长期C融合代表点/真实关节约定。复用现有 .venv 和 Humble 镜像，测试容器 --rm，构建输出随容器清理；临时重复控制台日志清理，保留测试/对照/失败证据，无新权重或环境下载。
+
+## 2026-10-03：C 单目地面定位
+
+- 上一轮对话只留下未测试、未接入的 `ground.py` 草稿；本轮核对后重写并补齐。仅本机，未访问/部署小车。
+- `ground.py`：脚踝射线（含踝高补偿）→站立/未知姿态的框底→肩髋身高先验三级接地点估计；拒绝近水平射线、背后/超范围交点、图像下边缘截断、过大不确定度；`std_m` 由像素/踝高/身高先验有限差分传播；坐蹲仅脚踝，躺卧/跌倒不输出。
+- 新增 `ground_localizer` 节点、PersonGround/PersonGroundArray 消息，随 `route:=yolo_pose` 启动。独立输出 `person_ground_states`、`ground_markers`、`target_state_ground`（source=yolo_ground）；按观测时间查 TF，每人恒速卡尔曼、逐样本噪声、真实测量龄和短时预测；`extrinsics_calibrated`/`ground_plane_confirmed` 默认 false，两份 mount yaml 新增 `ground_localizer` 段。不修改 C/B 原目标、不接运动。
+- 验证：新增 `test_ground.py` 13 项、`tests/test_ground_runtime.py`（已加入 `scripts/test_c_container.sh`）。C 专项容器回归退出码0：14 主动包构建、65 项逻辑、含新 ROS 测试及 A/B/C/red/demo/路由、公共 API；`route:=yolo_pose` 实际启动三个节点，默认 `target_state_ground` NOT_READY 且无 `/cmd_vel`。日志 `artifacts/c-ground-test.log`。均为合成输入，不是实机精度；git diff --check、ShellCheck 通过。
+- 首轮 ROS 测试失败两次均为测试自身问题（保持预测使新轨迹仍有效；墙钟间隔污染合成时间戳），已改测试，未放宽产品门限。
+- 未做：现场安装外参/地面标定与已知距离量测；坡道/台阶；RGB-D 与单目来源切换迟滞；近距 RGB-D 个体身高学习；跟随器消费。
+
+
+## 2026-10-03：独立验收其他 agent 的 C 单目地面定位
+
+- 用户要求验收；本轮仅复核、执行测试和记录结果，不修改生产算法，不部署小车。新增 `docs/方案C单目地面定位独立验收.md`，在C验收文档标记暂不通过。
+- 实际复现4项待修：脚遮挡仍用框底接地（真实X=3m估成5.656m）；UNKNOWN坐姿使用站立身高先验（3m估成5.285m）；肩3m/髋5m冲突直接聚合4m且std约0.437m；position_hold_s=0.25s时，真实测量龄约0.351s的预测仍position_valid=true。源码位置、修正方向及复现条件见独立验收文档；`artifacts/c_ground_review_probes.py`、`c-ground-review-probes.json`、`c-ground-review-probes.log`保留证据。
+- 本轮完整C专项重跑：14主动包编译、65项逻辑、融合开/关、Gemini配准、B测距和TF通过；既有并发测试test_yolo_concurrency.py第79行assert done超时，整体退出1，记录 `artifacts/c-ground-review-regression.log`。该症状前次已有，不认定由新增地面功能引入，也不宣称本轮整套全绿。
+- 后续项目独立补测退出0：地面ROS、A适配器、35项语音、A/B/C/red/demo/非法路由及C公共API通过，日志 `artifacts/c-ground-review-remaining.log`。四项反例使用实际算法及ROS节点执行；不是实物相机验收。当前默认未标定门槛、独立地面参考点、无运动消费的边界合理。
+- 最小审查：新增报告与C验收链接、git diff --check通过。复用现有Humble镜像，测试容器均--rm，临时构建随容器删除，清理本轮重复控制台日志；保留复现代码/JSON/日志，不下载环境或权重，不修改AGENTS长期规则。
+
+
+## 2026-10-03：修正 C 单目定位四项验收问题
+
+- 按用户授权保留ROS接入框架，修改ground估计及失效策略，不访问/部署小车。删除框底接地路径，旧allow_box_bottom_fallback=true报错，默认必须双踝可用且一致；宁可输出无效，也不从被遮挡框底补定位。
+- 身高先验默认关闭，增加height_prior_confirmed、height_prior_track_id及standing_stable_s。仅确认的epoch:track_id持续站立才允许，UNKNOWN/坐蹲不使用先验；该先验产生的预测在UNKNOWN时立即清除。断流、时间倒退和轨迹消失重置连续站立依据，epoch改变不会继承个体授权。
+- 双脚/肩髋增加两两空间一致性和硬距离门槛，冲突不平均成虚构点，也不借另一来源掩盖；std加入候选离散且注明条件误差，不假称覆盖接地/标定模型错误。躺卧、跌倒及冲突立即清除旧预测。
+- 预测生成与定时发布均按当前真实测量年龄检查min(position_hold_s,max_age_s)，保留精确原ROS测量时间戳。补传输延迟、仅定时器运行后的过期反例；姿态错误不再用上一帧位置掩盖。
+- 修复前3项几何反例测试失败，证据artifacts/c-ground-fix-before.log；新增6项反例后逻辑总71项通过。原单踝可用的7m场景因现要求双踝且误差含离散被拒绝，距离单调性测试采用2m/6m，保留超远距及严格误差拒绝，并未放宽算法门槛。
+- 最终C专项退出0，artifacts/c-ground-fix-final.log：Linux ARM64 Humble 14主动包构建（12.1秒）、71项感知逻辑、C融合两路径、配准、B测距/TF/并发、地面ROS、个体先验绑定/稳定站立/UNKNOWN/epoch测试、A适配器、35项语音及路由/C公共API通过。第一轮完整回归亦通过，日志c-ground-fix-regression.log；不宣称完整旧test_container.sh全套或实物验收。
+- 同步两份mount配置、消息注释、C文档/主方案/独立验收修复状态；AGENTS仅补充长期接地/先验/预测契约。最小审查及git diff --check、脚本语法、文档链接检查完成；复用既有环境，无大文件下载，--rm清理测试构建，移除临时重复输出，保留全部验证证据。
+
+
+## 2026-10-03：C 独立 OSNet ReID 身份观察层
+
+- 用户同意在ByteTrack上方增加持久身份，本轮按已说明范围实现独立观察层。原epoch:track_id保留；新增会话UUID前缀身份、3帧确认、余弦距离/次佳间隔/多人一对一门槛、同轨迹换人核验、初始锚点防图库漂移。失踪保留默认30秒，每人8样本/最多64身份。缺质量和竞争时不输出确认ID，原可见轨迹遮挡时仍占用身份，防止旁人抢占；恢复需重新确认。时间倒退清空，换epoch只能凭外观重新匹配。
+- 模型使用作者Torchreid固定提交f8cd150fdf77e8d9e1ed143b7f308c2c609ded50的OSNet-x0.25/MSMT17 ReID权重，不是ImageNet预训练。checkpoint 3,057,863字节，SHA256 6f57607fed9f502b9efed546108132ee715df5a5b6e6932c6269bacb47f59f99；架构原文件/许可证/SOURCE哈希保留在vendor。显式prepare_reid_model.py下载校验/严格加载/导出，运行无自动下载或备用模型。
+- 本机已有PyTorch2.6/.venv复用，pip不可用改用已有uv补onnx1.17.0（下载15.9MiB，另安装protobuf依赖），未新建大型环境。启动前本机约18GiB可用。ONNX 891,011字节，SHA256 417218eb180df62da2eb178972118583149c69e52fe3b5d2003fd891e159f1a1；OpenCV DNN CPU与PyTorch归一化特征最大差1.9e-7，证据artifacts/reid-export.log。
+- 新reid_observer只消费精确时间/frame对应的原RGB和PersonStateArray；独立单worker、消息队列20、最多8人、默认5Hz，忙时丢弃，过期完成/无效Pose不发布身份。质量门槛包括框尺寸/越界、检测置信度、可见肩髋与点数、躯干非退化、已跟踪框重叠、模糊。当前是骨架检查完整人体裁剪，不是部位训练网络，不利用骨长判断身份，也未加入不可靠的空间门控。
+- 新PersonIdentity/PersonIdentityArray及person_identities话题，携带可见/核验状态、持久身份、原轨迹、余弦距离（非概率）、观测年龄与耗时；LOST身份无轨迹或位置。默认关闭时不加载模型、不订阅RGB；C launch和一键入口以REID_ENABLED/REID_MODEL_PATH/REID_CONFIG显式开启，缺模型独立层报错。Foxglove C布局增加身份面板。不改TargetState、lock/release、身高先验或运动。
+- 真模型测试使用本机Ultralytics bus.jpg：整图4人被重叠/躯干缺点质量门槛拒绝，未放宽产品阈值。测试记录该限制，另用2个独立真实人体裁剪验证特征提取与ROS；相互距离约0.463，重复裁剪换轨迹能接回，换另一裁剪拒绝继承。这是静态照片/脚本造出的消失重现，不能称真实遮挡或跨视角准确率。Mac单次CPU约12.4/5.4ms；Mac上Linux ARM64 Humble OpenCV4.5.4约6.9/3.5ms，非Jetson性能/稳态FPS。跨平台特征差小于3.1e-7。证据artifacts/reid-smoke/及reid-arm64-model.log。
+- 纯逻辑新增22项（身份18＋裁剪4），感知合计93项。ROS合成特征测试覆盖精确帧、缺模型、换轨迹、换人、低质量/模拟/过期拒绝，另阻塞worker验证心跳仍工作且不发布过期完成；真实ONNX ROS测试独立通过。最小审查补强多帧质量低下期间的身份保留与重新确认，避免只保留一帧后被其他人接走。
+- 最终完整C专项退出0，artifacts/c-reid-final.log：Linux ARM64 Humble14包构建13.3秒、93项感知逻辑、C融合开/关、Gemini配准、B测距/TF/并发、地面定位/先验、ReID ROS、A适配器、35项语音、A/B/C/red/demo/非法路由及C公共API通过。真实模型专项test_reid_model_container.sh构建4包并运行实际ONNX/ROS通过；不是完整旧test_container.sh全套或现场验收。
+- 已同步README、接口、模型清单、C/主方案和docs/方案C身份ReID接入与验收.md；AGENTS只新增长期身份隔离/显式模型入口规则。源码与模型来源哈希、JSON布局、文档链接、ShellCheck和git diff --check通过。未访问/部署小车、未设置自动锁定转移、未做真人/Jetson验收；ReID仍是外观假设，现场误认/漏认和时延待验证。
+- 清理本任务onnx下载缓存、临时控制台重复输出和新模块Python缓存；保留可复用的工作环境依赖、权重/ONNX/校验文件及真实/合成验证证据。测试容器均--rm，构建输出随容器移除，未触碰其他业务容器或数据卷。
+
+
+## 2026-10-03：C 可选 ReID 身份锁定恢复
+
+- 用户在进度说明后授权继续，实施身份闭环阶段；没有扩展到车辆运动、三维姿态或近远定位混合。
+- 新增C专用IdentitySelection，持久身份与epoch:track_id分离。仅在显式REID_LOCK_ENABLED/reid_lock_enabled开启时启用，组合launch要求同时开启ReID观察层；默认关闭，B及原C选人兼容。
+- 新模式禁用原Selection的邻框自动接续、缺人保持和目标丢失后自动换人。初次绑定、换轨迹和失效恢复默认需3个不同采集时间的核验结果；检查精确已知RGB header、当帧/当前轨迹、一对一映射、采集年龄与重放。最多保留64个帧记录。
+- 同ID外观矛盾、歧义、质量不足、断流或过期立即撤销位置授权；失踪不搬旧位置，新轨迹只用自己的深度/滤波。epoch后必须重新确认，释放清除身份且抑制自动锁定，显式重锁重新建立身份。没有转移个体身高先验。
+- 最小审查发现ground_localizer原来只读取锁定ID，会绕过身份LOST状态；增加可选身份门控并由C组合launch同步传入，要求新鲜真实yolo TRACKING消息。光学深度无效不阻止已确认身份的地面几何估计；全体人员地面输出不受影响。
+- 新增10项身份锁定逻辑测试和ROS锁定恢复测试，扩展地面目标身份门控与组合launch拒绝测试。初版ROS测试使用固定等待，确认帧数随调度抖动导致断流恢复断言失败；改成等待精确Pose帧进入已处理缓存及对应身份消息消费，保留逐次确认日志。针对性ROS锁定/地面测试已通过，证据artifacts/c-identity-lock-focused.log。
+- 环境：既有Colima VZ日志明确报virtual machine is no longer live，docker查询挂起；清理已失效VM运行进程并重启原实例，复用roscar-humble-test镜像，没有安装新环境/删除镜像或卷。磁盘检查约19GiB可用。没有连接Jetson。
+- 验收：最终Linux ARM64 Humble专项全回归退出0，14包构建13.2秒、103项感知逻辑、35项语音测试及C融合开/关、RGB-D配准契约、B测距/TF/并发、地面/先验、ReID观察层、身份锁定、A适配器、各route和公共API全部通过。证据artifacts/c-identity-lock-final.log；ShellCheck与git diff --check通过。真实多人、相似衣着和跨视角重识别准确率仍待验收；观察层旧模型验证证据沿用，本次未重跑模型导出或宣称实机通过。
+
+- 清理：所有测试容器使用--rm，确认无残留测试容器；删除本轮临时控制台副本与两个新增模块的本机字节码，保留源码、模型和验收日志。原有三个业务容器随原Colima恢复后均healthy，未改配置/数据卷。
+
+
+## 2026-10-04：C 近远统一定位与三维姿态增强
+
+- 用户明确要求完成下一步1/2，实施软件接入、回归和文档；未连接Jetson、部署或启动车辆。
+- 新增unified_localizer与纯逻辑unified.py。统一参考点为双踝中点的地面投影，输出person_positions、target_state_unified（source=yolo_unified）与position_markers；保留原光学框中心、独立单目接口和B行为。当前测量可来自真实双踝、身体深度投影或单目双踝；缺脚不做框底回退，不混入身高先验，不填补三维关节。
+- 来源相关，不按独立测量加权平均。加入一致性/平面检查、初始与切换连续3次确认、位移限制、带距离项的条件误差估计、断流/倒退/epoch重建。深度重新出现的确认期仍可使用当帧有效单目；其它确认中无旧位置冒充，统一定位不预测。ReID身份门控传递到统一目标，失效/消失/超时删除Marker并清空列表。
+- PersonState新增body_depth_valid/body_depth_m/body_depth_source以传递当帧躯体观测，缺失NaN、排除保持值；需要重建消息包。原TargetState结构与锁定服务兼容。
+- 新增pose3d.py，真实双肩双髋/膝深度支持解剖检查、重力躯干角、大腿角、距地高度和米制下降量。重力/地面确认默认关闭；有可靠三维时使用basis=3d，缺失时basis=2d，矛盾几何未知。二维/三维依据切换清空候选时序，避免尺度跳变触发；未利用地面估计合成人体关节。
+- 审查发现旧融合把沿光学Z倾斜的合理躯干当成深度冲突，且原跌倒规则不能跨越中间未知倾斜帧。增加完整四点躯干解剖一致性例外，保留各关节自己的测量及明显分离表面拒绝；时序仅在原1秒窗口内保留最近稳定基线。新测试覆盖向镜头方向连续倾倒、静态横卧、缓慢躺下、弯腰、缺点、错误深度、重力旋转和模式/epoch变化。
+- 验证：本机124项感知逻辑通过。Linux ARM64 Humble最终14包构建15.0秒，124项逻辑、35项语音及C融合开/关、注册契约、B测距/TF/并发、地面/先验、ReID、身份锁定、统一定位、三维姿态、A适配器、各route、公共API全部通过，整套退出0。证据artifacts/c-unified-pose3d-final.log；逻辑单独证据artifacts/c-unified-pose3d-unit.log。
+- 新ROS三维测试使用合成RGB-D深度片段，经实际邻域采样、融合和时序节点输出；统一ROS测试使用合成已知几何。不是相机标定、真人或实车准确率。现场真实多人、误报/漏报/触发延迟、Jetson驱动/TensorRT/性能仍待验收。
+- 原ReID回归的固定短等待出现确认计数/等待断言失败；改为等待匹配RGB header的结果且保持采样间隔，独立ReID复测及最终全套通过。保留初轮和针对性日志；未放宽产品身份阈值。
+- 文档：新增docs/方案C统一定位与三维姿态.md，同步README、接口、C验收、多源设计、方案主文档和AGENTS长期入口规则；Foxglove增加统一接地点、来源/误差与目标面板。配置保留安装/重力/地面未确认状态。
+- 最小审查：确认原光学点不混入接地点滤波、源观测时间未刷新、缺失关节未补值、来源切换计数有界、身份隔离、旧B默认兼容。Python语法/布局JSON引用、ShellCheck与git diff --check通过。构建与回归复用现有镜像；运行前可用空间约21GiB，未创建新大型环境。
+
+- 收尾补查：新增body_depth当前观测/无效NaN/排除预测的ROS断言，C融合开启及关闭两种路径均通过，证据artifacts/c-body-depth-contract.log。所有本轮测试容器已自动删除，构建输出随容器清理；删除两份/tmp控制台重复日志，保留artifacts验收证据及原三个业务容器。
+
+## 2026-10-04：导出 C 整体流程图
+
+- 按用户要求新增 docs/diagrams/方案C_整体流程.svg 与 2700×2400 PNG，覆盖采集、Pose/ByteTrack、联合深度、ReID锁定恢复、近远统一定位、三维状态和Foxglove；标明默认确认开关及实机验收边界。
+- 使用已有 rsvg-convert 渲染，已目视检查文字、布局与连线；保留可编辑SVG，清理本轮临时生成脚本。未修改算法或部署。
+
+- 按用户反馈简化 C 流程图措辞，保留结构和技术内容，同步重新导出 PNG；已目视检查文字无溢出。未改算法。
+
+## 2026-10-04：C 二维/三维连续判断与位置融合
+
+- 二维姿态逐帧连续记录，三维使用独立米制历史。短缺深度默认容忍0.35秒，缺失时间不计入横卧确认；超时只清理三维候选。可靠三维直立/高位证据可否决二维透视误判。三维确认的跌倒须恢复三维站立持续2秒才清除；新轨迹不继承事件。
+- 原当前身体深度投影到可见躯干中心射线，再利用同轨迹此前身体与脚部的对应关系换算为脚下参考点。连续3次一致配对后可用，最多8条样本，关系默认0.75秒过期；仅站立时短暂缺脚可用，输出跟随当帧深度，不保持旧坐标、不填关节、不跨身份转移。
+- 统一节点对身体换算、真实踝深度及单目接地点进行一致性检查和保守协方差交集融合，加入来源偏差项；相关观测不当独立样本累计置信度。有共同来源时连续输出，全部替换才重新确认。原光学TargetState保留。
+- 新增14项连续性/融合逻辑测试并扩展ROS测试。初轮统一定位ROS确认断言失败，补充诊断输出后针对性及最终全套通过；未放宽产品阈值，单次失败根因未确定，初轮日志保留。
+- 最终Linux ARM64 Humble专项退出0：14包构建15.2秒、138项感知逻辑、35项语音测试，以及C融合、配准、B测距/TF/并发、地面/先验、ReID/锁定、统一定位、三维姿态、A适配器、各route和公共API通过。证据artifacts/c-continuity-final.log。这是软件与合成输入验证，真实精度及误报率仍待实测；未连接或部署小车，安装确认仍默认关闭。
+- 同步统一定位文档、接口、主方案、C验收及AGENTS长期规则，流程SVG/PNG重新导出并目视检查。最小审查检查参考点、当帧测量、来源相关性、过期及身份隔离；git diff --check通过。复用现有环境，测试容器和构建输出自动删除，保留验收证据，原三个业务容器保持healthy。

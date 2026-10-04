@@ -17,3 +17,10 @@ bool[17] keypoints_3d_valid
 uint8 posture
 uint8 fall_stage
 string detail
+
+# Current body-depth observation for a virtual representative point, NOT a joint.
+# Supports projecting the visible ankle rays when their own depth is missing.
+# No held/predicted depth here. NaN when invalid; does not populate keypoints_3d.
+bool body_depth_valid
+float32 body_depth_m
+string body_depth_source

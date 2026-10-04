@@ -11,5 +11,59 @@
     mount_translation: [0.0, 0.0, 0.0]  # metres, child origin in parent
     mount_quaternion: [0.0, 0.0, 0.0, 1.0]  # x,y,z,w
     max_age_s: 0.5
+/perception/ground_localizer:
+  ros__parameters:
+    target_frame: base_link
+    expected_source_frame: camera_color_optical_frame
+    # Both must be true, together with target_transform.extrinsics_calibrated and a TF
+    # tree that publishes base_link -> optical frame, before any position is published.
+    extrinsics_calibrated: false
+    # Confirm the floor is flat and ground_z_m is its height in target_frame.
+    ground_plane_confirmed: false
+    ground_z_m: 0.0
+    # Initial stature prior for shoulder/hip rays; not learned from RGB-D.
+    # Optional prior applies ONLY to this explicitly confirmed epoch:track_id.
+    enable_height_prior: false
+    height_prior_confirmed: false
+    height_prior_track_id: ''
+    standing_stable_s: 0.3
+    allow_box_bottom_fallback: false  # true is rejected: no contact evidence
+    consistency_max_m: 0.8
+    consistency_sigma: 2.0
+    person_height_m: 1.70
+    person_height_std_m: 0.08
+    max_range_m: 12.0
+    max_std_m: 1.0
+    max_age_s: 0.5
+    position_hold_s: 0.25
 # camera_link -> camera_color_optical_frame belongs to the camera driver.
 # Do not replace optical axis conventions with an identity rotation.
+
+/perception/unified_localizer:
+  ros__parameters:
+    target_frame: base_link
+    expected_source_frame: camera_color_optical_frame
+    extrinsics_calibrated: false
+    ground_plane_confirmed: false
+    ground_z_m: 0.0
+    # Must match the verified mount/ground model used by ground_localizer.
+    max_age_s: 0.5
+    max_range_m: 12.0
+    max_std_m: 1.0
+    unified_confirm_frames: 3
+    unified_max_gap_s: 0.5
+    unified_depth_max_m: 3.0
+    unified_depth_std_m: 0.06
+    unified_body_projection_std_m: 0.25
+    unified_mount_std_m: 0.10
+    unified_mount_angle_std_deg: 1.0
+    unified_ankle_plane_tolerance_m: 0.25
+    unified_source_agreement_m: 0.6
+    unified_motion_base_m: 0.25
+    unified_max_speed_mps: 2.0
+    # Learn same-track torso-to-feet relation only from current paired observations.
+    body_contact_confirm_frames: 3
+    body_contact_max_age_s: 0.75
+    body_contact_max_offset_m: 0.6
+    body_contact_consistency_m: 0.15
+    body_contact_drift_std_mps: 0.3

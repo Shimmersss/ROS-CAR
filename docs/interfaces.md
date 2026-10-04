@@ -93,4 +93,17 @@ base 话题的 `header.frame_id=base_link`（可配置），position 为 X 前�
 
 显式 `route:=yolo_pose` 使用 Pose 模型；继承原 `TargetState`（source 仍为 yolo）、检测框及锁定服务。新增 `/perception/person_states`（person_interfaces/PersonStateArray），采集时间和逐人轨迹、COCO17 2D/3D 关键点及有效位、姿态/跌倒阶段/原因；无效坐标 NaN。姿态枚举 0未知/1站立/2坐蹲/3躺卧/4跌倒，跌倒阶段 0无/1疑似/2确认。失效时 valid=false，人体列表为空。
 
+C 另提供独立单目地面定位（需确认安装外参和地面，默认未确认）：`/perception/person_ground_states`（PersonGroundArray，base 坐标接地点、`std_m`、`method`、真实测量龄，偏角左正）和锁定目标的 `/perception/target_state_ground`（TargetState，`source=yolo_ground`，不与 `yolo` 的相机光学目标混用）。
+
 新增 `/perception/skeleton_markers`（visualization_msgs/MarkerArray）与 `/perception/performance`（RuntimeMetrics）。C 仅检测和显示，不消费跌倒消息到语音或控制。详细输入契约及参数见 [方案 C 实现与验收](方案C实现与验收.md)。
+
+### C 可选身份观察接口
+
+`/perception/person_identities`（PersonIdentityArray）携带原RGB观测header及PersonIdentity列表。`track_id`是ByteTrack epoch:ID，`person_id`是会话内外观身份；只有verified=true才有当前确认映射。LOST身份没有当前轨迹或位置。余弦距离不是概率；无效心跳为空列表/零观测时间。默认独立于TargetState和锁定服务；显式reid_lock_enabled可让C在连续确认后恢复到当前轨迹，TargetState.target_id仍为epoch:track_id，不自动转移身高先验。启用、状态和限制见 [ReID接入](方案C身份ReID接入与验收.md)。
+
+
+### C 统一接地点与三维状态
+
+新增 `/perception/person_positions`（PersonGroundArray）、`/perception/target_state_unified`（TargetState，source=yolo_unified）和 `/perception/position_markers`。位置为base系双踝中点的地面投影，区别于原光学框中心；method为depth_ankles/depth_body_projection/mono_ankles/body_contact/fused_contact；detail列参与来源和短时躯体映射年龄。原深度先换算为共同脚下参考点后作保守融合，冲突/确认中/过期无效，不沿用旧位置。可选ReID锁定门控同步生效，不连接控制。
+
+PersonState新增body_depth_valid/body_depth_m/body_depth_source，传递当前躯体深度观测，无效NaN，不填补关节；消息包及消费者需重建。posture/fall_stage保持原枚举，detail标注basis=3d/2d/invalid3d。完整标定、参数、兼容性和验收边界见 [统一定位与三维姿态](方案C统一定位与三维姿态.md)。
