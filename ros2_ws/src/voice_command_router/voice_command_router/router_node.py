@@ -21,6 +21,8 @@ from roscar_interfaces.msg import VoiceCommand, VoiceCommandResult, MotionReques
 from roscar_interfaces.srv import SetControlMode, AuthorizeMotion
 from .validation import CommandValidationError, parse_intent, validate_mode
 from .session import VoiceSession
+from execution_mode_interfaces.msg import ModeCommand
+from execution_mode_manager.catalog import Catalog
 
 
 class VoiceCommandRouter(Node):
@@ -29,10 +31,30 @@ class VoiceCommandRouter(Node):
         for name, value in dict(enabled=True, local_parser_enabled=True,
                                 input_topic='/voice/asr_text', command_topic='/voice/command',
                                 result_topic='/voice/command_result', followup_window_s=8.0,
-                                continuous_wake_text='小车唤醒').items():
+                                continuous_wake_text='小车唤醒', execution_modes_config='').items():
             self.declare_parameter(name, value)
         get = lambda key: self.get_parameter(key).value
         self.session = VoiceSession(float(get('followup_window_s')))
+        self._mode_catalog = Catalog.load(get('execution_modes_config')) if get('execution_modes_config') else None
+        if self._mode_catalog:
+            for phrase in self._mode_catalog.phrases:
+                try:
+                    core = parse_intent(phrase)
+                except CommandValidationError:
+                    core = None
+                if core:
+                    raise ValueError('Mode phrase overlaps a core control command: ' + phrase)
+        self._execution_active = self._execution_pending = False
+        self._execution_mode_id = self._execution_phase = ''
+        self._execution_at = -math.inf
+        self._mode_pending_at = 0.
+        self._mode_generation = 0
+        self._mode_pending_target = ''
+        self._mode_enter_dispatched = False
+        self._mode_voice_session = False
+        self._mode_exit_requested = False
+        self._mode_pub = self.create_publisher(ModeCommand, '/execution_mode/request', 10)
+        self.create_subscription(String, '/execution_mode/state', self._on_execution_state, 10)
         self._result_pub = self.create_publisher(VoiceCommandResult, get('result_topic'), 10)
         self._legacy_result_pub = self.create_publisher(String, '/voice/tool_result', 10)
         self._answer_pub = self.create_publisher(String, '/voice/assistant_text', 10)
@@ -77,10 +99,15 @@ class VoiceCommandRouter(Node):
         self._tts_hold = self._speech_hold = False
         self._generation += 1
         self._pending_arm = None
-        for client in (self._cancel_listen, self._cancel_tts):
+        # Refresh listening without aborting the mode's ordered prompt/result.
+        clients = (self._cancel_listen,) if self._execution_blocked() else (self._cancel_listen, self._cancel_tts)
+        for client in clients:
             if client.service_is_ready():
                 client.call_async(Trigger.Request())
-        self._speak('已唤醒，请说指令')
+        if self._execution_blocked():
+            self._mode_voice_session = True
+        else:
+            self._speak('已唤醒，请说指令')
         self._request_next_listen()
 
     def _on_speaking(self, message):
@@ -124,13 +151,11 @@ class VoiceCommandRouter(Node):
             self._cancel_listen.call_async(Trigger.Request())
 
     def _on_asr(self, message):
+        parse_error = None
         try:
             parsed = parse_intent(message.data)
         except CommandValidationError as exc:
-            if self._session_active():
-                self._speak(f'无法执行：{exc}')
-                self._request_next_listen()
-            return
+            parsed, parse_error = None, exc
         if parsed and parsed['action'] in ('STOP', 'ESTOP', 'DISARM'):
             self._on_command(self._new_command(**parsed))
             return
@@ -138,13 +163,27 @@ class VoiceCommandRouter(Node):
             return  # Never execute a late result after session expiry/cancel.
         if not self.get_parameter('local_parser_enabled').value:
             self._speak('语音控制规则已关闭')
+        elif self._mode_catalog and (intent := self._mode_catalog.parse(message.data, self._execution_mode_id)):
+            if not self.get_parameter('enabled').value:
+                self._speak('语音控制已关闭')
+            else:
+                self._send_mode(*intent)
+            self.session.success(time.monotonic())
+        elif parse_error:
+            self._speak(f'无法执行：{parse_error}')
         elif parsed is None:
             self._speak('未识别到单一控制指令，请重新说明')
         elif parsed['action'] == 'END_SESSION':
+            self._mode_voice_session = False
+            self._request_mode_exit()
             self._close_session()
             self._speak('已退出语音会话')
             return
         elif parsed['action'] in ('MOVE', 'TURN'):
+            if self._execution_blocked():
+                self._speak('执行模式正在保持停车，请先退出当前模式')
+                self._request_next_listen()
+                return
             if not self.get_parameter('enabled').value:
                 self._speak('语音控制已关闭')
                 return
@@ -167,6 +206,8 @@ class VoiceCommandRouter(Node):
         try:
             action = command.action
             if action in ('STOP', 'DISARM', 'ESTOP'):
+                self._mode_voice_session = False
+                self._request_mode_exit()
                 self._generation += 1
                 self._pending_arm = None
                 self._call_service(self._control_services[action], command)
@@ -183,6 +224,8 @@ class VoiceCommandRouter(Node):
                 raise CommandValidationError('命令标识无效或重复')
             self._seen[command.request_id] = now
             if action in ('ARM', 'SET_MODE'):
+                if self._execution_blocked():
+                    raise CommandValidationError('执行模式正在保持停车，请先退出当前模式')
                 self._set_control_mode('EXTERNAL' if action == 'ARM' else validate_mode(command.mode), command)
             elif action in ('RESET_ESTOP', 'RESET_FAULT'):
                 self._call_service(self._control_services[action], command)
@@ -238,11 +281,100 @@ class VoiceCommandRouter(Node):
             if not isinstance(value, dict):
                 raise ValueError('Invalid control state')
             self._state, self._state_at = value, time.monotonic()
+            if (value.get('authority_state') in ('ESTOP', 'FAULT')
+                    and (self._execution_active or self._execution_pending) and not self._mode_exit_requested):
+                self._mode_voice_session = False
+                self._request_mode_exit()
         except (ValueError, TypeError):
             self._state, self._state_at = {}, -math.inf
 
+    def _execution_blocked(self):
+        return (self._execution_active or self._execution_pending
+                or self._state.get('task_hold', {}).get('active') is True)
+
+    def _on_execution_state(self, message):
+        try:
+            state = json.loads(message.data)
+            if not isinstance(state, dict) or type(state.get('active')) is not bool:
+                return
+            phase, mode = str(state.get('phase', '')), str(state.get('mode_id', ''))
+            if state['active']:
+                if self._mode_enter_dispatched and mode == self._mode_pending_target:
+                    self._execution_pending = False
+                if phase == 'READY' and self._execution_phase != 'READY' and self._mode_voice_session:
+                    # A long cloud job can finish after the old 8s window.
+                    # Open one bounded follow-up window, not endless listening.
+                    self.session.success(time.monotonic())
+                    self._request_next_listen()
+                self._execution_active = True
+                self._execution_mode_id, self._execution_phase = mode, phase
+            elif not self._execution_pending:
+                self._execution_active = False
+                self._mode_exit_requested = False
+                self._execution_mode_id = self._execution_phase = ''
+            self._execution_at = time.monotonic()
+        except (ValueError, TypeError):
+            pass
+
+    def _publish_mode(self, mode_id, operation):
+        msg = ModeCommand()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.request_id = uuid.uuid4().hex
+        msg.mode_id, msg.operation = mode_id, operation
+        self._mode_pub.publish(msg)
+
+    def _send_mode(self, mode_id, operation):
+        if operation != 'ENTER':
+            if operation == 'EXIT':
+                self._request_mode_exit(mode_id)
+            else:
+                self._publish_mode(mode_id, operation)
+            return
+        self._cancel_pending_authorization()
+        self._execution_pending = True
+        self._mode_exit_requested = False
+        self._mode_pending_at = time.monotonic()
+        self._mode_pending_target = mode_id
+        self._mode_enter_dispatched = False
+        self._mode_voice_session = True
+        self._mode_generation += 1
+        generation = self._mode_generation
+        stop = self._control_services['STOP']
+        if not stop.service_is_ready():
+            self._execution_pending = False
+            self._speak('停车服务不可用，未进入执行模式')
+            return
+        future = stop.call_async(Trigger.Request())
+        def stopped(f):
+            if generation != self._mode_generation or not self._execution_pending:
+                return
+            try:
+                if not f.result().success or not self._mode_pub.get_subscription_count():
+                    self._execution_pending = False
+                    self._speak('执行模式调度器未就绪，小车已请求停车')
+                    return
+                self._mode_enter_dispatched = True
+                self._publish_mode(mode_id, 'ENTER')
+            except Exception:
+                self._execution_pending = False
+                self._speak('停车确认失败，未进入执行模式')
+        future.add_done_callback(stopped)
+
+    def _request_mode_exit(self, mode_id=''):
+        if not self._mode_catalog:
+            return
+        self._cancel_pending_authorization()
+        self._mode_generation += 1
+        self._execution_pending = False
+        if not mode_id or mode_id == self._execution_mode_id:
+            self._mode_exit_requested = True
+        self._publish_mode(mode_id, 'EXIT')
+
     def _tick(self):
         now = time.monotonic()
+        if self._execution_pending and now - self._mode_pending_at > 3.:
+            self._request_mode_exit()
+            self._speak('执行模式启动超时，小车保持未授权')
         if not self._session_active():
             if self._next_listen_at:
                 self._close_session()

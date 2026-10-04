@@ -1,6 +1,6 @@
 # ROSCAR · 室内人体跟随感知
 
-当前开发分支：`codex/fixed-voice-rules`。2026-10-04 已按优化方案加入统一运动授权、锁存急停、独立 KWS、共享录音、Silero VAD、语义运动适配与有限语音会话；默认保留 Qwen3-ASR 0.6B INT8 / CPU2 和固定规则。源码尚未部署到小车，运动与标定开关默认关闭。实施、无车验证、复现步骤和现场待办见 [语音优化无车实施与验收](docs/语音优化无车实施与验收.md)。
+当前开发分支：`codex/voice-tongue-integration`，从语音优化的 `0c39068` 创建并移植舌苔分支 `1b422eb`。保留统一运动授权、锁存急停、独立 KWS、共享录音、Silero VAD、语义运动适配、有限会话，以及 Qwen3-ASR 0.6B INT8 / CPU2 和固定规则。新增语音进入舌苔判断、拍摄上传、结果播报、重拍和取消；整机可通过 `WITH_TONGUE_MODE=true` 显式接入。源码尚未部署，运动与标定默认关闭。流程、启动及本分支实际验收见[语音舌苔流程整合与验收](docs/语音舌苔流程整合与验收.md)，基础语音记录见[语音优化无车实施与验收](docs/语音优化无车实施与验收.md)。
 
 主脚本使用 `VOICE_BACKEND=offline`；可显式选 `ASR_BACKEND=xfyun` 回退云端识别。旧在线 DeepSeek 控制入口不再通过主脚本启动，历史版本说明见 WORKLOG。
 
@@ -139,3 +139,6 @@ bash scripts/start_project.sh
 跟随节点现仅发 `/control/cmd_vel_request`，最终速度由 `motion_guard` 审查后发布。`ros2 launch motion_guard follow.launch.py` 默认仅感知模式，不启动底盘/传感器或自动授权；尺寸、安装 TF、停车模型未确认时禁止运动。启动、服务和故障边界见 [motion_guard](ros2_ws/src/motion_guard/README.md)。记录与隔离回放分别使用 `scripts/record_follow.sh`、`scripts/replay_follow.sh`。
 
 导航与自动绕障代码入口：`scripts/run_navigation.sh`，支持 SLAM 建图、AMCL 地图定位、Nav2 人体目标跟随及 Foxglove 地图/路径布局。默认不启用运动。详见 [导航与自动绕障](docs/导航与自动绕障.md)。
+# 可选执行模式：舌苔检测
+
+新增模块的入口、语音命令、构建与部署见 [舌苔检测模式开发与部署说明](docs/舌苔检测模式开发与部署说明.md)。通用多模式接口与后续分支整合见 [执行模式模块接口与合并约定](docs/执行模式模块接口与合并约定.md)。模式默认不会重复启动硬件或自动开启运动。

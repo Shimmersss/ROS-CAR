@@ -69,6 +69,10 @@ class AplaySink:
             stdin=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
+        if self._aborted:
+            self.abort()
+            self.close()
+            raise RuntimeError('Playback cancelled')
 
     def write(self, data):
         if self._aborted:

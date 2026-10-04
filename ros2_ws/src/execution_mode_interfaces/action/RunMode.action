@@ -1,0 +1,13 @@
+# One goal owns the entire mode session, including READY between captures.
+# Cancelling this goal exits the mode and releases resources; never resumes motion.
+string mode_id
+string session_id
+string request_id
+---
+string status
+string detail
+string last_result_json
+---
+string phase
+string detail
+string result_json

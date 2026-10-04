@@ -7,12 +7,14 @@ import threading
 
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import MultiThreadedExecutor
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
 from .audio import AplaySink
 from .auth import build_signed_websocket_url
 from .protocol import decode_tts_response, make_tts_request
+from .speech_jobs import SpeechJob
 
 
 class XfyunTtsNode(Node):
@@ -27,6 +29,7 @@ class XfyunTtsNode(Node):
         self.declare_parameter('volume', 50)
         self.declare_parameter('pitch', 50)
         self.declare_parameter('max_text_chars', 500)
+        self.declare_parameter('enable_speech_action', False)
 
         input_topic = self.get_parameter('input_topic').value
         self._subscription = self.create_subscription(
@@ -35,9 +38,14 @@ class XfyunTtsNode(Node):
         self._speaking_pub = self.create_publisher(Bool, '/voice/speaking', 10)
         self._queue = queue.Queue(maxsize=5)
         self._stop = threading.Event()
+        self._destroying = False
+        self._action_speech = None
         self._cancel_all = threading.Event()
         self._active_cancel = self._cancel_all
         self._active_sink = None
+        if self.get_parameter('enable_speech_action').value:
+            from .speech_action import SpeechActions
+            self._action_speech = SpeechActions(self)
         self.create_service(Trigger, '/voice/cancel_speech', self._on_cancel_speech)
         self._state_value = 'IDLE'
         self._state_timer = self.create_timer(1.0, self._republish_state)
@@ -50,11 +58,15 @@ class XfyunTtsNode(Node):
         self._republish_state()
 
     def _republish_state(self):
+        if self._destroying or not rclpy.ok(context=self.context):
+            return
         message = String()
         message.data = self._state_value
         self._state_pub.publish(message)
 
     def _publish_speaking(self, value):
+        if self._destroying or not rclpy.ok(context=self.context):
+            return
         message = Bool()
         message.data = bool(value)
         self._speaking_pub.publish(message)
@@ -76,9 +88,15 @@ class XfyunTtsNode(Node):
         del request
         self._cancel_all.set()
         self._cancel_all = threading.Event()
+        if self._action_speech:
+            self._action_speech.stop()
         while True:
             try:
-                self._queue.get_nowait()
+                queued = self._queue.get_nowait()
+                if isinstance(queued, SpeechJob):
+                    queued.cancel.set()
+                    queued.status = 'cancelled'
+                    queued.complete.set()
                 self._queue.task_done()
             except queue.Empty:
                 break
@@ -94,20 +112,39 @@ class XfyunTtsNode(Node):
                 continue
             if text is None:
                 break
-            text, self._active_cancel = text
+            job = text if isinstance(text, SpeechJob) else None
+            if job:
+                self._active_cancel = job.cancel
+                text = job.text
+                self._action_speech.current = job
+                job.status = 'speaking'
+            else:
+                text, self._active_cancel = text
             if self._active_cancel.is_set():
+                if job:
+                    job.status = 'cancelled'
+                    self._action_speech.current = None
+                    job.complete.set()
                 self._queue.task_done()
                 continue
             try:
                 self._speak(text)
+                if job:
+                    job.status = 'cancelled' if self._speech_cancelled() else 'completed'
             except Exception as exc:
                 self.get_logger().error(str(exc))
                 self._publish_state(f'ERROR: {exc}')
+                if job:
+                    job.status = 'cancelled' if self._speech_cancelled() else 'failed'
+                    job.detail = str(exc)[:200]
             finally:
                 self._active_sink = None
                 self._publish_speaking(False)
                 if not self._stop.is_set():
                     self._publish_state('IDLE')
+                if job:
+                    self._action_speech.current = None
+                    job.complete.set()
                 self._queue.task_done()
 
     def _speech_cancelled(self):
@@ -174,6 +211,9 @@ class XfyunTtsNode(Node):
                 ws.close()
 
     def destroy_node(self):
+        self._destroying = True
+        if self._action_speech:
+            self._action_speech.stop()
         self._stop.set()
         self._abort_audio()
         try:
@@ -187,11 +227,17 @@ class XfyunTtsNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = XfyunTtsNode()
+    executor = MultiThreadedExecutor(num_threads=4)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        node._stop.set()
+        if node._action_speech:
+            node._action_speech.stop()
+        executor.shutdown(timeout_sec=3.)
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

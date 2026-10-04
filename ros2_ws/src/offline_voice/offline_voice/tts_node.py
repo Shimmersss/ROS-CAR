@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import rclpy
+from rclpy.executors import MultiThreadedExecutor
 
 from xfyun_speech.audio import AplaySink
 from xfyun_speech.tts_node import XfyunTtsNode
@@ -79,11 +80,17 @@ class OfflineTtsNode(XfyunTtsNode):
 def main(args=None):
     rclpy.init(args=args)
     node = OfflineTtsNode()
+    executor = MultiThreadedExecutor(num_threads=4)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        node._stop.set()
+        if node._action_speech:
+            node._action_speech.stop()
+        executor.shutdown(timeout_sec=3.)
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

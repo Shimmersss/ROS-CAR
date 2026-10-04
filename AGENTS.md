@@ -12,6 +12,15 @@
 - Qwen3-ASR CPU2、MeloTTS 不替换；热词、阿克曼转向、微动标定及总运动开关默认关闭，未经真人实车验收不得默认开启。测试中的校准/免 KWS 参数只用于隔离模拟域。
 - 主入口 `VOICE_BACKEND=offline`；讯飞 ASR 仅通过显式 `ASR_BACKEND=xfyun` 回退，不能通过旧 online 路径恢复 LLM 控制。
 
+## 语音与舌苔执行模式整合约定（2026-10-04）
+
+- 新分支以 `docs/语音舌苔流程整合与验收.md` 为整合入口；原舌苔模块来自 `codex/tongue-execution-mode` / `1b422eb`，来源分支的旧验证记录不作为本分支验收。
+- 舌苔流程复用当前 ASR、共享录音、常开 KWS、唯一 TTS 队列和原始 RGB；仅新增 execution_mode_interfaces / execution_mode_manager / tongue_mode，不建立新的最终速度出口。
+- 模式进入先确认 STOP，再获得 TaskHold；保持期间禁止运动授权。急停/故障/急停健康失效终止检测，释放租约不能清除锁存或恢复运动。
+- 保留唤醒刷新与 8 秒普通会话，超时不取消检测任务；READY 只为语音交互开放一次有界续聊窗口。明确退出语音、停车和急停清理模式。检测中的唤醒不取消有完成确认的任务播报。
+- 整机入口仅在 `WITH_TONGUE_MODE=true` 时接入；robot 要求底盘静止回传，bench 必须运动关闭。测试中的假输入/模型不能称为实车或舌象分类准确率验证。
+- 模式切换等待旧 RunMode 的最终清理，播报顺序使用 SpeakText 完成确认；云端冻结版本与八项多标签结果契约必须验证，图像及凭据不提交 Git。
+
 ## B 路线当前入口约定
 
 - B 管理入口默认 `models/weights/yolo26s-fp16.engine`，由目标 Jetson 导出；缺文件必须报错，不静默回退。显式 `MODEL_PATH=.../yolo26s.pt` 可做基线对比。

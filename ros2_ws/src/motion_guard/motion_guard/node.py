@@ -20,9 +20,11 @@ from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformListener, TransformException
 from person_interfaces.msg import TargetState
 from roscar_interfaces.srv import SetControlMode, AuthorizeMotion
+from execution_mode_interfaces.srv import TaskHold
 from astra_body_adapter.follow_control import observation_is_fresh
 from .safety import SafetyConfig, clearance
 from .authority import MotionAuthority, AuthorityError
+from .task_hold import StationaryLease
 
 
 def seconds(stamp):
@@ -64,6 +66,7 @@ class MotionGuard(Node):
         self.mode_since = self.get_clock().now().nanoseconds*1e-9
         self.reason = 'not_armed'
         self.last_fault = ''
+        self.task_hold = StationaryLease()
         self.request = self.scan = self.target = None
         self.received = {}
         self.buffer = Buffer()
@@ -79,6 +82,7 @@ class MotionGuard(Node):
         self.create_service(AuthorizeMotion,'/control/authorize',self.authorize)
         self.create_service(Trigger,'/control/stop',self.stop_service)
         self.create_service(Trigger,'/control/disarm',self.stop_service)
+        self.create_service(TaskHold,'/control/task_hold',self.on_task_hold)
         self.create_service(Trigger,'/control/estop',self.estop_service)
         self.create_service(Trigger,'/control/reset_estop',self.reset_estop)
         self.create_service(Trigger,'/control/reset_fault',self.reset_fault)
@@ -106,6 +110,9 @@ class MotionGuard(Node):
 
     def set_mode(self, request, response):
         self.publish(0., 0.)
+        if self.task_hold.active(time.monotonic()) and request.mode != 'IDLE':
+            response.success, response.message = False, 'Execution mode holds the vehicle stationary'
+            return response
         try:
             self.authority.select_mode(request.mode)
             self.clear_requests()
@@ -186,6 +193,8 @@ class MotionGuard(Node):
         self.target=msg; self.received['target']=time.monotonic()
 
     def check(self):
+        if self.task_hold.active(time.monotonic()):
+            return False, 'task_hold', 0., 0.
         if not self.emergency_healthy():
             return False, 'emergency_channel_unhealthy', 0., 0.
         if self.command_mode == 'IDLE':
@@ -263,6 +272,10 @@ class MotionGuard(Node):
         return self._arm(response)
 
     def _arm(self, response):
+        if self.task_hold.active(time.monotonic()):
+            response.success, response.message = False, 'Execution mode holds the vehicle stationary'
+            self.publish(0., 0.)
+            return response
         try:
             ready, reason, _, _ = self.check()
             # Arming must never launch a buffered nonzero command.
@@ -287,7 +300,30 @@ class MotionGuard(Node):
     def publish(self,v,w):
         msg=Twist(); msg.linear.x=float(v); msg.angular.z=float(w); self.pub.publish(msg)
 
+    def on_task_hold(self, request, response):
+        now = time.monotonic()
+        try:
+            if request.operation == 'ACQUIRE':
+                if self.authority.state in ('ESTOP', 'FAULT') or not self.emergency_healthy():
+                    raise ValueError('Reset fault/ESTOP and restore emergency channel before entering a mode')
+                response.token = self.task_hold.acquire(request.owner, request.session_id, request.lease_sec, now)
+                self.stop_service(None, Trigger.Response())
+            elif request.operation == 'RENEW':
+                self.task_hold.renew(request.token, request.lease_sec, now)
+                response.token = request.token
+            elif request.operation == 'RELEASE':
+                self.task_hold.release(request.token)
+                self.stop_service(None, Trigger.Response())
+            else:
+                raise ValueError('Expected ACQUIRE, RENEW or RELEASE')
+            response.success, response.detail = True, 'Vehicle remains IDLE; explicit new authorization required'
+        except ValueError as exc:
+            response.success, response.detail = False, str(exc)
+        return response
+
     def tick(self):
+        if self.task_hold.expire(time.monotonic()):
+            self.stop_service(None, Trigger.Response())
         try:
             ready, reason, v, w = self.check()
         except Exception as exc:
@@ -302,10 +338,14 @@ class MotionGuard(Node):
             mode=self.mode, authority_state=self.authority.state,
             authority_epoch=self.authority.epoch, command_mode=self.command_mode,
             ready=ready, reason=reason, last_fault=self.last_fault,
-            motion_enabled=self.cfg['motion_enabled']))))
+            motion_enabled=self.cfg['motion_enabled'], emergency_healthy=self.emergency_healthy(),
+            task_hold=dict(active=self.task_hold.active(time.monotonic()), owner=self.task_hold.owner,
+                           session_id=self.task_hold.session_id)))))
 
     def destroy_node(self):
-        self.timer.cancel(); self.publish(0.,0.)
+        self.timer.cancel()
+        if rclpy.ok(context=self.context):
+            self.publish(0.,0.)
         return super().destroy_node()
 
 

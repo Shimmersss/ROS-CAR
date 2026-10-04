@@ -1,6 +1,7 @@
 """Real Qwen3/Silero node consumes ROS PCM and discards a canceled utterance."""
 from pathlib import Path
 import time
+import os
 import wave
 import rclpy
 from rclpy.node import Node
@@ -46,7 +47,7 @@ def main():
 
     try:
         pump(.5)
-        wav = Path(__file__).resolve().parents[1] / 'artifacts/voice-lab/synthetic/stop.wav'
+        wav = Path(os.environ.get('VOICE_TEST_STOP_WAV', str(Path(__file__).resolve().parents[1] / 'artifacts/voice-lab/synthetic/stop.wav')))
         with wave.open(str(wav)) as stream:
             data = stream.readframes(stream.getnframes())
         call(start); pump(.1)

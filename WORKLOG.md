@@ -1,5 +1,15 @@
 # 工作记录
 
+## 2026-10-04：将舌苔分支整合进当前语音优化链路
+
+- 从 `0c39068` 在独立 Git worktree 新建 `codex/voice-tongue-integration`（`E:\works\newcar\ROS-CAR-voice-tongue`）；原小车工作区的分支/未提交修改及舌苔源分支保持原样。舌苔模块来源提交为 `1b422ebd2e811f0f29e9c58dad9dc3910505a689`，通过本地 bundle 获取并移植，不 push 或合并 main。
+- 移植 execution_mode_interfaces / execution_mode_manager / tongue_mode、停车租约和 SpeakText 确认；手动适配与新版 Motion Authority、取消代次、共享录音、常开 KWS、语义 MotionRequest 和唤醒刷新行为冲突的代码。进入先等待 STOP 成功，模式内禁止授权；急停/故障/健康失效取消模式，释放租约不清除锁存、不恢复运动。
+- 普通 8 秒会话超时只暂停聆听，长检测继续；READY 为语音交互开放一次有界续聊。检测中重复唤醒不取消任务提示，明确退出语音/停车/急停清理模式。TTS 两类任务共享一个队列，修复接受后尚未排队时的取消及 aplay 启动竞态；补强图像捕获窗口和里程计源时间。
+- 整机监督脚本增加显式 `WITH_TONGUE_MODE`、robot/bench 条件校验、复用唯一语音/guard 的派发；更新当前整合说明、使用说明、README 和长期约定，来源分支旧测试记录明确标作历史。
+- 本机专用根文件系统 `/home/ubuntu/.cache/roscar-voice-tongue-validation-rootfs` 构建 12 包；1655 项相关单测、17 场景舌苔模拟闭环、真实租约/原语音授权/控制 API 回归通过。真实 Qwen/Silero 共享音频回放通过；CPU KWS 正例在模拟有确认的提示播报中触发 ESTOP 并阻止拍照/上传。RGB/TTS/odom/云端分类为模拟，不是硬件或分类准确率验收；原 KWS 漏检限制保留。
+- 补测再次唤醒、旧模式反馈、退出后迟到停车确认的异步边界；调度器使用和当前语音一致的反馈词替换，避免主动播报四个急停触发词。结构检查为 17 包/245 个 Python 文件，5 个脚本语法及 6 种无效启动配置检查通过。
+- 本轮未 SSH、部署或访问真实云端，没有打开声卡、相机和底盘。最小审查覆盖接口、授权和模式竞态、取消后的迟到结果、提示完成与新帧顺序、词表上下文、启动互斥、语法和 Git 空白。
+
 ## 2026-10-04：编写语音控制使用说明书
 
 - 新增 `docs/语音控制使用说明书.md`，以操作者的口令和操作顺序说明唤醒、手动/跟随授权、短时行驶、普通停车、锁存急停、复位和会话结束，并在 README 加入入口。
@@ -1024,3 +1034,14 @@
 - 按用户要求将 `offline_voice` 增加 Qwen3-ASR 0.6B INT8 本地后端，并将配置及语音脚本默认入口改为离线 Qwen3；固定规则控制和本地 TTS 保持运行，讯飞 ASR 仍可通过 `ASR_BACKEND=xfyun` 回退。
 - 模型移入车上 `/home/wheeltec/ROSCAR-offline/models/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25`；改动前备份为 `/home/wheeltec/ROSCAR-backups/qwen3-asr-20260929-145122/before.tar.gz`。正式工作区 `offline_voice` 原生 Humble 构建成功，独立 ROS 域启动确认模型加载，正式守护服务重启后日志再次确认 `qwen3` 且无讯飞 ASR 进程。
 - 本地 Python 编译、ASR 收音回归测试 3 项、脚本语法和差异检查通过。正式切换后快照：7.4 GiB 内存中约 2.3 GiB 可用，swap 使用约 177 MiB，项目服务运行中。模型使用 CPU 两线程；真人准确率、持续运行和实际车辆动作留给现场测试。本轮未发布运动指令，也未提交或推送 Git。
+
+
+## 2026-10-04 舌苔检测执行模式（来源分支历史记录，独立 clone）
+
+- 从 main 59847c0 创建 codex/tongue-execution-mode；增加通用执行模式接口/manager 和 tongue_mode，语音词表显式启用，完成进入、检测、READY、重拍、重播、退出。
+- router 保留唯一 ASR 入口；TTS 增加带 ID 的播放完成/失败/取消 action；guard 增加任务保持租约，拒绝持有期间 ARM/非 IDLE 切换，释放或超时不自动续动。
+- 车端只采集原始彩色 JPEG 并调用冻结云端流水线，校验请求/采集/会话/模型版本和八标签。新帧窗口、源时间戳、唯一发布者、取消 socket、迟到结果丢弃、串行模式切换及心跳失联退出已实现。
+- 独立 Ubuntu22.04/Humble x86_64 环境12包构建成功；55项单元与旧语音/保护回归通过，12个真实ROS/模拟相机音频odom云端场景通过，新租约服务和旧API控制回归通过。日志 artifacts/tongue-final-humble.log。没有SSH/部署Jetson或3090、没有实物/模型推理验收。
+- 旧API测试将±0.16当越界，与当前±0.2配置不符；测试改从配置生成越界值，未更改保护限速。
+- 共享测试chroot路径的workspace被外部绑定到源项目，后续复制发生误写；已撤回6个明确归属本任务的原文件改动并匹配初始SHA256，移出6组误加路径，保留其他工作。最终测试转到专用tongue-mode-01a07fde-validation根文件系统并核验无源目录绑定。恢复证据在舌象项目 ros_car_tongue_integration/source_recovery_20261004/，详见 docs/舌苔检测模式验证记录.md。
+- 使用、板端待验收清单和多模式合并约定见 docs/舌苔检测模式开发与部署说明.md 与 docs/执行模式模块接口与合并约定.md。本轮不push/merge原主分支。

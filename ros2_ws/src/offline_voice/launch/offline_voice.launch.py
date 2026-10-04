@@ -6,6 +6,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -18,6 +19,8 @@ def generate_launch_description():
         DeclareLaunchArgument('use_xfyun_asr', default_value='false'),
         DeclareLaunchArgument('enable_wake_driver', default_value='true'),
         DeclareLaunchArgument('voice_control_enabled', default_value='true'),
+        DeclareLaunchArgument('execution_modes_config', default_value=''),
+        DeclareLaunchArgument('enable_speech_action', default_value='false'),
         Node(
             package='wheeltec_mic_ros2', executable='wheeltec_mic',
             name='wheeltec_mic_wake', output='screen',
@@ -46,11 +49,13 @@ def generate_launch_description():
         Node(
             package='voice_command_router', executable='router_node',
             name='voice_command_router', output='screen',
-            parameters=[config, {'enabled': LaunchConfiguration('voice_control_enabled')}],
+            parameters=[config, {'enabled': LaunchConfiguration('voice_control_enabled'),
+                                'execution_modes_config': LaunchConfiguration('execution_modes_config')}],
         ),
         Node(
             package='offline_voice', executable='tts_node',
-            name='offline_tts', output='screen', parameters=[config],
+            name='offline_tts', output='screen', parameters=[config, {
+                'enable_speech_action': ParameterValue(LaunchConfiguration('enable_speech_action'), value_type=bool)}],
             condition=IfCondition(LaunchConfiguration('enable_tts')),
         ),
     ])
