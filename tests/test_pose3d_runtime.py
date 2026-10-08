@@ -9,6 +9,7 @@ from sensor_msgs.msg import CameraInfo, Image
 from person_interfaces.msg import PersonStateArray
 from yolo_person_tracker.backend import Detection
 from yolo_person_tracker.pose_node import PoseTrackerNode
+from monotonic_ros_clock import MonotonicRosClock
 
 
 class Backend:
@@ -20,16 +21,18 @@ class Backend:
 def main():
     rclpy.init();backend=Backend()
     node=PoseTrackerNode(backend=backend,namespace='spatial',parameter_overrides=[
+        Parameter('use_sim_time',value=True),
         Parameter('depth_registered',value=True),Parameter('max_age_s',value=1.),
         Parameter('pose3d_gravity_confirmed',value=True),Parameter('pose3d_ground_confirmed',value=True)])
     ex=SingleThreadedExecutor();ex.add_node(node);people=[]
+    clock=MonotonicRosClock(node)
     node.create_subscription(PersonStateArray,'person_states',people.append,10)
     cp=node.create_publisher(Image,node.cfg['color_topic'],10)
     dp=node.create_publisher(Image,node.cfg['depth_topic'],10)
     ip=node.create_publisher(CameraInfo,node.cfg['camera_info_topic'],10)
     def spin(seconds=.1):
         end=time.monotonic()+seconds
-        while time.monotonic()<end:ex.spin_once(timeout_sec=.005)
+        while time.monotonic()<end:clock.spin_once(ex)
     def send(height=1.1,angle=0.,holes=False):
         center=np.array([0.,1.-height,2.]);a=np.radians(angle)
         torso=np.array([0.,-.5*np.cos(a),.5*np.sin(a)])
@@ -49,7 +52,7 @@ def main():
         c=node.bridge.cv2_to_imgmsg(np.zeros((480,640,3),np.uint8),'bgr8');c.header.frame_id=info.header.frame_id;c.header.stamp=node.get_clock().now().to_msg()
         d=node.bridge.cv2_to_imgmsg(depth,'16UC1');d.header=copy.deepcopy(c.header);cp.publish(c);dp.publish(d)
         end=time.monotonic()+.7
-        while time.monotonic()<end and (not people or people[-1].header!=c.header):ex.spin_once(timeout_sec=.005)
+        while time.monotonic()<end and (not people or people[-1].header!=c.header):clock.spin_once(ex)
         assert people and people[-1].header==c.header
         spin(.10)
         return people[-1].persons[0]

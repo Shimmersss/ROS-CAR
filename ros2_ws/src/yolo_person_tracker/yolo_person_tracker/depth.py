@@ -1,6 +1,32 @@
 """Robust measurement from depth already registered to the color optical frame."""
+from dataclasses import dataclass
 import math
 import numpy as np
+
+
+@dataclass(frozen=True)
+class DepthGate:
+    """Physical innovation gate: base noise allowance plus plausible motion per second.
+
+    Fallback measurements (no torso corroboration) get a tighter gate and lower
+    weight. A rejected point never refreshes the measurement stamp; relocation is
+    accepted only after mutually consistent rejected evidence spans confirm_s.
+    """
+    base_m: float = .35
+    speed_mps: float = 2.
+    confirm_s: float = .3
+    fallback_scale: float = .6
+    fallback_noise_scale: float = 2.
+
+    def __post_init__(self):
+        for name, value in vars(self).items():
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f'depth gate {name} must be finite and positive')
+        if self.fallback_scale > 1 or self.fallback_noise_scale < 1:
+            raise ValueError('depth gate fallback_scale must be <=1 and noise scale >=1')
+
+    def limit(self, dt, fallback=False):
+        return (self.base_m+self.speed_mps*dt)*(self.fallback_scale if fallback else 1.)
 
 
 BODY_REGIONS = (
@@ -20,25 +46,60 @@ class DepthTrackFilter:
     """
 
     def __init__(self, measurement_std_m=.08, acceleration_std_mps2=2.,
-                 jump_reset_m=.8, reset_gap_s=.5):
+                 jump_reset_m=.8, reset_gap_s=.5, gate=None):
         for name, value in locals().copy().items():
-            if name != 'self' and (not math.isfinite(value) or value <= 0):
+            if name not in ('self', 'gate') and (not math.isfinite(value) or value <= 0):
                 raise ValueError(f'{name} must be finite and positive')
+        if gate is not None and not isinstance(gate, DepthGate):
+            raise ValueError('gate must be a DepthGate or None')
         self.measurement_variance = measurement_std_m**2
         self.acceleration_variance = acceleration_std_mps2**2
+        # Without a gate the legacy behaviour is kept: re-initialize on large jumps.
         self.jump_reset_m = jump_reset_m
         self.reset_gap_s = reset_gap_s
+        self.gate = gate
         self.reset()
 
     def reset(self):
         self.state = None
         self.covariance = None
         self.stamp = None  # Last real measurement, never refreshed by prediction.
+        self.last_rejected = False
+        self.pending = None  # (first stamp, latest stamp, latest point) of rejected evidence.
+        self.confirm_required = False  # Stale state dropped while input continued.
 
     def _initialize(self, point, stamp):
         self.state = np.concatenate((point, np.zeros(3)))
         self.covariance = np.diag([self.measurement_variance]*3 + [1.]*3)
         self.stamp = float(stamp)
+        self.pending = None
+        self.confirm_required = False
+
+    @property
+    def evidence_stamp(self):
+        """Latest real evidence, accepted or pending; None when there is none."""
+        stamps = [s for s in (self.stamp, self.pending and self.pending[1]) if s is not None]
+        return max(stamps) if stamps else None
+
+    def _continues_pending(self, stamp, beyond_noise):
+        # The gate widens with time since the last accepted sample. During an active
+        # rejection streak a point beyond the noise allowance must be confirmed
+        # (clean re-init) rather than blended with a large gain that invents velocity.
+        return beyond_noise and self.pending is not None and stamp > self.pending[1]
+
+    def _reject(self, point, stamp):
+        """Hold the last accepted state; relocate only on consistent sustained evidence."""
+        g = self.gate
+        if (self.pending is not None and stamp > self.pending[1]
+                and np.linalg.norm(point-self.pending[2]) <= g.limit(stamp-self.pending[1])):
+            self.pending = (self.pending[0], float(stamp), point)
+        else:
+            self.pending = (float(stamp), float(stamp), point)
+        if stamp-self.pending[0] >= g.confirm_s:
+            self._initialize(point, stamp)
+            return tuple(float(v) for v in self.state[:3])
+        self.last_rejected = True
+        return None
 
     def _predict(self, dt):
         transition = np.eye(6)
@@ -48,21 +109,49 @@ class DepthTrackFilter:
         return (transition @ self.state,
                 transition @ self.covariance @ transition.T + noise)
 
-    def update(self, xyz, stamp):
+    def update(self, xyz, stamp, fallback=False):
+        """Return the filtered point, or None for invalid input or a gated rejection.
+
+        `last_rejected` distinguishes a rejected real measurement (callers may hold
+        the prediction with its true age) from absent/invalid input.
+        """
+        self.last_rejected = False
         if xyz is None or not math.isfinite(stamp):
             return None
         point = np.asarray(xyz, dtype=np.float64)
         if point.shape != (3,) or not np.isfinite(point).all():
             return None
-        if self.stamp is None or stamp <= self.stamp or stamp-self.stamp > self.reset_gap_s:
+        last_input = self.evidence_stamp
+        if last_input is not None and (stamp <= last_input or stamp-last_input > self.reset_gap_s):
+            # A real input gap or time reversal: forget state and pending evidence.
+            # Measured from the latest input, accepted OR rejected, so a sustained
+            # run of rejected samples is never mistaken for a stream gap.
+            self.reset()
+        elif self.gate is not None and self.stamp is not None and stamp-self.stamp > self.reset_gap_s:
+            # Input continued but every sample was rejected: the accepted state is
+            # too old to predict forward, and any new position must be confirmed.
+            self.state = self.covariance = self.stamp = None
+            self.confirm_required = True
+        if self.stamp is None:
+            if self.gate is not None and (fallback or self.confirm_required):
+                # Uncorroborated fallback or a stale rejected run: confirm like a relocation.
+                return self._reject(point, stamp)
             self._initialize(point, stamp)
         else:
-            predicted, covariance = self._predict(stamp-self.stamp)
+            dt = stamp-self.stamp
+            predicted, covariance = self._predict(dt)
             innovation = point-predicted[:3]
-            if np.linalg.norm(innovation) > self.jump_reset_m:
+            distance = np.linalg.norm(innovation)
+            if self.gate is not None and (
+                    distance > self.gate.limit(dt, fallback) or self._continues_pending(
+                        stamp, distance > self.gate.limit(0., fallback))):
+                return self._reject(point, stamp)
+            if self.gate is None and distance > self.jump_reset_m:
                 self._initialize(point, stamp)
             else:
-                noise = np.eye(3)*self.measurement_variance
+                self.pending = None
+                scale = self.gate.fallback_noise_scale if self.gate is not None and fallback else 1.
+                noise = np.eye(3)*self.measurement_variance*scale**2
                 gain = np.linalg.solve(covariance[:3, :3]+noise,
                                        covariance[:, :3].T).T
                 self.state = predicted + gain @ innovation

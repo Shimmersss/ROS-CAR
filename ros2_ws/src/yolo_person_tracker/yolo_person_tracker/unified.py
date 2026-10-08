@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 import math
 import numpy as np
 from .ground import GroundEstimate, _Camera, _extract, _usable, estimate_ground_point
+from .floor_plane import ankle_contact
 
 
 @dataclass(frozen=True)
@@ -84,6 +85,51 @@ def depth_contact(person, intrinsics, size, transform, ground, config):
                           'bilateral ankle midpoint projected to ground; body projection is not a measured joint'), None
 
 
+def floor_contact(person, intrinsics, size, transform, ground, config, floor):
+    """Ankle rays against the depth-fitted floor of the SAME frame, then base frame.
+
+    Ray and plane share the optical frame, so a mount pitch error no longer scales
+    the range; the confirmed ground must still agree with the measured plane.
+    """
+    up, height, rms = floor
+    camera = _Camera(intrinsics, size, transform)
+    points, confidences = _extract(person)
+    if points is None or not all(_usable(points, confidences, i, ground, camera,
+                                        ground.edge_margin_px) for i in (15,16)):
+        return None, 'two visible ankles required'
+    plane_std = math.hypot(rms, ground.ankle_height_m*.5)
+    feet, stds = [], []
+    for i in (15,16):
+        u, v = points[i]
+        p = ankle_contact(u, v, intrinsics, up, height, ground.ankle_height_m)
+        if p is None:
+            return None, 'ankle ray does not meet measured floor'
+        total = 0.
+        for du, dv, dh in ((ground.pixel_std,0.,0.), (0.,ground.pixel_std,0.), (0.,0.,plane_std)):
+            worst = 0.
+            for sign in (-1.,1.):
+                q = ankle_contact(u+sign*du, v+sign*dv, intrinsics, up, height+sign*dh, ground.ankle_height_m)
+                if q is None:
+                    return None, 'ill-conditioned measured-floor ray'
+                worst = max(worst, float(np.linalg.norm(q-p)))
+            total += worst*worst
+        feet.append(camera.rotation@p+camera.origin); stds.append(math.sqrt(total))
+    feet = np.array(feet)
+    if np.max(np.abs(feet[:,2]-ground.ground_z_m-ground.ankle_height_m)) > config.ankle_plane_tolerance_m:
+        return None, 'measured floor disagrees with confirmed ground'
+    spread = float(np.linalg.norm(feet[0,:2]-feet[1,:2]))
+    if spread > ground.consistency_max_m:
+        return None, 'conflicting measured-floor ankles'
+    point = np.mean(feet, axis=0); point[2] = ground.ground_z_m
+    if math.hypot(*point[:2]) > ground.max_range_m:
+        return None, 'measured-floor point out of range'
+    std = math.sqrt(max(stds)**2+mount_std(point,config)**2+(spread/2)**2)
+    if std > ground.max_std_m:
+        return None, 'measured-floor uncertainty exceeds limit'
+    return GroundEstimate(tuple(map(float,point)), float(min(confidences[15:17])), std, 'mono_ankles_floor',
+                          'bilateral ankle rays on this frame\'s depth-fitted floor'), None
+
+
 def conservative_fusion(estimates):
     """Equal-weight covariance intersection for isotropic XY uncertainty.
 
@@ -158,7 +204,7 @@ class UnifiedTrack:
         return chosen,chosen.detail+'; accepted current observation'
 
 
-def candidates(person, model, transform, ground, config):
+def candidates(person, model, transform, ground, config, floor=None):
     # Height prior refers to a different virtual body point; not a feet measurement.
     feet_config = replace(ground, enable_height_prior=False, height_prior_confirmed=False)
     depth, dr = depth_contact(person,*model,transform,feet_config,config)
@@ -167,9 +213,15 @@ def candidates(person, model, transform, ground, config):
         mono = replace(mono, std_m=math.hypot(mono.std_m,mount_std(mono.point,config)), method='mono_ankles')
         if mono.std_m > ground.max_std_m:
             mono=None; mr='monocular uncertainty exceeds limit'
+    fr = 'disabled or unavailable'
+    if floor is not None and person.posture in (0,1,2) and not person.fall_stage:
+        # Same ankle pixels: the measured plane REPLACES the calibrated one, never adds to it.
+        measured, fr = floor_contact(person,*model,transform,feet_config,config,floor)
+        if measured is not None:
+            mono, mr, fr = measured, None, 'used'
     hard = (person.posture not in (0,1,2) or bool(person.fall_stage)
             or 'conflicting' in (dr or '') or 'conflicting' in (mr or ''))
-    return depth, mono, hard, f'depth: {dr or "available"}; mono: {mr or "available"}'
+    return depth, mono, hard, f'depth: {dr or "available"}; mono: {mr or "available"}; floor: {fr}'
 
 
 def mount_std(point,config):

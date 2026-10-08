@@ -67,6 +67,13 @@ def main():
         assert markers[-1].markers[0].action==Marker.ADD
         assert call('lock_target').success;spin();assert states[-1].position_valid
         if fusion_enabled:
+            # Uncorroborated lower-body depth 1 m nearer: gated, withheld, never the target.
+            send();legs=np.zeros((100,100),np.uint16)
+            legs[77:84,37:44]=1000;legs[77:84,57:64]=1000
+            send(legs);p=persons[-1].persons[0]
+            assert 'depth=pose_lower_body' in p.detail and 'withheld by temporal depth gate' in p.detail, p.detail
+            assert not p.body_depth_valid and np.isnan(p.body_depth_m)
+            assert not states[-1].position_valid or abs(states[-1].position.z-2.)<.1, states[-1]
             sparse=np.zeros((100,100),np.uint16)
             sparse[17:24,37:44]=2000;sparse[17:24,57:64]=2000
             c=send(sparse)
@@ -82,6 +89,9 @@ def main():
             assert 'depth=invalid' in persons[-1].persons[0].detail
             # The original short position hold must expire, never refresh on holes.
             spin(.35);assert not states[-1].position_valid
+            # Box-region depth keeps an existing track valid without keypoints; it may
+            # not start a track alone (unit-tested), so refresh the track first.
+            send()
         backend.detections=[Detection(7,(10,5,90,95),.9,())];send()
         assert persons[-1].persons[0].posture==0 and states[-1].position_valid
         assert all(not x for x in persons[-1].persons[0].keypoints_3d_valid)

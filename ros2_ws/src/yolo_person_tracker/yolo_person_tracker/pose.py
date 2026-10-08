@@ -25,6 +25,7 @@ class PoseConfig:
     lying_aspect: float = 1.2
     knee_height_fraction: float = .2
     joint_jump_m: float = .5
+    joint_jump_speed_mps: float = 2.
 
     def __post_init__(self):
         for name, value in vars(self).items():
@@ -34,6 +35,33 @@ class PoseConfig:
                 raise ValueError(f'pose {name} must be finite and positive')
         if self.confidence > 1 or not 0 < self.standing_deg < self.horizontal_deg < 90:
             raise ValueError('Invalid pose confidence/angle thresholds')
+
+
+class JointJumpGate:
+    """Per-joint last ACCEPTED real sample; a rejected outlier never becomes the reference.
+
+    The allowance grows with the time since that joint's accepted sample, and the
+    reference expires after max_gap_s so genuine relocation is accepted again.
+    """
+
+    def __init__(self, jump_m, speed_mps, max_gap_s):
+        self.jump_m, self.speed_mps, self.max_gap_s = jump_m, speed_mps, max_gap_s
+        self.points = np.full((17,3), np.nan)
+        self.stamps = np.full(17, -np.inf)
+
+    def apply(self, xyz, stamp):
+        xyz = np.array(xyz, dtype=float)
+        age = stamp-self.stamps
+        recent = np.isfinite(self.points).all(axis=1) & (age > 0) & (age <= self.max_gap_s)
+        finite = np.isfinite(xyz).all(axis=1)
+        limit = self.jump_m+self.speed_mps*np.where(recent, age, 0.)
+        with np.errstate(invalid='ignore'):
+            jump = recent & finite & (np.linalg.norm(xyz-self.points, axis=1) > limit)
+        xyz[jump] = np.nan
+        accepted = finite & ~jump
+        self.points[accepted] = xyz[accepted]
+        self.stamps[accepted] = stamp
+        return xyz, int(jump.sum())
 
 
 def points2d(keypoints, confidence=.5):

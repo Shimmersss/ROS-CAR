@@ -17,6 +17,8 @@
     pose_lying_aspect: 1.2
     pose_knee_height_fraction: 0.2
     pose_joint_jump_m: 0.5
+    # Allowance grows with time since that joint's last accepted sample.
+    pose_joint_jump_speed_mps: 2.0
     # C-only real-depth fusion. False restores the original C/B sampling path.
     fusion_enabled: true
     fusion_min_anchor_joints: 2
@@ -39,3 +41,22 @@
 
     # Keep pixel history continuous; pause metric evidence briefly on depth loss.
     pose3d_depth_gap_s: 0.35
+
+    # Dynamic gravity for a gimbal camera. 'static' keeps pose3d_up_* (default, unchanged);
+    # 'floor' uses this frame's stable RANSAC floor; 'tf' uses gravity_frame at the image stamp.
+    # Missing per-frame gravity -> that frame is 2D, and the 2D drop reference is reset.
+    # The *_confirmed flags above still gate 3D/ground/2D-confirmation use.
+    pose3d_up_source: static
+    pose3d_upright_roll_deg: 3.0
+    pose3d_camera_motion_deg: 2.0
+    gravity_frame: base_footprint
+    gravity_ground_z_m: 0.0
+
+    # RANSAC floor plane from registered depth (publishes floor_plane). Evidence only.
+    floor_fit_enabled: false
+    floor_roi_top_fraction: 0.35
+    floor_inlier_m: 0.02
+    floor_max_rms_m: 0.015
+    floor_min_extent_m: 0.2
+    floor_max_tilt_deg: 35.0
+    floor_confirm_frames: 3

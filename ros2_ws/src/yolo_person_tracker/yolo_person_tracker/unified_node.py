@@ -3,7 +3,7 @@ import copy
 import math
 import time
 import rclpy
-from person_interfaces.msg import PersonGround, PersonGroundArray
+from person_interfaces.msg import FloorPlane, PersonGround, PersonGroundArray
 from visualization_msgs.msg import MarkerArray
 from .ground_node import GroundLocalizer
 from .input_contract import stamp_seconds
@@ -33,6 +33,20 @@ class UnifiedLocalizer(GroundLocalizer):
             body_values[key]=self.get_parameter('body_contact_'+key).value
         self.body_config=BodyContactConfig(**body_values)
         self.body_maps={}
+        # Optional: this frame's stable depth-fitted floor replaces the calibrated plane for ankles.
+        self.declare_parameter('floor_plane_enabled',False)
+        self.floor_enabled=self.get_parameter('floor_plane_enabled').value
+        self.floors={}
+        if self.floor_enabled:
+            self.create_subscription(FloorPlane,'floor_plane',self.on_floor,10)
+
+    def on_floor(self,msg):
+        if (not msg.valid or not msg.stable or msg.header.frame_id!=self.cfg['expected_source_frame']
+                or not all(math.isfinite(v) for v in (msg.up.x,msg.up.y,msg.up.z,msg.height_m,msg.rms_m))):
+            return
+        key=(msg.header.stamp.sec,msg.header.stamp.nanosec)
+        self.floors[key]=((msg.up.x,msg.up.y,msg.up.z),float(msg.height_m),float(msg.rms_m))
+        while len(self.floors)>30:self.floors.pop(next(iter(self.floors)))
 
     def on_persons(self,msg):
         stamp=stamp_seconds(msg.header.stamp)
@@ -57,7 +71,9 @@ class UnifiedLocalizer(GroundLocalizer):
         result.std_m=result.confidence=result.measurement_age_s=math.nan
         track=self.tracks.setdefault(person.track_id,UnifiedTrack(self.unified_config))
         try:
-            depth,mono,hard,detail=candidates(person,self.model,transform,self.config,self.unified_config)
+            # Exact same-frame stamp only; a floor from another frame is never substituted.
+            floor=(self.floors.get((stamp_msg.sec,stamp_msg.nanosec)) if self.floor_enabled else None)
+            depth,mono,hard,detail=candidates(person,self.model,transform,self.config,self.unified_config,floor)
             anchor=body_anchor(person,self.model,transform,self.config,self.unified_config,self.body_config)
             mapping=self.body_maps.setdefault(person.track_id,BodyContact(self.body_config))
             foot=depth if depth is not None and depth.method=='depth_ankles' else mono

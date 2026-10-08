@@ -37,6 +37,11 @@ class FusionConfig:
             raise ValueError('fusion_cluster_rel and fusion_torso_scale must be <= 1')
 
 
+# Sources measured without torso corroboration; the temporal filter gates them
+# more tightly and trusts them less (anchors may be absent, so no cross-check ran).
+FALLBACK_SOURCES = frozenset(('pose_lower_body', 'regions'))
+
+
 @dataclass(frozen=True)
 class DepthObservation:
     target: tuple | None

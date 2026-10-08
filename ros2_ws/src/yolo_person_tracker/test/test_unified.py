@@ -98,3 +98,32 @@ class UnifiedTests(unittest.TestCase):
             for s in (1.,1.1,1.2):t.update(s,estimate(),None)
             self.assertIsNone(t.update(stamp,estimate(),None)[0])
         with self.assertRaises(ValueError):UnifiedConfig(confirm_frames=1)
+
+
+class MeasuredFloorTests(unittest.TestCase):
+    """Ankle rays on the same frame's depth-fitted floor replace the calibrated plane."""
+    def floor(self, transform, ground_z=0., rms=.003):
+        r=transform.rotation
+        rotation=rotation_matrix((r.x,r.y,r.z,r.w))
+        return tuple(rotation.T@np.array([0.,0.,1.])), transform.translation.z-ground_z, rms
+
+    def test_measured_floor_cancels_mount_pitch_error(self):
+        true, calibrated = mount(pitch_deg=10.), mount(pitch_deg=12.)
+        p=measured(true,foot=(2.5,.4),indices=())
+        _,mono,_,_=candidates(p,(INTRINSICS,SIZE),calibrated,GroundConfig(),UnifiedConfig())
+        self.assertEqual(mono.method,'mono_ankles')
+        self.assertGreater(abs(mono.point[0]-2.5),.3)
+        _,floor,hard,detail=candidates(p,(INTRINSICS,SIZE),calibrated,GroundConfig(),UnifiedConfig(),self.floor(true))
+        self.assertFalse(hard);self.assertEqual(floor.method,'mono_ankles_floor');self.assertIn('floor: used',detail)
+        self.assertLess(math.dist(floor.point[:2],(2.5,.4)),.05)
+
+    def test_floor_disagreeing_with_confirmed_ground_is_not_used(self):
+        t=mount(pitch_deg=10.);p=measured(t,foot=(2.5,.4),indices=())
+        _,mono,hard,detail=candidates(p,(INTRINSICS,SIZE),t,GroundConfig(),UnifiedConfig(),self.floor(t,ground_z=-.5))
+        self.assertFalse(hard);self.assertEqual(mono.method,'mono_ankles')
+        self.assertIn('disagrees with confirmed ground',detail)
+
+    def test_lying_person_never_uses_floor_contact(self):
+        t=mount(pitch_deg=10.);p=measured(t,foot=(2.5,.4),indices=());p.posture=3
+        d,m,hard,detail=candidates(p,(INTRINSICS,SIZE),t,GroundConfig(),UnifiedConfig(),self.floor(t))
+        self.assertTrue(hard);self.assertIsNone(m);self.assertIn('floor: disabled or unavailable',detail)

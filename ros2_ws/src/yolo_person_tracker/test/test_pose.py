@@ -104,3 +104,39 @@ class RegistrationTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+
+class JointJumpGateTest(unittest.TestCase):
+    @staticmethod
+    def joints(z):
+        xyz = np.full((17,3), np.nan)
+        xyz[:,2] = z
+        xyz[:,:2] = 0.
+        return xyz
+
+    def test_outlier_never_becomes_reference(self):
+        gate = JointJumpGate(.5, 2., .5)
+        gate.apply(self.joints(2.), 1.)
+        out, rejected = gate.apply(self.joints(3.), 1.033)
+        self.assertEqual(rejected, 17)
+        self.assertTrue(np.isnan(out).all())
+        out, rejected = gate.apply(self.joints(2.02), 1.066)
+        self.assertEqual(rejected, 0)
+        np.testing.assert_allclose(out[:,2], 2.02)
+
+    def test_reappearing_joint_is_checked_and_reference_expires(self):
+        gate = JointJumpGate(.5, 2., .5)
+        gate.apply(self.joints(2.), 1.)
+        missing = self.joints(2.); missing[15] = np.nan
+        gate.apply(missing, 1.1)
+        out, rejected = gate.apply(self.joints(3.5), 1.2)
+        self.assertEqual(rejected, 17)
+        out, rejected = gate.apply(self.joints(3.5), 1.55)
+        self.assertEqual(rejected, 16)  # joint 15 expired (0.55 s); the rest are 0.45 s old
+        self.assertEqual(out[15,2], 3.5)
+
+    def test_allowance_grows_with_age_and_time_reversal_accepts(self):
+        gate = JointJumpGate(.5, 2., .5)
+        gate.apply(self.joints(2.), 1.)
+        self.assertEqual(gate.apply(self.joints(2.8), 1.2)[1], 0)
+        self.assertEqual(gate.apply(self.joints(5.), 1.)[1], 0)

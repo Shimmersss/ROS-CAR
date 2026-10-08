@@ -42,6 +42,9 @@
 /perception/unified_localizer:
   ros__parameters:
     target_frame: base_link
+    # Use this frame's stable depth-fitted floor (floor_plane) for ankle rays instead of the
+    # calibrated plane. Needs floor_fit_enabled on the pose node; it never confirms the ground.
+    floor_plane_enabled: false
     expected_source_frame: camera_color_optical_frame
     extrinsics_calibrated: false
     ground_plane_confirmed: false

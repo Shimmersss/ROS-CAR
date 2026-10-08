@@ -3,20 +3,26 @@ import copy
 import math
 import time
 from collections import deque
+from dataclasses import replace
 import cv2
 import numpy as np
 import rclpy
 from rclpy.parameter import Parameter
 from rclpy.executors import MultiThreadedExecutor
+from rclpy.time import Time
 from geometry_msgs.msg import Point
+from tf2_ros import Buffer, TransformListener, TransformException
 from visualization_msgs.msg import Marker, MarkerArray
-from person_interfaces.msg import PersonState, PersonStateArray, RuntimeMetrics, PersonIdentityArray
+from person_interfaces.msg import (FloorPlane, PersonState, PersonStateArray, RuntimeMetrics,
+                                   PersonIdentityArray)
 from .node import TrackerNode, serialized
-from .pose import PoseConfig, EDGES, LABELS, points2d, joints3d
+from .pose import PoseConfig, EDGES, LABELS, JointJumpGate, points2d, joints3d
 from .input_contract import stamp_seconds
-from .fusion import FusionConfig, fuse_depth
+from .fusion import FALLBACK_SOURCES, FusionConfig, fuse_depth
 from .identity_selection import IdentitySelection
 from .pose3d import Pose3DConfig, EnhancedPostureTracker
+from .floor_plane import FloorConfig, FloorTracker, camera_angles, fit_floor
+from .ground import rotation_matrix
 
 
 class PoseTrackerNode(TrackerNode):
@@ -51,7 +57,28 @@ class PoseTrackerNode(TrackerNode):
         for name,value in vars(Pose3DConfig()).items():
             self.declare_parameter('pose3d_'+name,value)
             spatial_values[name]=self.get_parameter('pose3d_'+name).value
-        self.postures = EnhancedPostureTracker(self.pose_config,Pose3DConfig(**spatial_values))
+        self.spatial_config=Pose3DConfig(**spatial_values)
+        self.postures = EnhancedPostureTracker(self.pose_config,self.spatial_config)
+        # Optional RANSAC floor evidence; off by default and never a confirmation by itself.
+        self.declare_parameter('floor_fit_enabled', False)
+        self.floor_enabled=self.get_parameter('floor_fit_enabled').value
+        floor_values={}
+        for name,value in vars(FloorConfig()).items():
+            self.declare_parameter('floor_'+name,value)
+            floor_values[name]=self.get_parameter('floor_'+name).value
+        self.floor_config=FloorConfig(**floor_values)
+        self.floor_tracker=FloorTracker(self.floor_config)
+        self.pending_floor=None
+        if self.spatial_config.up_source=='floor' and not self.floor_enabled:
+            raise ValueError("pose3d_up_source='floor' requires floor_fit_enabled")
+        # 'tf' source: gravity frame z is up (e.g. base_footprint driven by the gimbal IMU).
+        self.declare_parameter('gravity_frame','base_footprint')
+        self.declare_parameter('gravity_ground_z_m',0.)
+        self.gravity_frame=self.get_parameter('gravity_frame').value
+        self.gravity_ground_z=float(self.get_parameter('gravity_ground_z_m').value)
+        if self.spatial_config.up_source=='tf':
+            self.tf_buffer=Buffer();self.tf_listener=TransformListener(self.tf_buffer,self)
+        self.floor_pub=self.create_publisher(FloorPlane,'floor_plane',10)
         self.person_pub = self.create_publisher(PersonStateArray, 'person_states', 10)
         self.skeleton_pub = self.create_publisher(MarkerArray, 'skeleton_markers', 10)
         self.metrics_pub = self.create_publisher(RuntimeMetrics, 'performance', 10)
@@ -80,9 +107,26 @@ class PoseTrackerNode(TrackerNode):
         }
         return ({identity: result.target for identity, result in observations.items()}, observations)
 
+    def measurement_is_fallback(self, track_id, evidence):
+        observation = evidence.get(track_id)
+        return observation is not None and observation.source in FALLBACK_SOURCES
+
+    def mark_rejected(self, evidence, rejected):
+        # Keep joints (they pass their own gate) but withdraw the gated body depth.
+        return {key: replace(value, target=None, reason=value.reason+'; withheld by temporal depth gate (inconsistent or unconfirmed)')
+                if key in rejected and value.target is not None else value
+                for key, value in evidence.items()}
+
     def process_pair(self, *args):
         start=time.monotonic()
         result=super().process_pair(*args)
+        if self.floor_enabled and self.cfg['depth_registered']:
+            snapshot,detections=result[0],result[1]
+            # Worker-owned; one in-flight future, consumed by publish_image for the same stamp.
+            self.pending_floor=(stamp_seconds(snapshot[0].header.stamp),
+                fit_floor(snapshot[1],snapshot[3],[d.box for d in detections],
+                          (self.spatial_config.up_x,self.spatial_config.up_y,self.spatial_config.up_z),
+                          self.floor_config))
         if self.performance_enabled:
             self.samples.append((time.monotonic(), (time.monotonic()-start)*1000.))
         return result
@@ -104,6 +148,7 @@ class PoseTrackerNode(TrackerNode):
         super().tick()
         if self.error or self.snapshot is None or not self.fresh_snapshot():
             self.postures.reset()
+            self.floor_tracker.reset()
             self.previous_joints.clear()
             now=time.monotonic()
             if self.pose_valid or self.active_markers or now-self.last_invalid_at >= 1.:
@@ -136,6 +181,7 @@ class PoseTrackerNode(TrackerNode):
         msg.detail='COCO17; camera-relative heuristic; initial thresholds'
         annotated=image.copy(); markers=MarkerArray(); current=set()
         stamp=stamp_seconds(color.header.stamp)
+        gravity=self.frame_gravity(color,stamp)
         next_joints={}
         for detection in detections:
             if detection.track_id is None:
@@ -165,14 +211,14 @@ class PoseTrackerNode(TrackerNode):
                 # Never use the predicted/held target position as fresh joint evidence.
                 reference=self.positions.get(detection.track_id) if detection.track_id not in self.held_position_ids else None
                 xyz=joints3d(self.snapshot[1],detection.keypoints,self.snapshot[3],self.pose_config.confidence,reference)
-            previous=self.previous_joints.get(identity)
-            next_joints[identity]=(stamp,xyz.copy())
-            if previous and 0 < stamp-previous[0] <= self.pose_config.max_gap_s:
-                jump=np.linalg.norm(xyz-previous[1],axis=1)>self.pose_config.joint_jump_m
-                xyz[jump]=np.nan
+            gate=self.previous_joints.get(identity) or JointJumpGate(
+                self.pose_config.joint_jump_m,self.pose_config.joint_jump_speed_mps,self.pose_config.max_gap_s)
+            next_joints[identity]=gate
+            xyz,_=gate.apply(xyz,stamp)
             person.keypoints_3d=[Point(x=float(p[0]),y=float(p[1]),z=float(p[2])) for p in xyz]
             person.keypoints_3d_valid=list(map(bool,np.isfinite(xyz).all(axis=1)))
-            person.posture,person.fall_stage,person.detail=self.postures.update(identity,stamp,detection.box,detection.keypoints,xyz)
+            person.posture,person.fall_stage,person.detail=self.postures.update(
+                identity,stamp,detection.box,detection.keypoints,xyz,gravity)
             if self.fusion_config.enabled:
                 reason = (f'depth={observation.source}; {observation.reason}' if observation is not None
                           else 'depth=invalid; registration unconfirmed')
@@ -201,6 +247,36 @@ class PoseTrackerNode(TrackerNode):
         if self.performance_enabled:
             self.output_samples.append((time.monotonic(),age))
         super().publish_image(color,image,detections,overlay_image=annotated)
+
+    def frame_gravity(self, color, stamp):
+        """Per-frame (up, camera height) in the optical frame, or None; never a stale value."""
+        floor=None
+        if self.floor_enabled:
+            pending=self.pending_floor;self.pending_floor=None
+            msg=FloorPlane();msg.header=copy.deepcopy(color.header)
+            if pending is None or pending[0]!=stamp:
+                self.floor_tracker.reset();msg.detail='No floor fit for this frame'
+            else:
+                fit=pending[1];stable,msg.detail=self.floor_tracker.update(stamp,fit)
+                msg.valid=fit.valid;msg.stable=bool(stable and fit.valid)
+                msg.up.x,msg.up.y,msg.up.z=fit.up;msg.height_m=fit.height_m
+                msg.pitch_up_deg,msg.roll_deg=camera_angles(fit.up)
+                msg.inliers=fit.inliers;msg.inlier_fraction=fit.inlier_fraction;msg.rms_m=fit.rms_m
+                if msg.stable:floor=(np.array(fit.up),fit.height_m)
+            self.floor_pub.publish(msg)
+        source=self.spatial_config.up_source
+        if source=='floor':
+            return floor
+        if source=='tf':
+            try:
+                # Observation-time lookup only; a missing transform makes this frame 2D.
+                t=self.tf_buffer.lookup_transform(self.gravity_frame,color.header.frame_id,
+                                                  Time.from_msg(color.header.stamp)).transform
+            except TransformException:
+                return None
+            r=rotation_matrix((t.rotation.x,t.rotation.y,t.rotation.z,t.rotation.w))
+            return (r.T@np.array([0.,0.,1.]),t.translation.z-self.gravity_ground_z)
+        return None
 
     @serialized
     def publish_metrics(self):
