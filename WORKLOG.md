@@ -1193,3 +1193,10 @@
 - `Pose3DConfig.up_source`（默认 static，行为不变）新增 floor/tf：逐帧重力与相机高度；缺失时本帧退二维且不复用旧值；横滚 >3° 时二维未知；重力方向变化 >2° 清空二维像素基线与疑似（保留已确认事件）；二维确认仍需 `pose_upright_confirmed`，三维仍需 gravity/ground 确认。tf 源按观测时刻查 `gravity_frame`。
 - 统一定位 `floor_plane_enabled`（默认 false）：仅用完全相同时间戳的稳定实测地面，与双踝射线在光学系求交得 `mono_ankles_floor`，替代标定平面单目；与已确认地面不符则不用并注明。配置注释写入 pose.yaml 与 gemini/camera_mount.yaml。
 - 验证（合成数据）：本机与 Humble 容器 171 项单元测试通过（新增地面 9、动态重力 7、实测地面统一定位 3）；抬头 15°/横滚 2°/墙 2.5 m/4 mm 噪声/10% 空洞的 10 个种子法向误差 ≤0.3°、高度 ≤1 cm，窄地板条判无效；2° 安装俯仰误差下标定平面单目偏 >0.3 m，实测地面 <5 cm。新增 `tests/test_floor_runtime.py` 并纳入 `scripts/test_c_container.sh`，完整 C 验收（含二维姿态两种融合、三维、统一、身份、路由与公共 API）退出码 0，日志 `artifacts/floor-gravity-c-acceptance.log`。开发中修正：初版 150 次全局随机采样在地板仅占约 18% 时会选错平面（最大 3.35°），墙脚一侧点使平面偏 0.4°。Mac 上每次拟合约 20 ms，Jetson 开销未测；未在真实地板、反光瓷砖或云台上验证，未部署。
+
+## 2026-10-08：云台链路软件（无硬件）
+
+- 已提交此前全部改动到分支 `claude/gimbal-floor-design`（3d57133）。
+- 新增 `gimbal_interfaces`（GimbalCommand/GimbalStatus）与 `gimbal_bridge`：协议编解码与逐字节重同步、MCU 计数回绕展开与最小 RTT 时钟同步（含主机时钟跳变即时重新锚定，`clock_steps` 上报）、termios 原始串口、桥接节点（50 Hz 指令转发与 HOLD 心跳、ACK 服务、无同步/无效/CRC 超限/状态超时不发布 pan 或全部关节）、无 xacro 的 URDF 生成与 `gimbal_mount.yaml`（占位值，confirmed=false 时 launch 不发布 TF）、方案 E/G 的 MCU 模拟器、独立 `gimbal.launch.py`。`check_project.py` 包清单加入两包。
+- 排查：Colima 虚拟机墙钟跳约 164 ms 导致 joint 时间戳偏未来，确认为环境时钟步进而非解回绕错误，据此加入跳变重锚（也覆盖 Jetson 无 RTC 开机 NTP 步进）；Node 子类方法名 `handle` 覆盖 rclpy 属性已改名；测试改为查 0.1 s 前的关节帧，避免追最新 TF；`ros2 run` 不转发 SIGTERM，测试直接运行 rsp 可执行文件。
+- 验证：`scripts/test_gimbal_container.sh` 15 项单元测试与伪终端端到端测试连续 3 次通过（CRC 重同步、MCU 时钟回绕后时间戳单调且延迟 0–30 ms、TF 跟随指令 ±0.01 rad、HOLD 心跳不超时、归零服务、磁铁丢失/断口撤销 TF、陀螺方案未回零不发布 pan、launch 未确认不发布 TF 且非仿真拒绝放行），日志 artifacts/gimbal-test.log；结构检查 16 包通过。纯软件仿真，无真实舵机/编码器/IMU/USB 串口，未部署。
