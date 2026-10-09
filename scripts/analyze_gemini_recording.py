@@ -16,6 +16,8 @@ from yolo_person_tracker.fusion import fuse_depth
 from yolo_person_tracker.pose import PoseConfig, PostureTracker, LABELS, EDGES, points2d, plausible_torso3d
 from yolo_person_tracker.reid_backend import OSNetBackend, appearance_crop
 from yolo_person_tracker.reid import IdentityConfig, IdentityManager
+sys.path.insert(0,str(ROOT/'scripts'))
+from gemini_recording import load_depth_m
 
 
 def main():
@@ -43,7 +45,7 @@ def main():
     stamp=(int(row['host_monotonic_ns'])-start)/1e9+1.;ns=int(row['host_wall_ns']);j=int(np.argmin(np.abs(times-ns)));delta=float(times[j]-ns)/1e6
     matched=abs(delta)<=40
     if matched:
-     z=np.fromfile(a.recording/(depths[j]['frame']+'.depth'),dtype=np.uint16).reshape(400,640).astype(np.float32)*float(depths[j]['scale_mm'])/1000
+     z=load_depth_m(a.recording,depths[j])
     else:z=np.zeros((400,640),np.float32)
     image,aligned=reg.apply(image,z)
     if last is not None and stamp-last>cfg.max_gap_s:
