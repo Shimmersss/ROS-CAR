@@ -12,6 +12,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 from gemini_recording import load_depth_m, load_depth_raw, summarize  # noqa: E402
 from label_recording import FALL_EVENTS, LabelSession  # noqa: E402
+from record_gemini_mac import PLAN, resolve_segment  # noqa: E402
 
 
 def make_recording(root, color_n=90, depth_n=80, gap_at=None, compressed=True):
@@ -118,6 +119,20 @@ class LabelTests(unittest.TestCase):
         self.assertEqual(s.frame, 4)
         self.assertIsNone(s.key('x'))
         self.assertEqual(s.key('q'), 'quit')
+
+
+class SegmentNameTests(unittest.TestCase):
+    def test_plan_codes_free_names_and_parts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out, seconds = resolve_segment('a1A', tmp, '20261010')
+            self.assertEqual((out.name, seconds), ('gemini-20261010-A1a-fall-side-1.9m', 120))
+            out.mkdir(); (out/'x').touch()
+            self.assertEqual(resolve_segment('A1a', tmp, '20261010')[0].name, 'gemini-20261010-A1a-fall-side-1.9m-part2')
+            self.assertEqual(resolve_segment('my-test', tmp, '20261010'), (Path(tmp)/'gemini-20261010-my-test', 120))
+            for bad in ('', '../x', '.hidden'):
+                with self.assertRaises(ValueError):
+                    resolve_segment(bad, tmp, '20261010')
+            self.assertTrue(all(0 < s <= 170 for _, s in PLAN.values()))
 
 
 if __name__ == '__main__':

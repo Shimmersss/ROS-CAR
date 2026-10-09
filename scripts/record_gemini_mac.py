@@ -110,29 +110,57 @@ def depth_preview(out, frame):
     return cv2.resize(image, (320, 200))
 
 
+# docs/补录视频要求20261008.md: code -> (directory name, default seconds).
+PLAN = {
+    'A0': ('A0-setup-check', 60), 'A1a': ('A1a-fall-side-1.9m', 120), 'A1b': ('A1b-fall-toward-1.9m', 120),
+    'A1c': ('A1c-fall-walking-away', 120), 'A2': ('A2-fall-types-1.9m', 160), 'A3': ('A3-fall-3m', 120),
+    'A4a': ('A4a-negatives-fast', 120), 'A4b': ('A4b-negatives-floor', 120), 'A5': ('A5-daily-postures', 120),
+    'A6': ('A6-dark-pants', 120), 'A7': ('A7-occlusion-edge', 120), 'A8': ('A8-second-person', 170),
+    'B1': ('B1-reid-distinct', 130), 'B2': ('B2-reid-similar', 130),
+}
+
+
+def resolve_segment(segment, root, day):
+    """Plan code (case-insensitive) or a free name -> (unused directory, default seconds)."""
+    code = next((k for k in PLAN if k.lower() == segment.lower()), None)
+    name, seconds = PLAN[code] if code else (segment, 120)
+    if not name or '/' in name or name.startswith('.'):
+        raise ValueError(f'invalid segment name: {segment!r}')
+    base = f'gemini-{day}-{name}'
+    out, part = Path(root)/base, 1
+    while out.exists() and any(out.iterdir()):
+        part += 1
+        out = Path(root)/f'{base}-part{part}'
+    return out, seconds
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('segment', help='段号和名称，例如 A1-fall-1.9m')
-    parser.add_argument('--seconds', type=float, default=120., help='最长时长，≤170 秒')
+    parser.add_argument('segment', help='补录段号（如 A1a、B1，见 PLAN）或自定义段名；同名已存在时自动加 -part2…')
+    parser.add_argument('--seconds', type=float, help='最长时长，≤170 秒；默认按段号设定，自定义段名为 120')
     parser.add_argument('--camera', type=int, default=0, help='AVFoundation 彩色相机序号')
     parser.add_argument('--root', type=Path, default=ROOT/'data/recordings')
     parser.add_argument('--serial', default='AY2755200PW', help='空字符串表示不核对序列号')
     parser.add_argument('--raw', action='store_true', help='深度不压缩（每段约 1.8 GB）')
     parser.add_argument('--no-preview', action='store_true')
     args = parser.parse_args()
+    try:
+        out, planned = resolve_segment(args.segment, args.root, time.strftime('%Y%m%d'))
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.seconds is None:
+        args.seconds = float(planned)
     if not 0 < args.seconds <= 170:
         parser.error('--seconds must be in (0, 170]')
-    name = f'gemini-{time.strftime("%Y%m%d")}-{args.segment}'
-    out = args.root/name
-    if out.exists() and any(out.iterdir()):
-        sys.exit(f'目录已存在且非空：{out}（换段名或先移走旧数据）')
+    name = out.name
+    print(f'本段目录：{out}（最长 {args.seconds:.0f} 秒）', flush=True)
     need = BYTES_PER_SECOND['raw' if args.raw else 'zlib']*args.seconds*1.5
     free = shutil.disk_usage(args.root if args.root.exists() else ROOT).free
     if free < need+2e9:
         sys.exit(f'磁盘不足：可用 {free/1e9:.1f} GB，本段预计需要 {need/1e9:.1f} GB 并保留 2 GB')
     build_helper()
     out.mkdir(parents=True, exist_ok=True)
-    (out/'notes.md').write_text(NOTES.format(name=name, segment=args.segment, when=time.strftime('%Y-%m-%d %H:%M')))
+    (out/'notes.md').write_text(NOTES.format(name=name, segment=name, when=time.strftime('%Y-%m-%d %H:%M')))
 
     camera = cv2.VideoCapture(args.camera, cv2.CAP_AVFOUNDATION)
     if not camera.isOpened():
@@ -196,7 +224,7 @@ def main():
     camera.release()
     cv2.destroyAllWindows()
     depth.stop()
-    summary = write_summary(out, {'segment': args.segment, 'depth_helper_log': depth.log[-20:],
+    summary = write_summary(out, {'segment': name, 'depth_helper_log': depth.log[-20:],
                                   'depth_storage': 'raw' if args.raw else 'zlib'})
     print(f'彩色 {summary["color_frames"]} 帧，深度 {summary["depth_rows"]} 帧，重叠 {summary["overlap_seconds"]} 秒，'
           f'最大间断 彩色 {summary["color_max_gap_seconds"]} / 深度 {summary["depth_max_gap_seconds"]} 秒，'
