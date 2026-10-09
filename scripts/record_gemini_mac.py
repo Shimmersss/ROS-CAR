@@ -154,6 +154,13 @@ def main():
         sys.exit('深度流没有出帧：\n'+'\n'.join(depth.log[-10:]))
     print(f'深度已出帧，开始录制 {name}（最长 {args.seconds:.0f} 秒，Q/Esc 提前结束）', flush=True)
 
+    if not args.no_preview:
+        # Create the window before timing starts: the first imshow stalls ~0.2 s on macOS.
+        cv2.namedWindow('Gemini recording - Q to stop')
+        cv2.imshow('Gemini recording - Q to stop', frame)
+        cv2.waitKey(1)
+        for _ in range(3):
+            camera.read()
     writer = cv2.VideoWriter(str(out/'color.avi'), cv2.VideoWriter_fourcc(*'MJPG'), 30, (640, 480))
     stopping = threading.Event()
     signal.signal(signal.SIGINT, lambda *_: stopping.set())
