@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 from gemini_recording import load_depth_m, load_depth_raw, summarize  # noqa: E402
 from label_recording import FALL_EVENTS, LabelSession  # noqa: E402
 from record_gemini_mac import PLAN, resolve_segment  # noqa: E402
+from evaluate_falls import aggregate, falls_and_actions, score  # noqa: E402
 
 
 def make_recording(root, color_n=90, depth_n=80, gap_at=None, compressed=True):
@@ -133,6 +134,36 @@ class SegmentNameTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     resolve_segment(bad, tmp, '20261010')
             self.assertTrue(all(0 < s <= 170 for _, s in PLAN.values()))
+
+
+class EvaluateTests(unittest.TestCase):
+    def labels(self):
+        rows = []
+        for base, direction in ((10., 'side_left'), (40., 'toward')):
+            for offset, event in zip((0., .8, 1.1, 5., 7.), ('fall_onset', 'impact', 'lying_start', 'getup_start', 'stand_stable')):
+                rows.append(dict(t=base+offset, event=event, direction=direction, person='A', position='1.9m', notes=''))
+        rows += [dict(t=70., event='action_start', notes='fast_lie_down', direction='', person='A', position=''),
+                 dict(t=72., event='action_end', notes='fast_lie_down', direction='', person='A', position='')]
+        return rows
+
+    def test_detection_latency_false_alarm_and_stray(self):
+        falls, actions = falls_and_actions(self.labels())
+        self.assertEqual((len(falls), len(actions)), (2, 1))
+        timeline = [dict(t=t/10, phase=0, basis='2d') for t in range(0, 1000)]
+        for r in timeline:
+            if 11.0 <= r['t'] <= 14.0: r['phase'] = 1
+            if 12.2 <= r['t'] <= 14.0: r['phase'], r['basis'] = 2, '3d'
+            if 71.0 <= r['t'] <= 71.5: r['phase'] = 1          # false alarm on the negative
+            if 90.0 <= r['t'] <= 90.3: r['phase'] = 1          # outside any label
+        rows, stray = score(timeline, falls, actions)
+        first, second, action = rows
+        self.assertTrue(first['suspected'] and first['confirmed'])
+        self.assertEqual((first['suspected_latency_s'], first['confirmed_latency_s'], first['confirmed_basis']), (.2, 1.4, '3d'))
+        self.assertFalse(second['suspected'])
+        self.assertTrue(action['suspected'] and not action['confirmed'])
+        self.assertEqual(stray, [90.0, 90.1, 90.2, 90.3])
+        summary = aggregate(rows)
+        self.assertEqual((summary['fall_suspected'], summary['fall_confirmed'], summary['false_suspected']), (1, 1, 1))
 
 
 if __name__ == '__main__':

@@ -40,6 +40,7 @@ def pose_node_checks():
         Parameter('use_sim_time',value=True),
         Parameter('depth_registered',value=True),Parameter('max_age_s',value=1.),
         Parameter('floor_fit_enabled',value=True),Parameter('pose3d_up_source',value='floor'),
+        Parameter('height_fall_enabled',value=True),
         Parameter('pose3d_gravity_confirmed',value=True),Parameter('pose3d_ground_confirmed',value=True)])
     ex=SingleThreadedExecutor();ex.add_node(node);people=[];floors=[]
     clock=MonotonicRosClock(node)
@@ -82,6 +83,7 @@ def pose_node_checks():
         assert math.degrees(math.acos(min(1.,-f.up.y)))<1. and abs(f.height_m-1.)<.02,f
         assert abs(f.pitch_up_deg)<1. and abs(f.roll_deg)<1.,f
         assert p.posture==p.STANDING and 'basis=3d' in p.detail and 'roll=' in p.detail,p
+        assert 'height_fall=0' in p.detail,p
         for height,angle in ((.95,25),(.75,48),(.5,75),(.35,90)):p,_=send(height,angle)
         assert p.fall_stage==p.FALL_SUSPECTED,p
         for _ in range(12):p,_=send(.35,90)
@@ -154,7 +156,7 @@ def main():
     try:
         pose_node_checks()
         unified_checks()
-        print('PASS floor ROS: RANSAC floor topic/header/stability, floor gravity 3D fall, no stale gravity, '
+        print('PASS floor ROS: RANSAC floor topic/header/stability, floor gravity 3D fall, height cue wired, no stale gravity, '
               'unified measured-floor ankles, exact-stamp matching')
     finally:
         rclpy.shutdown()

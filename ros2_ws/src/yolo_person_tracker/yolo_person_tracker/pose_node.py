@@ -22,6 +22,8 @@ from .fusion import FALLBACK_SOURCES, FusionConfig, fuse_depth
 from .identity_selection import IdentitySelection
 from .pose3d import Pose3DConfig, EnhancedPostureTracker
 from .floor_plane import FloorConfig, FloorTracker, camera_angles, fit_floor
+from .height_fall import HeightFallConfig, HeightFallTracker, body_heights
+from .pose import FALLEN, SITTING_CROUCHING, STANDING
 from .ground import rotation_matrix
 
 
@@ -79,6 +81,15 @@ class PoseTrackerNode(TrackerNode):
         if self.spatial_config.up_source=='tf':
             self.tf_buffer=Buffer();self.tf_listener=TransformListener(self.tf_buffer,self)
         self.floor_pub=self.create_publisher(FloorPlane,'floor_plane',10)
+        # Optional skeleton-free fall cue: body top height from depth (see height_fall.py).
+        self.declare_parameter('height_fall_enabled',False)
+        self.height_enabled=self.get_parameter('height_fall_enabled').value
+        height_values={}
+        for name,value in vars(HeightFallConfig()).items():
+            self.declare_parameter('height_'+name,value)
+            height_values[name]=self.get_parameter('height_'+name).value
+        self.height_tracker=HeightFallTracker(HeightFallConfig(**height_values))
+        self.height_boxes={}
         self.person_pub = self.create_publisher(PersonStateArray, 'person_states', 10)
         self.skeleton_pub = self.create_publisher(MarkerArray, 'skeleton_markers', 10)
         self.metrics_pub = self.create_publisher(RuntimeMetrics, 'performance', 10)
@@ -149,6 +160,7 @@ class PoseTrackerNode(TrackerNode):
         if self.error or self.snapshot is None or not self.fresh_snapshot():
             self.postures.reset()
             self.floor_tracker.reset()
+            self.height_tracker.reset();self.height_boxes.clear()
             self.previous_joints.clear()
             now=time.monotonic()
             if self.pose_valid or self.active_markers or now-self.last_invalid_at >= 1.:
@@ -176,12 +188,18 @@ class PoseTrackerNode(TrackerNode):
                 color.header.frame_id)
         if self.pose_epoch != self.selection.epoch:
             self.postures.reset(); self.previous_joints.clear(); self.pose_epoch=self.selection.epoch
+            self.height_tracker.reset(); self.height_boxes.clear()
         msg=PersonStateArray(); msg.header=copy.deepcopy(color.header); msg.valid=True
         self.pose_frame=color.header.frame_id
         msg.detail='COCO17; camera-relative heuristic; initial thresholds'
         annotated=image.copy(); markers=MarkerArray(); current=set()
         stamp=stamp_seconds(color.header.stamp)
         gravity=self.frame_gravity(color,stamp)
+        # Falls often break the tracker ID; a lost track may hand over to one new track (pose_handover_s).
+        present={f'{self.selection.epoch}:{d.track_id}':d.box for d in detections if d.track_id is not None}
+        self.postures.handover(stamp,present)
+        if self.height_enabled and self.pose_config.handover_s>0:
+            self.height_tracker.handover(stamp,present,self.height_boxes,self.pose_config.handover_s)
         next_joints={}
         for detection in detections:
             if detection.track_id is None:
@@ -219,6 +237,8 @@ class PoseTrackerNode(TrackerNode):
             person.keypoints_3d_valid=list(map(bool,np.isfinite(xyz).all(axis=1)))
             person.posture,person.fall_stage,person.detail=self.postures.update(
                 identity,stamp,detection.box,detection.keypoints,xyz,gravity)
+            if self.height_enabled:
+                self.apply_height_fall(person,identity,stamp,detection.box,gravity)
             if self.fusion_config.enabled:
                 reason = (f'depth={observation.source}; {observation.reason}' if observation is not None
                           else 'depth=invalid; registration unconfirmed')
@@ -247,6 +267,31 @@ class PoseTrackerNode(TrackerNode):
         if self.performance_enabled:
             self.output_samples.append((time.monotonic(),age))
         super().publish_image(color,image,detections,overlay_image=annotated)
+
+    def apply_height_fall(self, person, identity, stamp, box, gravity):
+        """Raise fall_stage from the body-top height cue; a clear skeleton standing/crouching
+        posture vetoes it. Without confirmed gravity and ground it can only report suspected."""
+        s=self.spatial_config
+        top=None
+        if self.cfg['depth_registered']:
+            if s.up_source=='static':
+                up,height=np.array([s.up_x,s.up_y,s.up_z]),s.camera_height_m
+            elif gravity is not None and gravity[1] is not None:
+                up,height=gravity
+            else:
+                up=None
+            if up is not None:
+                measured=body_heights(self.snapshot[1],box,self.snapshot[3],up,height,self.height_tracker.cfg)
+                top=None if measured is None else measured[0]
+        self.height_boxes[identity]=tuple(map(float,box))
+        phase,reason=self.height_tracker.update(identity,stamp,top,
+            upright_hint=person.posture in (STANDING,SITTING_CROUCHING))
+        if phase==2 and not (s.gravity_confirmed and s.ground_confirmed):
+            phase,reason=1,reason+'; gravity/ground unconfirmed: suspected only'
+        if phase>person.fall_stage:
+            person.fall_stage=phase
+            if phase==2:person.posture=FALLEN
+        person.detail+=f'; height_fall={phase} ({reason})'
 
     def frame_gravity(self, color, stamp):
         """Per-frame (up, camera height) in the optical frame, or None; never a stale value."""

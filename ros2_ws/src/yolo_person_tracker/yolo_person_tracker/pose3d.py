@@ -7,7 +7,7 @@ With up_source='floor' or 'tf' the up vector and camera height arrive per frame
 from dataclasses import dataclass, replace
 import math
 import numpy as np
-from .pose import PostureTracker, PoseConfig, points2d, UNKNOWN, STANDING, SITTING_CROUCHING, LYING, FALLEN, plausible_torso3d, geometry2d
+from .pose import PostureTracker, PoseConfig, points2d, UNKNOWN, STANDING, SITTING_CROUCHING, LYING, FALLEN, plausible_torso3d, geometry2d, shift_timers
 from .floor_plane import angle_deg, camera_angles
 
 UP_SOURCES = ('static', 'floor', 'tf')
@@ -39,10 +39,13 @@ class Pose3DConfig:
     upright_roll_deg: float = 3.
     # Camera rotation (change of up) beyond this resets the pixel-domain drop reference.
     camera_motion_deg: float = 2.
+    # Upright measured torso without knee depth may use the 2D standing/sitting label, so a
+    # metric pre-fall baseline exists at range; false keeps the 2D fallback for such frames.
+    knee_fallback: bool = False
 
     def __post_init__(self):
         for key,value in vars(self).items():
-            if key in ('enabled','gravity_confirmed','ground_confirmed'):
+            if key in ('enabled','gravity_confirmed','ground_confirmed','knee_fallback'):
                 if not isinstance(value,bool):raise ValueError(f'{key} must be bool')
             elif key=='up_source':
                 if value not in UP_SOURCES:raise ValueError(f'up_source must be one of {UP_SOURCES}')
@@ -58,7 +61,7 @@ class Pose3DConfig:
             raise ValueError('Invalid 3D thigh thresholds')
 
 
-def geometry3d(keypoints,joints,cfg,pose):
+def geometry3d(keypoints,joints,cfg,pose,fallback=None):
     points,visible=points2d(keypoints,pose.confidence)
     xyz=np.asarray(joints,float)
     if xyz.shape!=(17,3):return None,'missing measured joints',False
@@ -80,6 +83,9 @@ def geometry3d(keypoints,joints,cfg,pose):
     lying=angle>=pose.horizontal_deg and low
     posture=LYING if lying else UNKNOWN
     if angle<pose.standing_deg and not valid[[13,14]].all():
+        if cfg.knee_fallback and fallback in (STANDING,SITTING_CROUCHING):
+            result=(fallback,float(-center@up),1.,False)
+            return result,f'angle={angle:.1f}deg; center_height={center_height:.3f}m; knees from 2D',False
         return None,'incomplete measured knees; 2D classification fallback',False
     if angle<pose.standing_deg and valid[[13,14]].all():
         thighs=xyz[[13,14]]-xyz[[11,12]]
@@ -96,6 +102,17 @@ def geometry3d(keypoints,joints,cfg,pose):
     return result,f'angle={angle:.1f}deg; center_height={center_height:.3f}m; ground_confirmed={cfg.ground_confirmed}',False
 
 
+def below_near(old,new):
+    """A new box plausibly continuing a lost one after a fall: overlapping horizontally,
+    centred no higher than the old centre, bottom within half the old height."""
+    ox1,oy1,ox2,oy2=map(float,old);nx1,ny1,nx2,ny2=map(float,new)
+    width,height=ox2-ox1,oy2-oy1
+    if width<=0 or height<=0:return False
+    cx,cy=(nx1+nx2)/2,(ny1+ny2)/2
+    return (ox1-.5*width<=cx<=ox2+.5*width and cy>=(oy1+oy2)/2-.1*height
+            and abs(ny2-oy2)<=.5*height)
+
+
 class EnhancedPostureTracker:
     """Continuous 2D history, separate metric history, and one confirmed-event latch."""
     def __init__(self,pose=None,spatial=None):
@@ -104,13 +121,52 @@ class EnhancedPostureTracker:
         self.metric=PostureTracker(replace(self.pose,drop_fraction=self.spatial.metric_drop_m,
             max_gap_s=max(self.pose.max_gap_s,self.spatial.depth_gap_s)))
         self.tracks={}
+        self.lost={}
 
     def reset(self):
-        self.planar.reset();self.metric.reset();self.tracks.clear()
+        self.planar.reset();self.metric.reset();self.tracks.clear();self.lost.clear()
 
-    def _forget(self,identity):
-        self.tracks.pop(identity,None)
-        self.planar.tracks.pop(identity,None);self.metric.tracks.pop(identity,None)
+    def _forget(self,identity,archive=False):
+        state=self.tracks.pop(identity,None)
+        planar=self.planar.tracks.pop(identity,None);metric=self.metric.tracks.pop(identity,None)
+        if archive and self.pose.handover_s>0 and state is not None and state.get('box') is not None:
+            self.lost[identity]=(state,planar,metric)
+
+    def handover(self,stamp,present):
+        """Call once per frame before update(); present maps this frame's identities to boxes.
+
+        A lost track hands its history to exactly one new track near and below it within
+        handover_s (a fall usually breaks the tracker ID). The unobserved gap pauses all
+        evidence timers. Returns {new_identity: old_identity}.
+        """
+        limit=self.pose.handover_s
+        self.lost={k:v for k,v in self.lost.items() if 0<stamp-v[0]['stamp']<=limit}
+        if limit<=0:return {}
+        candidates={k:v['box'] for k,v in self.tracks.items()
+                    if k not in present and v.get('box') is not None and 0<stamp-v['stamp']<=limit}
+        candidates.update({k:v[0]['box'] for k,v in self.lost.items() if k not in present})
+        pairs={}
+        for new in (k for k in present if k not in self.tracks):
+            matches=[old for old,box in candidates.items() if below_near(box,present[new])]
+            if len(matches)==1:pairs.setdefault(matches[0],[]).append(new)
+        moved={}
+        for old,news in pairs.items():
+            if len(news)!=1:continue
+            if old in self.tracks:
+                state=self.tracks.pop(old)
+                planar=self.planar.tracks.pop(old,None);metric=self.metric.tracks.pop(old,None)
+            else:
+                state,planar,metric=self.lost.pop(old)
+            gap=stamp-state['stamp']
+            for tracker,sub in ((self.planar,planar),(self.metric,metric)):
+                if sub is not None:
+                    shift_timers(sub,stamp-sub['stamp'])
+                    sub['stamp']=stamp-1e-6;tracker.tracks[news[0]]=sub
+            if state.get('metric_stamp') is not None:state['metric_stamp']+=gap
+            if state.get('recovery') is not None:state['recovery']+=gap
+            state['stamp']=stamp-1e-6;state['handover_from']=old
+            self.tracks[news[0]]=state;moved[news[0]]=old
+        return moved
 
     @staticmethod
     def _clear_event(tracker,identity):
@@ -143,7 +199,7 @@ class EnhancedPostureTracker:
             return UNKNOWN,0,'Invalid observation timestamp'
         for key in list(self.tracks):
             if not 0<=stamp-self.tracks[key]['stamp']<=self.pose.max_gap_s:
-                self._forget(key)
+                self._forget(key,archive=stamp>self.tracks[key]['stamp'])
         state=self.tracks.get(identity)
         if state is not None and stamp<=state['stamp']:
             self._forget(identity);state=None
@@ -151,7 +207,7 @@ class EnhancedPostureTracker:
             state=dict(stamp=stamp,metric_stamp=None,missing_since=None,
                        fallen=False,origin='',recovery=None)
             self.tracks[identity]=state
-        state['stamp']=stamp
+        previous=state['stamp'];state['stamp']=stamp;state['box']=tuple(map(float,box))
         if len(self.tracks)>128:
             oldest=min((k for k in self.tracks if k!=identity),key=lambda k:self.tracks[k]['stamp'])
             self._forget(oldest)
@@ -189,7 +245,8 @@ class EnhancedPostureTracker:
         reason='3D disabled or gravity unconfirmed'
         if c.enabled and c.gravity_confirmed:
             if gravity_ok:
-                geometry,reason,conflict=geometry3d(keypoints,joints,spatial,self.pose)
+                geometry,reason,conflict=geometry3d(keypoints,joints,spatial,self.pose,
+                                                    fallback=g2[0] if g2 is not None else None)
             else:
                 reason='dynamic gravity unavailable this frame'
         _, visible=points2d(keypoints,self.pose.confidence)
@@ -245,6 +302,9 @@ class EnhancedPostureTracker:
                         if identity in tracker.tracks:
                             tracker.tracks[identity]['history'].clear();tracker.tracks[identity]['baseline']=None
                     return instant,0,f'basis={basis}; continuous upright recovery complete{note}'
+            elif (self.pose.gap_pause and instant==UNKNOWN and not conflict
+                  and state['recovery'] is not None and stamp-previous<=self.pose.max_gap_s):
+                state['recovery']+=stamp-previous   # unobserved frame pauses recovery, never counts
             else:state['recovery']=None
             if state['fallen']:
                 return FALLEN,2,f'basis={basis}; confirmed_by={state["origin"]}; awaiting continuous upright recovery{note}'
