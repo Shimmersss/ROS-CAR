@@ -17,9 +17,10 @@ from pathlib import Path
 import sys
 
 FALL_EVENTS = ('fall_onset', 'impact', 'lying_start', 'getup_start', 'stand_stable')
-DIRECTIONS = ('side_left', 'side_right', 'toward', 'away', 'walking', 'collapse', 'backward_sit', 'chair',
-              'two_stage', '')
-ACTIONS = ('fast_chair_sit', 'fast_floor_sit', 'fast_lie_down', 'kneel', 'pushup', 'jump', 'squat',
+DIRECTIONS = ('side_left', 'side_right', 'toward', 'away', 'walking_away', 'walking', 'collapse', 'backward_sit',
+              'chair', 'two_stage', '')
+ACTIONS = ('fast_chair_sit', 'fast_floor_sit', 'fast_lie_down', 'stumble_recover', 'kneel', 'pushup', 'jump',
+           'sofa_lie', 'squat',
            'chair_sit', 'pick_up', 'tie_shoes', 'slow_floor_sit', 'slow_lie_down', 'turn',
            'enroll_front_turn', 'cross_occlusion', 'exit_reenter', 'full_occlusion', 'swap_back', 'other')
 PERSONS = ('A', 'B', 'A+B')
