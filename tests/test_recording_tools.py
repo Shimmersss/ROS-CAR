@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 from gemini_recording import load_depth_m, load_depth_raw, summarize  # noqa: E402
 from label_recording import FALL_EVENTS, LabelSession  # noqa: E402
 from record_gemini_mac import PLAN, resolve_segment  # noqa: E402
-from gemini_color import CROP, FULL, OUT, fit_mapping, mode_intrinsics, rb_ratio, shrink  # noqa: E402
+from gemini_color import CROP, FULL, OUT, apply_charuco, fit_mapping, mode_intrinsics, rb_ratio, shrink  # noqa: E402
 from record_gemini_mac import patch_device_json  # noqa: E402
 from evaluate_falls import aggregate, falls_and_actions, score  # noqa: E402
 
@@ -223,6 +223,23 @@ class ColorModeTests(unittest.TestCase):
         self.assertAlmostEqual(fit['scale'], .25, delta=.0005)
         self.assertAlmostEqual(fit['tx'], 4., delta=.3)
         self.assertAlmostEqual(fit['ty'], .6, delta=.3)
+
+    def test_charuco_principal_point_updates_the_offset(self):
+        mapping = dict(scale=.25003, tx=4.17, ty=.47, source='measured')
+        report = dict(views=15, coverage=dict(cells_4x4=16), delta=dict(fx_pct=.2),
+                      tilts=dict(left_right_strong=4, up_down_strong=3, strong_deg=20.),
+                      principal_point_only=dict(cx=319., cy=240., std_cx=.8, std_cy=.9))
+        updated = apply_charuco(report, self.FACTORY, mapping)
+        k = mode_intrinsics(self.FACTORY, updated)
+        self.assertAlmostEqual(k['cx'], 319., places=6)
+        self.assertAlmostEqual(k['cy'], 240., places=6)
+        self.assertAlmostEqual(k['fx'], mode_intrinsics(self.FACTORY, mapping)['fx'], places=9)
+        self.assertEqual((updated['source'], updated['previous']['tx']), ('charuco', 4.17))
+        for bad in (dict(views=8), dict(coverage=dict(cells_4x4=9)), dict(delta=dict(fx_pct=3.)),
+                    dict(tilts=dict(left_right_strong=5, up_down_strong=0)),
+                    dict(principal_point_only=dict(cx=319., cy=240., std_cx=2.5, std_cy=.9))):
+            with self.assertRaises(RuntimeError):
+                apply_charuco(dict(report, **bad), self.FACTORY, mapping)
 
     def test_device_json_keeps_factory_intrinsics(self):
         with tempfile.TemporaryDirectory() as tmp:

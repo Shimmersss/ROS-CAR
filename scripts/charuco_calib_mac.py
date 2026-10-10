@@ -52,6 +52,23 @@ def pnp(obj, img, matrix, dist):
     return rvec, tvec, rms
 
 
+def board_tilt(rvec):
+    """(total tilt, left/right component, up/down component) of the board normal, degrees.
+
+    Up/down tilt (about the image x axis) constrains cy, left/right tilt constrains cx; views that
+    all share one orientation leave the principal point degenerate with the board pose."""
+    normal = cv2.Rodrigues(rvec)[0][:, 2]
+    normal = normal if normal[2] < 0 else -normal          # towards the camera
+    return (float(np.degrees(np.arccos(min(1., abs(normal[2]))))),
+            float(np.degrees(np.arctan2(normal[0], -normal[2]))), float(np.degrees(np.arctan2(normal[1], -normal[2]))))
+
+
+def tilt_summary(tilts, strong=20.):
+    return dict(tilt_deg=[round(t[0], 1) for t in tilts],
+                left_right_strong=sum(abs(t[1]) >= strong for t in tilts),
+                up_down_strong=sum(abs(t[2]) >= strong for t in tilts), strong_deg=strong)
+
+
 def board_center_distance(board, rvec, tvec):
     cols, rows = board.getChessboardSize()
     square = board.getSquareLength()
@@ -60,20 +77,44 @@ def board_center_distance(board, rvec, tvec):
     return float(np.linalg.norm(rotation@center+tvec.reshape(3)))
 
 
+def coverage_cells(imgs, size, n=4):
+    """How many of the n x n image cells contain at least one saved corner."""
+    cells = set()
+    for img in imgs:
+        for u, v in img.reshape(-1, 2):
+            cells.add((min(n-1, int(u*n/size[0])), min(n-1, int(v*n/size[1]))))
+    return len(cells)
+
+
 def compare(views, size, matrix, dist):
     if len(views) < MIN_VIEWS:
         raise RuntimeError(f'Need at least {MIN_VIEWS} saved views, have {len(views)}')
     objs = [v[0].astype(np.float32) for v in views]
     imgs = [v[1].astype(np.float32) for v in views]
-    rms, k, d, _, _ = cv2.calibrateCamera(objs, imgs, size, None, None,
-                                          flags=cv2.CALIB_FIX_K3 | cv2.CALIB_FIX_ASPECT_RATIO)
+    rms, k, d, _, _, std, _, _ = cv2.calibrateCameraExtended(
+        objs, imgs, size, None, None, flags=cv2.CALIB_FIX_K3 | cv2.CALIB_FIX_ASPECT_RATIO)
+    std = std.reshape(-1)
+    # Principal point only: focal length and distortion held at the reference (factory-derived)
+    # values, which the 2026-10-08 check confirmed; this is the quantity the colour mode can shift.
+    pp_flags = (cv2.CALIB_USE_INTRINSIC_GUESS | cv2.CALIB_FIX_FOCAL_LENGTH | cv2.CALIB_FIX_K1 | cv2.CALIB_FIX_K2
+                | cv2.CALIB_FIX_K3 | cv2.CALIB_FIX_TANGENT_DIST)
+    pp_rms, pk, _, _, _, pp_std, _, _ = cv2.calibrateCameraExtended(
+        objs, imgs, size, matrix.copy(), dist[:5].reshape(1, -1).copy(), flags=pp_flags)
+    pp_std = pp_std.reshape(-1)
+    tilts = [board_tilt(pnp(o, i, matrix, dist)[0]) for o, i in zip(objs, imgs)]
+    coverage = np.concatenate(imgs)
+    radius = np.hypot((coverage[:, 0]-size[0]/2)/(size[0]/2), (coverage[:, 1]-size[1]/2)/(size[1]/2))
     factory = [pnp(o, i, matrix, dist)[2] for o, i in zip(objs, imgs)]
     fitted = [pnp(o, i, k, d)[2] for o, i in zip(objs, imgs)]
     return dict(
         views=len(views),
         image_size=list(size),
         calibrated=dict(fx=k[0, 0], fy=k[1, 1], cx=k[0, 2], cy=k[1, 2], distortion=d.reshape(-1).tolist(),
-                        overall_rms_px=rms),
+                        overall_rms_px=rms, std_fx=max(std[0], std[1]), std_cx=std[2], std_cy=std[3]),
+        principal_point_only=dict(cx=pk[0, 2], cy=pk[1, 2], std_cx=pp_std[2], std_cy=pp_std[3], rms_px=pp_rms,
+                                  delta_cx_px=pk[0, 2]-matrix[0, 2], delta_cy_px=pk[1, 2]-matrix[1, 2]),
+        coverage=dict(max_normalised_radius=float(radius.max()), cells_4x4=coverage_cells(imgs, size)),
+        tilts=tilt_summary(tilts),
         factory=dict(fx=matrix[0, 0], fy=matrix[1, 1], cx=matrix[0, 2], cy=matrix[1, 2],
                      distortion=dist.tolist()),
         delta=dict(fx_pct=100*(k[0, 0]/matrix[0, 0]-1), fy_pct=100*(k[1, 1]/matrix[1, 1]-1),
@@ -151,6 +192,11 @@ def main():
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             found = detect(detector, board, gray)
             shown = frame.copy()
+            for view in views:                      # saved corners: aim for every 4x4 cell, corners included
+                for u, v in view[1].reshape(-1, 2):
+                    cv2.circle(shown, (int(u), int(v)), 2, (255, 0, 255), -1)
+            cells = coverage_cells([v[1] for v in views], size) if views else 0
+            cv2.putText(shown, f'coverage {cells}/16 cells', (10, 50), cv2.FONT_HERSHEY_SIMPLEX, .6, (255, 0, 255), 2)
             text = f'views {len(views)}/{MIN_VIEWS}  board not found'
             if found is not None:
                 obj, img, corners, ids, markers = found
@@ -159,8 +205,11 @@ def main():
                 if solved is not None:
                     rvec, tvec, rms = solved
                     cv2.drawFrameAxes(shown, matrix, dist, rvec, tvec, args.square*2)
+                    tilt, lr, ud = board_tilt(rvec)
                     text = (f'views {len(views)}/{MIN_VIEWS}  corners {len(ids)}  center {board_center_distance(board, rvec, tvec):.3f} m'
                             f'  reproj {rms:.2f} px')
+                    cv2.putText(shown, f'tilt {tilt:.0f} deg (left/right {lr:+.0f}, up/down {ud:+.0f})', (10, 75),
+                                cv2.FONT_HERSHEY_SIMPLEX, .6, (0, 255, 0) if tilt >= 20 else (0, 165, 255), 2)
             cv2.putText(shown, text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, .6, (0, 255, 255), 2)
             cv2.imshow(title, shown)
             key = cv2.waitKey(1) & 255

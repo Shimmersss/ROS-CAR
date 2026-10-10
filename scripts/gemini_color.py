@@ -8,6 +8,7 @@ covers the factory 640x480 field of view. The small offset between that crop and
 640x480 mode is measured once (`measure`) and turned into colour intrinsics for the recording.
 
     .venv/bin/python scripts/gemini_color.py measure     # point at a static, textured scene
+    .venv/bin/python scripts/gemini_color.py apply-charuco artifacts/charuco-.../report.json
 """
 import argparse
 import json
@@ -142,6 +143,39 @@ def fit_mapping(native, full):
                 inliers=int(inliers.sum()), residual_px=float(np.median(residual)))
 
 
+def mapping_from_principal_point(factory, mapping, cx, cy):
+    """Inverse of mode_intrinsics for the offset: keep scale, choose (tx, ty) giving (cx, cy)."""
+    k = 1/(4*mapping['scale'])
+    return dict(mapping, tx=factory['cx']-(cx+CROP[0]/4)/k, ty=factory['cy']-(cy+CROP[1]/4)/k)
+
+
+def apply_charuco(report, factory, mapping, max_std_px=1.5, min_cells=12):
+    """Mapping updated from a `charuco_calib_mac.py --color-mode full` principal-point fit."""
+    pp, cover = report['principal_point_only'], report['coverage']
+    problems = []
+    if report['views'] < 12:
+        problems.append(f'views {report["views"]} < 12')
+    if max(pp['std_cx'], pp['std_cy']) > max_std_px:
+        problems.append(f'principal point std {pp["std_cx"]:.2f}/{pp["std_cy"]:.2f} px > {max_std_px}')
+    if cover['cells_4x4'] < min_cells:
+        problems.append(f'coverage {cover["cells_4x4"]}/16 cells < {min_cells}')
+    tilts = report.get('tilts', {})
+    if tilts.get('left_right_strong', 0) < 3 or tilts.get('up_down_strong', 0) < 3:
+        problems.append(f'倾斜视图不足（左右 {tilts.get("left_right_strong", 0)}、上下 {tilts.get("up_down_strong", 0)} 张 '
+                        f'≥{tilts.get("strong_deg", 20)}°，各需 ≥3）：同一姿态平移的视图无法确定主点')
+    if abs(report['delta']['fx_pct']) > 1.:
+        problems.append(f'free fx differs {report["delta"]["fx_pct"]:.2f}% from the reference: check board sizes')
+    if problems:
+        raise RuntimeError('标定结果不足以更新参数：'+'；'.join(problems))
+    updated = mapping_from_principal_point(factory, mapping, pp['cx'], pp['cy'])
+    updated.update(source='charuco', updated_at=time.strftime('%Y-%m-%d %H:%M'),
+                   charuco=dict(cx=pp['cx'], cy=pp['cy'], std_cx=pp['std_cx'], std_cy=pp['std_cy'],
+                                views=report['views'], cells_4x4=cover['cells_4x4']),
+                   previous=dict((k, mapping[k]) for k in ('scale', 'tx', 'ty', 'source') if k in mapping))
+    updated.pop('rounds', None)
+    return updated
+
+
 def measure(camera, rounds=3):
     results = []
     for i in range(rounds):
@@ -167,14 +201,24 @@ def main():
     m = sub.add_parser('measure', help='测量 2592x1944 与出厂 640x480 模式的几何关系并保存')
     m.add_argument('--camera', type=int, default=0)
     m.add_argument('--output', type=Path, default=MAPPING)
+    c = sub.add_parser('apply-charuco', help='用 charuco_calib_mac.py --color-mode full 的报告更新主点偏移')
+    c.add_argument('report', type=Path)
+    c.add_argument('--output', type=Path, default=MAPPING)
     args = parser.parse_args()
+    factory = json.loads(FACTORY.read_text())['color_intrinsic']
     try:
-        mapping = measure(args.camera)
+        if args.command == 'measure':
+            mapping = measure(args.camera)
+        else:
+            old = load_mapping(args.output)
+            mapping = apply_charuco(json.loads(args.report.read_text()), factory, old)
+            before = mode_intrinsics(factory, old)
+            print(f'主点 cx {before["cx"]:.2f} -> {mode_intrinsics(factory, mapping)["cx"]:.2f}，'
+                  f'cy {before["cy"]:.2f} -> {mode_intrinsics(factory, mapping)["cy"]:.2f}')
     except RuntimeError as exc:
         sys.exit(str(exc))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(mapping, indent=2, ensure_ascii=False)+'\n')
-    factory = json.loads(FACTORY.read_text())['color_intrinsic']
     print('已保存', args.output)
     print('录制时使用的彩色内参：', {k: round(v, 3) for k, v in mode_intrinsics(factory, mapping).items()})
 
