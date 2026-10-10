@@ -22,7 +22,7 @@ from .fusion import FALLBACK_SOURCES, FusionConfig, fuse_depth
 from .identity_selection import IdentitySelection
 from .pose3d import Pose3DConfig, EnhancedPostureTracker
 from .floor_plane import FloorConfig, FloorTracker, camera_angles, fit_floor
-from .height_fall import HeightFallConfig, HeightFallTracker, body_heights
+from .height_fall import HeightFallConfig, HeightFallTracker, body_heights, skeleton_veto
 from .pose import FALLEN, SITTING_CROUCHING, STANDING
 from .ground import rotation_matrix
 
@@ -269,8 +269,8 @@ class PoseTrackerNode(TrackerNode):
         super().publish_image(color,image,detections,overlay_image=annotated)
 
     def apply_height_fall(self, person, identity, stamp, box, gravity):
-        """Raise fall_stage from the body-top height cue; a clear skeleton standing/crouching
-        posture vetoes it. Without confirmed gravity and ground it can only report suspected."""
+        """Raise fall_stage from the body-top height cue; a skeleton standing/crouching posture
+        in a tall box vetoes it. Without confirmed gravity and ground it can only report suspected."""
         s=self.spatial_config
         top=None
         if self.cfg['depth_registered']:
@@ -285,7 +285,7 @@ class PoseTrackerNode(TrackerNode):
                 top=None if measured is None else measured[0]
         self.height_boxes[identity]=tuple(map(float,box))
         phase,reason=self.height_tracker.update(identity,stamp,top,
-            upright_hint=person.posture in (STANDING,SITTING_CROUCHING))
+            upright_hint=skeleton_veto(person.posture in (STANDING,SITTING_CROUCHING),box,self.height_tracker.cfg))
         if phase==2 and not (s.gravity_confirmed and s.ground_confirmed):
             phase,reason=1,reason+'; gravity/ground unconfirmed: suspected only'
         if phase>person.fall_stage:

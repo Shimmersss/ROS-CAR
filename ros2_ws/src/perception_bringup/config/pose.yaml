@@ -68,10 +68,13 @@
     pose_confirm_lying_only: false   # after a drop, staying horizontal confirms (no re-check)
     pose3d_knee_fallback: false      # upright 3D torso without knees uses the 2D label as baseline
 
-    # Skeleton-free fall cue: body top height from depth; skeleton standing/crouching vetoes it.
+    # Skeleton-free fall cue: body top height from depth; skeleton standing/crouching vetoes it
+    # only in a box at least height_veto_min_aspect times taller than wide (lying boxes are wide).
     # Confirmation also needs pose3d_gravity_confirmed and pose3d_ground_confirmed.
     height_fall_enabled: false
     height_upright_min_m: 0.8
     height_low_max_m: 0.55
     height_drop_min_m: 0.4
     height_transition_s: 2.0
+    height_recovery_s: 1.0
+    height_veto_min_aspect: 1.5

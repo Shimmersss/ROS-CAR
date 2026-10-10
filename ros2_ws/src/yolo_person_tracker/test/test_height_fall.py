@@ -1,7 +1,7 @@
 import math
 import unittest
 import numpy as np
-from yolo_person_tracker.height_fall import HeightFallConfig, HeightFallTracker, body_heights
+from yolo_person_tracker.height_fall import HeightFallConfig, HeightFallTracker, body_heights, skeleton_veto
 
 K = (500., 500., 320., 240.)
 UP = np.array([0., -1., 0.])      # level camera
@@ -46,12 +46,25 @@ class HeightFallTrackerTests(unittest.TestCase):
         return [tracker.update(ident, t, h, upright_hint=hint) for t, h in samples]
 
     def test_drop_confirm_and_recovery(self):
-        t = HeightFallTracker()
+        t = HeightFallTracker(HeightFallConfig(recovery_s=2.))
         self.feed(t, [(1., 1.), (1.2, 1.), (1.4, 1.)])
         out = self.feed(t, [(1.8, .7), (2.1, .3), (2.5, .3), (2.9, .3), (3.2, .3)])
         self.assertEqual([p for p, _ in out], [0, 1, 1, 1, 2])
         out = self.feed(t, [(4., 1.), (5., 1.), (6.1, 1.)])
         self.assertEqual([p for p, _ in out], [2, 2, 0])
+
+    def test_default_recovery_allows_a_repeat_fall(self):
+        # 2026-10-09: a second fall 1.6 s after standing up was lost to a 2 s recovery.
+        t = HeightFallTracker()
+        self.feed(t, [(1., 1.), (1.2, 1.), (1.4, 1.), (1.8, .3), (2.2, .3), (2.9, .3)])
+        out = self.feed(t, [(4., 1.), (4.4, 1.), (5.1, 1.), (5.3, 1.), (5.5, 1.), (5.7, 1.), (6., .3)])
+        self.assertEqual([p for p, _ in out], [2, 2, 0, 0, 0, 0, 1])
+
+    def test_skeleton_veto_needs_a_tall_box(self):
+        self.assertTrue(skeleton_veto(True, (100, 100, 200, 300)))     # crouch: 2:1 box
+        self.assertFalse(skeleton_veto(True, (100, 200, 300, 330)))    # lying called standing: wide box
+        self.assertFalse(skeleton_veto(False, (100, 100, 200, 300)))
+        self.assertTrue(skeleton_veto(True, (100, 200, 300, 330), HeightFallConfig(veto_min_aspect=.5)))
 
     def test_static_low_and_slow_descent_do_not_alarm(self):
         t = HeightFallTracker()

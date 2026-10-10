@@ -26,11 +26,12 @@ from yolo_person_tracker.floor_plane import FloorConfig, FloorTracker, camera_an
 from yolo_person_tracker.pose import JointJumpGate, LABELS, PoseConfig  # noqa: E402
 from yolo_person_tracker.pose3d import EnhancedPostureTracker, Pose3DConfig  # noqa: E402
 from yolo_person_tracker.registration import Registration  # noqa: E402
-from yolo_person_tracker.height_fall import HeightFallConfig, HeightFallTracker, body_heights  # noqa: E402
+from yolo_person_tracker.height_fall import HeightFallConfig, HeightFallTracker, body_heights, skeleton_veto  # noqa: E402
 from gemini_recording import load_depth_m, read_rows  # noqa: E402
 
 MODES = ('2d', '3d-fixed', '3d-floor', 'height')
 VARIANT = {}   # rule switches under evaluation, set from --variant
+HEIGHT_KEYS = dict(upright='upright_min_m', low='low_max_m', drop='drop_min_m', recovery='recovery_s', confirm='confirm_s')
 MERGE_S = 1.5   # detections closer than this belong to the same event
 
 
@@ -98,8 +99,11 @@ def person_heights(recording, frames, fixed, cache_path):
 
 
 def replay_height(frames, heights):
+    overrides = {k: VARIANT[k] for k in HEIGHT_KEYS.values() if k in VARIANT}
+    if 'veto_aspect' in VARIANT:
+        overrides['veto_min_aspect'] = VARIANT['veto_aspect'] or 1e-6
     tracker, boxes, timeline, epoch = HeightFallTracker(HeightFallConfig(
-        transition_s=VARIANT.get('transition_s', 2.))), {}, [], None
+        transition_s=VARIANT.get('transition_s', 2.), **overrides)), {}, [], None
     for f in frames:
         stamp = f['time_s']+1.
         present = {p['id']: tuple(p['box']) for p in f['people'] if p['id'] is not None}
@@ -111,7 +115,10 @@ def replay_height(frames, heights):
         states = {p['id']: p.get('state') for p in f['people'] if p['id'] is not None}
         for ident, box in present.items():
             boxes[ident] = box
-            hint = VARIANT.get('veto2d', False) and states.get(ident) in ('STANDING', 'SITTING_CROUCHING')
+            # veto2d[=<r>]: a skeleton upright label vetoes only in a box r times taller than wide
+            # (default HeightFallConfig.veto_min_aspect; veto2d=0 is the ungated veto).
+            hint = VARIANT.get('veto2d', False) and skeleton_veto(
+                states.get(ident) in ('STANDING', 'SITTING_CROUCHING'), box, tracker.cfg)
             phase, detail = tracker.update(ident, stamp, heights.get((f['frame'], ident)), upright_hint=hint)
             state = 'FALLEN' if phase == 2 else 'LYING' if 'drop' in detail or 'low' in detail else 'UNKNOWN'
             timeline.append(dict(t=f['time_s'], id=ident, state=state, phase=phase, basis='height',
@@ -224,7 +231,8 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--modes', nargs='+', choices=MODES, default=list(MODES))
     parser.add_argument('--variant', default='baseline',
-                        help="baseline, or comma list of gap_pause, knee_fallback, handover=<seconds>")
+                        help="baseline, or comma list of gap_pause, knee_fallback, confirm_lying_only, veto2d, "
+                             "handover=<s>, transition=<s>, upright=<m>, low=<m>, drop=<m>, recovery=<s>, confirm=<s>")
     args = parser.parse_args()
     for item in filter(None, args.variant.split(',')):
         if item == 'baseline':
@@ -234,8 +242,12 @@ def main():
             VARIANT['handover_s'] = float(value or 1.5)
         elif key == 'transition':
             VARIANT['transition_s'] = float(value)
+        elif key in HEIGHT_KEYS:
+            VARIANT[HEIGHT_KEYS[key]] = float(value)
         elif key in ('gap_pause', 'knee_fallback', 'confirm_lying_only', 'veto2d'):
             VARIANT[key] = True
+            if key == 'veto2d' and value:
+                VARIANT['veto_aspect'] = float(value)
         else:
             parser.error(f'unknown variant {item}')
     args.output.mkdir(parents=True, exist_ok=True)

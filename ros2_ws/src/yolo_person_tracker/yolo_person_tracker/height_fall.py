@@ -20,12 +20,13 @@ class HeightFallConfig:
     transition_s: float = 2.        # last upright baseline to first low frame
     stable_s: float = .3            # upright evidence needed for a baseline
     confirm_s: float = 1.           # sustained low before confirmation
-    recovery_s: float = 2.          # sustained upright to clear a confirmed fall
+    recovery_s: float = 1.          # sustained upright to clear a confirmed fall (2 s missed repeat falls)
     max_gap_s: float = .5           # unobserved time that pauses (not clears) the timers
     min_points: int = 150
     cluster_m: float = .6           # depth band behind the nearest surface kept as the person
     box_shrink: float = .1          # horizontal margin removed from each box side
     top_percentile: float = 95.
+    veto_min_aspect: float = 1.5    # box height/width needed before an upright skeleton may veto
 
     def __post_init__(self):
         for name, value in vars(self).items():
@@ -70,6 +71,16 @@ def body_heights(depth_m, box, intrinsics, up, camera_height_m, config=None, ext
     axis = np.linalg.svd(flat, full_matrices=False)[2][0]
     along = flat@axis
     return result+(float(np.percentile(along, 95)-np.percentile(along, 5)),)
+
+
+def skeleton_veto(upright, box, config=None):
+    """True when an upright/crouching skeleton label may veto a low top (see update()).
+
+    From a low camera the 2D rule often calls a lying person standing; their box is wide, while
+    a crouching person's box stays tall (2026-10-09 recordings: falls <1.5, crouches ~1.8)."""
+    cfg = config or HeightFallConfig()
+    x1, y1, x2, y2 = map(float, box)
+    return bool(upright) and (y2-y1) >= cfg.veto_min_aspect*max(x2-x1, 1e-6)
 
 
 class HeightFallTracker:
