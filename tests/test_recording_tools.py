@@ -161,9 +161,23 @@ class EvaluateTests(unittest.TestCase):
         self.assertEqual((first['suspected_latency_s'], first['confirmed_latency_s'], first['confirmed_basis']), (.2, 1.4, '3d'))
         self.assertFalse(second['suspected'])
         self.assertTrue(action['suspected'] and not action['confirmed'])
-        self.assertEqual(stray, [90.0, 90.1, 90.2, 90.3])
+        self.assertEqual(stray, [90.0])
         summary = aggregate(rows)
         self.assertEqual((summary['fall_suspected'], summary['fall_confirmed'], summary['false_suspected']), (1, 1, 1))
+
+    def test_alarm_left_over_from_an_earlier_event_is_not_a_detection(self):
+        falls, actions = falls_and_actions(self.labels())
+        timeline = [dict(t=t/10, phase=0, basis='2d', id='a') for t in range(0, 1000)]
+        for r in timeline:
+            if 30.0 <= r['t'] <= 45.0: r['phase'] = 2      # raised before the 40 s fall, never cleared
+        # A second person seen in alternate frames does not reset it.
+        timeline += [dict(t=k/10+.05, phase=0, basis='2d', id='b') for k in range(380, 420)]
+        timeline.sort(key=lambda r: r['t'])
+        rows, stray = score(timeline, falls, actions)
+        second = rows[1]
+        self.assertFalse(second['suspected'] or second['confirmed'])
+        self.assertTrue(second['suspected_carried_in'] and second['confirmed_carried_in'])
+        self.assertEqual(stray, [30.0])
 
 
 if __name__ == '__main__':

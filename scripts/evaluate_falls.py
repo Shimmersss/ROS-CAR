@@ -12,6 +12,7 @@ from gemini_recording import read_rows  # noqa: E402
 
 FALL_EVENTS = ('fall_onset', 'impact', 'lying_start', 'getup_start', 'stand_stable')
 PRE_S, POST_S = .5, 10.   # detection window around a labelled fall / action
+HOLD_S = 1.               # a person's last phase stays in the alarm this long
 
 
 def label_times(recording):
@@ -43,34 +44,63 @@ def falls_and_actions(labels):
     return falls, actions
 
 
-def first_hit(timeline, start, end, phase):
-    hits = [r for r in timeline if start <= r['t'] <= end and r['phase'] >= phase]
-    return min(hits, key=lambda r: r['t']) if hits else None
+def alarm_levels(timeline, hold_s=HOLD_S):
+    """[(t, level, row)]: the highest phase among people seen within hold_s.
+
+    People are not detected in every frame, so each one keeps its last phase for hold_s."""
+    last, out = {}, []
+    for t in sorted({r['t'] for r in timeline}):
+        for row in (r for r in timeline if r['t'] == t):
+            last[row.get('id')] = row
+        live = [r for r in last.values() if t-r['t'] <= hold_s]
+        top = max(live, key=lambda r: r['phase'])
+        out.append((t, top['phase'], top))
+    return out
+
+
+def onsets(levels, phase):
+    """Rows where the alarm rises to >= phase. An alarm raised before a fall started does not count
+    for that fall: each fall must start its own alarm."""
+    out, previous = [], 0
+    for _, level, row in levels:
+        if level >= phase > previous:
+            out.append(row)
+        previous = level
+    return out
+
+
+def first_hit(rises, start, end):
+    hits = [r for r in rises if start <= r['t'] <= end]
+    return hits[0] if hits else None
 
 
 def score(timeline, falls, actions):
     rows, covered = [], []
+    levels = alarm_levels(timeline)
+    rises = {phase: onsets(levels, phase) for phase in (1, 2)}
     for fall in falls:
         start = fall['fall_onset']-PRE_S
         end = fall.get('stand_stable', fall.get('impact', start)+POST_S)
         covered.append((start, end))
         result = dict(kind='fall', direction=fall['direction'], person=fall['person'], position=fall['position'],
                       onset=round(fall['fall_onset'], 2))
+        before = [level for t, level, _ in levels if t < start]
         for phase, name in ((1, 'suspected'), (2, 'confirmed')):
-            hit = first_hit(timeline, start, end, phase)
+            hit = first_hit(rises[phase], start, end)
             result[name] = hit is not None
             impact = fall.get('impact', fall['fall_onset'])
             result[f'{name}_latency_s'] = round(hit['t']-impact, 2) if hit else None
             result[f'{name}_basis'] = hit['basis'] if hit else None
+            # Alarm left over from an earlier event when this fall started (not counted as a hit).
+            result[f'{name}_carried_in'] = bool(before) and before[-1] >= phase
         rows.append(result)
     for action in actions:
         start, end = action['start']-PRE_S, action['end']+3.
         covered.append((start, end))
         rows.append(dict(kind='action', action=action['action'], onset=round(action['start'], 2),
-                         suspected=first_hit(timeline, start, end, 1) is not None,
-                         confirmed=first_hit(timeline, start, end, 2) is not None))
-    stray = sorted({round(r['t'], 1) for r in timeline if r['phase'] >= 1
-                    and not any(a <= r['t'] <= b for a, b in covered)})
+                         suspected=first_hit(rises[1], start, end) is not None,
+                         confirmed=first_hit(rises[2], start, end) is not None))
+    stray = [round(r['t'], 1) for r in rises[1] if not any(a <= r['t'] <= b for a, b in covered)]
     return rows, stray
 
 
@@ -84,6 +114,7 @@ def aggregate(rows):
         out[f'fall_{name}'] = len(hits)
         out[f'{name}_latency_median_s'] = latencies[len(latencies)//2] if latencies else None
         out[f'false_{name}'] = sum(r[name] for r in actions)
+        out[f'{name}_carried_in'] = sum(r[f'{name}_carried_in'] for r in falls)
     return out
 
 
@@ -102,13 +133,13 @@ def main():
             continue
         falls, actions = falls_and_actions(label_times(recording))
         for timeline_path in sorted(replay.glob('timeline-*.jsonl')):
-            mode = timeline_path.stem.replace('timeline-', '')
+            mode = f"{replay.name}/{timeline_path.stem.replace('timeline-', '')}"
             timeline = [json.loads(line) for line in timeline_path.read_text().splitlines()]
             rows, stray = score(timeline, falls, actions)
             for row in rows:
                 table.append(dict(row, recording=recording.name, mode=mode))
             entry = report.setdefault(mode, {})
-            entry[recording.name] = dict(aggregate(rows), unlabelled_detections_s=stray)
+            entry[recording.name] = dict(aggregate(rows), unlabelled_alarms_s=stray)
     with (args.output/'per-event.csv').open('w', newline='') as handle:
         columns = sorted({k for r in table for k in r})
         writer = csv.DictWriter(handle, fieldnames=columns)
