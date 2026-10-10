@@ -40,6 +40,15 @@ def read_rows(path):
         return list(csv.DictReader(handle))
 
 
+def pairing_key(colors, depths):
+    """Timestamp column for RGB/depth pairing: host monotonic when both streams have it (depth
+    since 2026-10-10), else host wall time (older recordings; exposed to clock steps)."""
+    if colors and depths and all(r.get('host_monotonic_ns') for r in colors) \
+            and all(r.get('host_monotonic_ns') for r in depths):
+        return 'host_monotonic_ns'
+    return 'host_wall_ns'
+
+
 def _span(times_ns):
     if len(times_ns) < 2:
         return 0., 0.
@@ -52,8 +61,9 @@ def summarize(recording, check_depth_files=20):
     recording = Path(recording)
     colors = read_rows(recording/'color_timestamps.csv') if (recording/'color_timestamps.csv').exists() else []
     depths = read_rows(recording/'timestamps.csv') if (recording/'timestamps.csv').exists() else []
-    color_ns = [int(r['host_wall_ns']) for r in colors]
-    depth_ns = [int(r['host_wall_ns']) for r in depths]
+    key = pairing_key(colors, depths)
+    color_ns = [int(r[key]) for r in colors]
+    depth_ns = [int(r[key]) for r in depths]
     color_s, color_gap = _span(color_ns)
     depth_s, depth_gap = _span(depth_ns)
     overlap = 0.
@@ -74,7 +84,7 @@ def summarize(recording, check_depth_files=20):
         depth_files_bad_in_sample=bad, color_capture_seconds=round(color_s, 3),
         depth_capture_seconds=round(depth_s, 3), overlap_seconds=round(overlap, 3),
         color_max_gap_seconds=round(color_gap, 3), depth_max_gap_seconds=round(depth_gap, 3),
-        disk_bytes=disk,
+        disk_bytes=disk, pairing_clock=key,
         note='Host receive timestamps only, not verified exposure synchronization.')
     problems = []
     if not colors or not depths:

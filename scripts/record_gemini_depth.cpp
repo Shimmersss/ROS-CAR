@@ -13,6 +13,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <time.h>
 
 namespace fs = std::filesystem;
 static std::atomic<bool> stop_requested{false};
@@ -28,6 +29,19 @@ static void distortion(std::ostream &o, OBCameraDistortion p) {
 static long long wall_ns() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+// Same clock as Python time.monotonic_ns() in the colour recorder, so RGB/depth pairing is immune
+// to wall-clock steps. On macOS that is CLOCK_UPTIME_RAW (mach_absolute_time); std::steady_clock
+// is not (it also counts sleep), so it cannot be compared across the two processes.
+static long long monotonic_ns() {
+#ifdef __APPLE__
+    return static_cast<long long>(clock_gettime_nsec_np(CLOCK_UPTIME_RAW));
+#else
+    timespec ts{};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return static_cast<long long>(ts.tv_sec)*1000000000LL+ts.tv_nsec;
+#endif
 }
 
 int main(int argc, char **argv) try {
@@ -93,7 +107,7 @@ int main(int argc, char **argv) try {
     }
 
     std::ofstream csv(out / "timestamps.csv");
-    csv << "frame,color_ms,depth_ms,scale_mm,host_wall_ns\n";
+    csv << "frame,color_ms,depth_ms,scale_mm,host_wall_ns,host_monotonic_ns\n";
     pipeline.start(config);
     std::cout << "DEPTH_STARTED " << info->serialNumber() << std::endl;
     auto start = std::chrono::steady_clock::now();
@@ -106,7 +120,7 @@ int main(int argc, char **argv) try {
         if(!frames) continue;
         auto d = frames->depthFrame();
         if(!d || d->width() != 640 || d->height() != 400 || d->dataSize() != 640*400*2) continue;
-        long long received = wall_ns();
+        long long received = wall_ns(), received_mono = monotonic_ns();
         ++n;
         auto stem = out / std::to_string(n);
         const auto *data = static_cast<const unsigned char *>(d->data());
@@ -121,7 +135,7 @@ int main(int argc, char **argv) try {
             std::ofstream z(stem.string()+".depth", std::ios::binary);
             z.write(reinterpret_cast<const char *>(data), d->dataSize());
         }
-        csv << n << ",0," << d->timeStamp() << ',' << d->getValueScale() << ',' << received << '\n';
+        csv << n << ",0," << d->timeStamp() << ',' << d->getValueScale() << ',' << received << ',' << received_mono << '\n';
         auto now = std::chrono::steady_clock::now();
         if(now-last_report >= std::chrono::seconds(1)) {
             csv.flush();

@@ -115,10 +115,27 @@ class HeightFallTracker:
             self.tracks[identity] = state
         return state
 
-    def move(self, old, new):
-        """Carry a track's history to a new identity (see EnhancedPostureTracker.handover)."""
-        if old in self.tracks and new not in self.tracks:
-            self.tracks[new] = self.tracks.pop(old)
+    def move(self, old, new, stamp=None):
+        """Carry a track's history to a new identity (see EnhancedPostureTracker.handover).
+
+        With stamp, the unobserved gap since the old track's last frame pauses every evidence
+        timer, so time when neither track was seen never counts towards confirmation."""
+        if old not in self.tracks or new in self.tracks:
+            return
+        state = self.tracks.pop(old)
+        if stamp is not None and stamp > state['stamp']:
+            self._shift(state, stamp-state['stamp'])
+            state['stamp'] = stamp-1e-6
+        self.tracks[new] = state
+
+    @staticmethod
+    def _shift(state, gap):
+        for key in ('pending', 'recovery'):
+            if state[key] is not None:
+                state[key] += gap
+        if state['baseline'] is not None:
+            state['baseline'] = (state['baseline'][0]+gap, state['baseline'][1])
+        state['upright'] = deque((t+gap, h) for t, h in state['upright'])
 
     def handover(self, stamp, present, boxes, limit_s=1.5):
         """Same rule as EnhancedPostureTracker.handover: one lost track near and below one new one.
@@ -136,7 +153,7 @@ class HeightFallTracker:
         moved = {}
         for old, news in pairs.items():
             if len(news) == 1:
-                self.move(old, news[0])
+                self.move(old, news[0], stamp)
                 moved[news[0]] = old
         return moved
 
@@ -164,12 +181,7 @@ class HeightFallTracker:
                 return 2, 'confirmed fall; height unmeasured, skeleton standing'
             if gap <= cfg.max_gap_s:
                 # Unmeasured frame: shift every timer, never count it as evidence.
-                for key in ('pending', 'recovery'):
-                    if state[key] is not None:
-                        state[key] += gap
-                if state['baseline'] is not None:
-                    state['baseline'] = (state['baseline'][0]+gap, state['baseline'][1])
-                state['upright'] = deque((t+gap, h) for t, h in state['upright'])
+                self._shift(state, gap)
             return (2 if state['fallen'] else 1 if state['pending'] is not None else 0), 'height unmeasured; timers paused'
         upright_now = top >= cfg.upright_min_m or (posture_upright and top >= cfg.hint_upright_min_m)
         if state['fallen']:

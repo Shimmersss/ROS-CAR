@@ -1,6 +1,8 @@
 """Raw 8N1 serial without pyserial (termios); also works on a pseudo-terminal."""
 import os
+import select
 import termios
+import time
 
 
 def open_port(path, baud):
@@ -23,3 +25,20 @@ def open_port(path, baud):
         os.close(fd)
         raise
     return fd
+
+
+def write_all(fd, data, timeout_s):
+    """Write every byte to a nonblocking fd, waiting for writability up to timeout_s in total.
+
+    A short write would otherwise leave a truncated frame on the wire. Raises TimeoutError when
+    the deadline passes with bytes still unsent (the caller closes the port), OSError on failure."""
+    view, deadline = memoryview(data), time.monotonic()+timeout_s
+    while view:
+        try:
+            view = view[os.write(fd, view):]
+            continue
+        except BlockingIOError:
+            pass
+        remaining = deadline-time.monotonic()
+        if remaining <= 0 or not select.select([], [fd], [], remaining)[1]:
+            raise TimeoutError(f'{len(view)} of {len(data)} bytes unsent after {timeout_s:.3f} s')

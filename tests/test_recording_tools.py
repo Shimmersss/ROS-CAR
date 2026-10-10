@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
-from gemini_recording import load_depth_m, load_depth_raw, summarize  # noqa: E402
+from gemini_recording import load_depth_m, load_depth_raw, pairing_key, summarize  # noqa: E402
 from label_recording import FALL_EVENTS, LabelSession  # noqa: E402
 from record_gemini_mac import PLAN, camera_setup, notes_text, resolve_segment  # noqa: E402
 from gemini_color import CROP, FULL, OUT, apply_charuco, fit_mapping, mode_intrinsics, rb_ratio, shrink  # noqa: E402
@@ -53,6 +53,13 @@ class RecordingTests(unittest.TestCase):
                 self.assertEqual((s['color_frames'], s['depth_rows'], s['depth_files_missing']), (90, 80, 0))
                 self.assertAlmostEqual(s['overlap_seconds'], 79*.033333333, delta=.01)
                 self.assertEqual(s['problems'], [])
+
+    def test_pairing_uses_monotonic_time_when_both_streams_have_it(self):
+        colors = [dict(host_wall_ns='1', host_monotonic_ns='2')]
+        self.assertEqual(pairing_key(colors, [dict(host_wall_ns='1')]), 'host_wall_ns')       # old depth CSV
+        self.assertEqual(pairing_key(colors, [dict(host_wall_ns='1', host_monotonic_ns='3')]), 'host_monotonic_ns')
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(summarize(make_recording(tmp))['pairing_clock'], 'host_wall_ns')
 
     def test_gap_missing_and_corrupt_files_are_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -182,6 +189,16 @@ class EvaluateTests(unittest.TestCase):
         self.assertEqual(stray, [90.0])
         summary = aggregate(rows)
         self.assertEqual((summary['fall_suspected'], summary['fall_confirmed'], summary['false_suspected']), (1, 1, 1))
+
+    def test_alarm_that_expired_in_a_gap_counts_again(self):
+        falls, actions = falls_and_actions(self.labels())
+        timeline = [dict(t=t/10, phase=0, basis='2d', id='a') for t in range(0, 300)]
+        timeline += [dict(t=t/10, phase=2, basis='2d', id='a') for t in range(300, 320)]   # raised at 30 s
+        # No rows at all from 32 s to 40 s, then the same person is back at phase 2.
+        timeline += [dict(t=t/10, phase=2, basis='2d', id='a') for t in range(400, 450)]
+        rows, _ = score(timeline, falls, actions)
+        second = rows[1]
+        self.assertTrue(second['confirmed'] and not second['confirmed_carried_in'])
 
     def test_alarm_left_over_from_an_earlier_event_is_not_a_detection(self):
         falls, actions = falls_and_actions(self.labels())

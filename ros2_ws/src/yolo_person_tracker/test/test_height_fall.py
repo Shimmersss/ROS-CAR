@@ -131,6 +131,15 @@ class HeightFallTrackerTests(unittest.TestCase):
         self.assertEqual(moved, {'0:7': '0:1'})
         self.assertEqual(self.feed(t, [(1.8, .3)], ident='0:7')[0][0], 1)
 
+    def test_handover_gap_does_not_count_towards_confirmation(self):
+        t = HeightFallTracker()
+        boxes = {'0:1': (50., 10., 150., 210.)}
+        self.feed(t, [(1., 1.), (1.2, 1.), (1.4, 1.), (1.8, .3)])           # pending from 1.8 s
+        self.assertEqual(t.handover(2.6, {'0:7': (20., 130., 240., 220.)}, boxes), {'0:7': '0:1'})
+        # 0.8 s with neither track seen: 1 s of measured low time ends at 3.6 s, not 2.8 s.
+        self.assertEqual([p for p, _ in self.feed(t, [(2.6, .3), (3.0, .3), (3.5, .3)], ident='0:7')], [1, 1, 1])
+        self.assertEqual(self.feed(t, [(3.65, .3)], ident='0:7')[0][0], 2)
+
     def test_config_validation(self):
         with self.assertRaises(ValueError): HeightFallConfig(low_max_m=1.)
         with self.assertRaises(ValueError): HeightFallConfig(confirm_s=0.)

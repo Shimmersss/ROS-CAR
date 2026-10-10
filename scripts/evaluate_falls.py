@@ -47,10 +47,19 @@ def falls_and_actions(labels):
 def alarm_levels(timeline, hold_s=HOLD_S):
     """[(t, level, row)]: the highest phase among people seen within hold_s.
 
-    People are not detected in every frame, so each one keeps its last phase for hold_s."""
+    People are not detected in every frame, so each one keeps its last phase for hold_s. Before
+    a timestamp's rows are applied, the level from holds still live at that time is emitted (row
+    None) whenever it dropped, so an alarm that expired during a gap with no rows is not mistaken
+    for one that continued when the person reappears."""
+    by_time = {}
+    for row in timeline:
+        by_time.setdefault(row['t'], []).append(row)
     last, out = {}, []
-    for t in sorted({r['t'] for r in timeline}):
-        for row in (r for r in timeline if r['t'] == t):
+    for t in sorted(by_time):
+        expired = max((r['phase'] for r in last.values() if t-r['t'] <= hold_s), default=0)
+        if out and expired < out[-1][1]:
+            out.append((t, expired, None))
+        for row in by_time[t]:
             last[row.get('id')] = row
         live = [r for r in last.values() if t-r['t'] <= hold_s]
         top = max(live, key=lambda r: r['phase'])
@@ -84,7 +93,7 @@ def score(timeline, falls, actions):
         covered.append((start, end))
         result = dict(kind='fall', direction=fall['direction'], person=fall['person'], position=fall['position'],
                       onset=round(fall['fall_onset'], 2))
-        before = [level for t, level, _ in levels if t < start]
+        before = [(t, level) for t, level, _ in levels if t < start]
         for phase, name in ((1, 'suspected'), (2, 'confirmed')):
             hit = first_hit(rises[phase], start, end)
             result[name] = hit is not None
@@ -92,7 +101,8 @@ def score(timeline, falls, actions):
             result[f'{name}_latency_s'] = round(hit['t']-impact, 2) if hit else None
             result[f'{name}_basis'] = hit['basis'] if hit else None
             # Alarm left over from an earlier event when this fall started (not counted as a hit).
-            result[f'{name}_carried_in'] = bool(before) and before[-1] >= phase
+            # Still held when this fall's window opens (holds expire after HOLD_S without rows).
+            result[f'{name}_carried_in'] = bool(before) and before[-1][1] >= phase and start-before[-1][0] <= HOLD_S
         rows.append(result)
     for action in actions:
         start, end = action['start']-PRE_S, action['end']+3.

@@ -3,6 +3,7 @@
 // and report the mean B/G/R. Read-only unless --set NAME=VALUE is given.
 //   gemini_color_probe [--frames N] [--set awb=1] [--set wb=4600] [--set ae=1]
 #include <libobsensor/ObSensor.hpp>
+#include <algorithm>
 #include <iostream>
 #include <map>
 #include <string>
@@ -58,7 +59,7 @@ int main(int argc, char **argv) try {
     std::cout << "  (OB_SENSOR_COLOR=" << OB_SENSOR_COLOR << ")\nproperties before:\n";
     print_props(device);
     for(auto &[name, value] : sets) {
-        auto it = std::find_if(PROPS.begin(), PROPS.end(), [&](const Prop &p) { return name == p.name; });
+        auto it = std::find_if(PROPS.begin(), PROPS.end(), [key = name](const Prop &p) { return key == p.name; });
         if(it == PROPS.end()) throw std::runtime_error("unknown property " + name);
         if(it->is_bool) device->setBoolProperty(it->id, value != 0); else device->setIntProperty(it->id, value);
         std::cout << "set " << name << " = " << value << '\n';

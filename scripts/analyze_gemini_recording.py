@@ -17,7 +17,7 @@ from yolo_person_tracker.pose import PoseConfig, PostureTracker, LABELS, EDGES, 
 from yolo_person_tracker.reid_backend import OSNetBackend, appearance_crop
 from yolo_person_tracker.reid import IdentityConfig, IdentityManager
 sys.path.insert(0,str(ROOT/'scripts'))
-from gemini_recording import load_depth_m
+from gemini_recording import load_depth_m, pairing_key
 
 
 def main():
@@ -25,7 +25,7 @@ def main():
  if a.stride<1:raise ValueError('stride must be positive')
  a.output.mkdir(parents=True,exist_ok=True)
  colors=list(csv.DictReader((a.recording/'color_timestamps.csv').open()));depths=list(csv.DictReader((a.recording/'timestamps.csv').open()))
- times=np.array([int(x['host_wall_ns']) for x in depths],dtype=np.int64)
+ key=pairing_key(colors,depths);times=np.array([int(x[key]) for x in depths],dtype=np.int64)
  reg=Registration(json.loads((a.recording/'device.json').read_text()));k=reg.color;intr=(k['fx'],k['fy'],k['cx'],k['cy'])
  params=yaml.safe_load((ROOT/'ros2_ws/src/perception_bringup/config/pose.yaml').read_text())['/**']['ros__parameters'];cfg=PoseConfig(**{f.name:params['pose_'+f.name] for f in fields(PoseConfig) if 'pose_'+f.name in params})
  cache={r['frame']:r for r in map(json.loads,a.cached_poses.read_text().splitlines())} if a.cached_poses else None
@@ -42,7 +42,7 @@ def main():
     ok,image=cap.read()
     if not ok:raise RuntimeError(f'video shorter than timestamps at frame {i}')
     if i%a.stride:continue
-    stamp=(int(row['host_monotonic_ns'])-start)/1e9+1.;ns=int(row['host_wall_ns']);j=int(np.argmin(np.abs(times-ns)));delta=float(times[j]-ns)/1e6
+    stamp=(int(row['host_monotonic_ns'])-start)/1e9+1.;ns=int(row[key]);j=int(np.argmin(np.abs(times-ns)));delta=float(times[j]-ns)/1e6
     matched=abs(delta)<=40
     if matched:
      z=load_depth_m(a.recording,depths[j])

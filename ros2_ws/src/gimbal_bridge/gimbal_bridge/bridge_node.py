@@ -15,10 +15,13 @@ from std_srvs.srv import Trigger
 from gimbal_interfaces.msg import GimbalCommand, GimbalStatus
 
 from . import protocol as p
-from .serial_port import open_port
+from .serial_port import open_port, write_all
 from .timesync import ClockSync, Unwrapper
 
 GRAVITY = 9.80665
+
+
+WRITE_TIMEOUT_S = .02   # one 50 Hz command period
 
 
 def to_stamp(seconds):
@@ -128,10 +131,9 @@ class GimbalBridge(Node):
             if fd is None:
                 return None
             try:
-                os.write(fd, p.encode(message, seq))
-            except BlockingIOError:
-                return None
-            except OSError as exc:
+                # A whole frame or nothing usable: a stalled port is closed and reopened.
+                write_all(fd, p.encode(message, seq), WRITE_TIMEOUT_S)
+            except (TimeoutError, OSError) as exc:
                 self.close_port(f'write failed: {exc}')
                 return None
         return seq
