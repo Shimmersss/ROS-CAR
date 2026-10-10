@@ -13,7 +13,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 from gemini_recording import load_depth_m, load_depth_raw, summarize  # noqa: E402
 from label_recording import FALL_EVENTS, LabelSession  # noqa: E402
-from record_gemini_mac import PLAN, resolve_segment  # noqa: E402
+from record_gemini_mac import PLAN, camera_setup, notes_text, resolve_segment  # noqa: E402
 from gemini_color import CROP, FULL, OUT, apply_charuco, fit_mapping, mode_intrinsics, rb_ratio, shrink  # noqa: E402
 from record_gemini_mac import patch_device_json  # noqa: E402
 from evaluate_falls import aggregate, falls_and_actions, score  # noqa: E402
@@ -129,7 +129,7 @@ class SegmentNameTests(unittest.TestCase):
     def test_plan_codes_free_names_and_parts(self):
         with tempfile.TemporaryDirectory() as tmp:
             out, seconds = resolve_segment('a1A', tmp, '20261010')
-            self.assertEqual((out.name, seconds), ('gemini-20261010-A1a-fall-side-1.9m', 120))
+            self.assertEqual((out.name, seconds), ('gemini-20261010-A1a-fall-side-1.9m', 150))
             out.mkdir(); (out/'x').touch()
             self.assertEqual(resolve_segment('A1a', tmp, '20261010')[0].name, 'gemini-20261010-A1a-fall-side-1.9m-part2')
             self.assertEqual(resolve_segment('my-test', tmp, '20261010'), (Path(tmp)/'gemini-20261010-my-test', 120))
@@ -137,6 +137,21 @@ class SegmentNameTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     resolve_segment(bad, tmp, '20261010')
             self.assertTrue(all(0 < s <= 170 for _, s in PLAN.values()))
+
+    def test_camera_setup_is_saved_once_and_filled_into_notes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(camera_setup(tmp, '20261011'))
+            self.assertIn('离地高度（cm）：\n', notes_text('x', 'now', None))
+            camera_setup(tmp, '20261011', (55, 8.5, -0.5))
+            setup = camera_setup(tmp, '20261011')
+            self.assertEqual((setup['height_cm'], setup['pitch_deg'], setup['roll_deg']), (55., 8.5, -.5))
+            notes = notes_text('x', 'now', setup)
+            self.assertIn('离地高度（cm）：55\n', notes)
+            self.assertIn('抬头为正）：8.5\n', notes)
+            self.assertIsNone(camera_setup(tmp, '20261012'))           # a new day needs a new measurement
+            for bad in ((0.5, 8, 0), (55, 80, 0), (55, 8, 30)):            # metres instead of cm, etc.
+                with self.assertRaises(ValueError):
+                    camera_setup(tmp, '20261011', bad)
 
 
 class EvaluateTests(unittest.TestCase):

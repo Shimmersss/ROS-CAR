@@ -39,9 +39,9 @@ NOTES = """# {name}
 - 段号/名称：{segment}
 - 日期时间：{when}
 - 设备序列号：见 device.json
-- 相机镜头中心离地高度（cm）：
-- 俯仰角（°，抬头为正）：
-- 横滚角（°）：
+- 相机镜头中心离地高度（cm）：{height}
+- 俯仰角（°，抬头为正）：{pitch}
+- 横滚角（°）：{roll}
 - 场地与地面材质：
 - 参与者与衣着（上衣/裤子颜色）：
 - 防护垫厚度（cm）、朝向（横放/纵放）、位置（距相机 m）：
@@ -117,13 +117,43 @@ def depth_preview(out, frame):
 
 
 # docs/补录视频要求20261008.md: code -> (directory name, default seconds).
+# docs/重拍视频要求20261010.md: code -> (directory name, default seconds). A1 holds 5 falls of
+# ~26 s each (stand 4 s, fall, lie 4 s, get up, stand 4 s, walk back).
 PLAN = {
-    'A0': ('A0-setup-check', 60), 'A1a': ('A1a-fall-side-1.9m', 120), 'A1b': ('A1b-fall-toward-1.9m', 120),
-    'A1c': ('A1c-fall-walking-away', 120), 'A2': ('A2-fall-types-1.9m', 160), 'A3': ('A3-fall-3m', 120),
-    'A4a': ('A4a-negatives-fast', 120), 'A4b': ('A4b-negatives-floor', 120), 'A5': ('A5-daily-postures', 120),
-    'A6': ('A6-dark-pants', 120), 'A7': ('A7-occlusion-edge', 120), 'A8': ('A8-second-person', 170),
+    'A0': ('A0-setup-check', 60), 'A1a': ('A1a-fall-side-1.9m', 150), 'A1b': ('A1b-fall-toward-1.9m', 150),
+    'A1c': ('A1c-fall-walking-away', 150), 'A2a': ('A2a-fall-back-stumble-collapse', 150),
+    'A2b': ('A2b-fall-backward-sit-chair', 150), 'A3': ('A3-fall-3m', 150),
+    'A4a': ('A4a-negatives-fast', 170), 'A4b': ('A4b-negatives-floor', 150), 'A5': ('A5-daily-postures', 130),
+    'A6': ('A6-dark-pants', 150), 'A7': ('A7-occlusion-edge', 120), 'A8': ('A8-second-person', 170),
     'B1': ('B1-reid-distinct', 130), 'B2': ('B2-reid-similar', 130),
 }
+SETUP_FIELDS = (('height_cm', '相机高度', 'cm'), ('pitch_deg', '俯仰', '°'), ('roll_deg', '横滚', '°'))
+
+
+def setup_path(root, day):
+    return Path(root)/f'camera-setup-{day}.json'
+
+
+def camera_setup(root, day, values=None):
+    """Today's measured camera mount: saves `values` (height_cm, pitch_deg, roll_deg) when given,
+    otherwise returns the saved one or None. The camera must not move within a session."""
+    path = setup_path(root, day)
+    if values is not None:
+        height, pitch, roll = map(float, values)
+        if not (5 <= height <= 200 and -45 <= pitch <= 45 and -20 <= roll <= 20):
+            raise ValueError(f'camera setup out of range: height {height} cm, pitch {pitch}°, roll {roll}°')
+        setup = dict(height_cm=height, pitch_deg=pitch, roll_deg=roll, saved_at=time.strftime('%Y-%m-%d %H:%M'))
+        Path(root).mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(setup, ensure_ascii=False, indent=1))
+        return setup
+    return json.loads(path.read_text()) if path.exists() else None
+
+
+def notes_text(name, when, setup):
+    def value(key):
+        return '' if setup is None else f'{setup[key]:g}'
+    return NOTES.format(name=name, segment=name, when=when, height=value('height_cm'),
+                        pitch=value('pitch_deg'), roll=value('roll_deg'))
 
 
 def resolve_segment(segment, root, day):
@@ -158,7 +188,9 @@ def patch_device_json(out, mode, mapping):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('segment', help='补录段号（如 A1a、B1，见 PLAN）或自定义段名；同名已存在时自动加 -part2…')
+    parser.add_argument('segment', nargs='?', help='补录段号（如 A1a、B1，见 PLAN）或自定义段名；同名已存在时自动加 -part2…')
+    parser.add_argument('--set-camera', nargs=3, type=float, metavar=('HEIGHT_CM', 'PITCH_DEG', 'ROLL_DEG'),
+                        help='记录今天实测的镜头离地高度、俯仰（抬头为正）、横滚，之后各段自动写入 notes.md')
     parser.add_argument('--seconds', type=float, help='最长时长，≤170 秒；默认按段号设定，自定义段名为 120')
     parser.add_argument('--camera', type=int, default=0, help='AVFoundation 彩色相机序号')
     parser.add_argument('--root', type=Path, default=ROOT/'data/recordings')
@@ -169,8 +201,26 @@ def main():
                         help='full：2592x1944 裁剪缩小到 640x480（默认，颜色正常，约 25 fps）；native：原 640x480 模式（常偏蓝）')
     parser.add_argument('--allow-color-cast', action='store_true', help='开录前检测到严重偏蓝也继续（不建议）')
     args = parser.parse_args()
+    day = time.strftime('%Y%m%d')
+    if args.set_camera:
+        try:
+            setup = camera_setup(args.root, day, args.set_camera)
+        except ValueError as exc:
+            parser.error(str(exc))
+        print('已记录今天的相机架设：'+'，'.join(f'{label} {setup[k]:g}{unit}' for k, label, unit in SETUP_FIELDS)
+              + f'（{setup_path(args.root, day)}）。场次中途不要再动相机。')
+        if not args.segment:
+            return 0
+    if not args.segment:
+        parser.error('需要段号，或只用 --set-camera 记录相机架设')
+    setup = camera_setup(args.root, day)
+    if setup is None:
+        print('提醒：今天还没记录相机架设，notes.md 里高度/俯仰/横滚为空。实测后运行：'
+              'record_gemini_mac.py --set-camera 高度cm 俯仰° 横滚°', flush=True)
+    else:
+        print('相机架设：'+'，'.join(f'{label} {setup[k]:g}{unit}' for k, label, unit in SETUP_FIELDS), flush=True)
     try:
-        out, planned = resolve_segment(args.segment, args.root, time.strftime('%Y%m%d'))
+        out, planned = resolve_segment(args.segment, args.root, day)
     except ValueError as exc:
         parser.error(str(exc))
     if args.seconds is None:
@@ -185,7 +235,7 @@ def main():
         sys.exit(f'磁盘不足：可用 {free/1e9:.1f} GB，本段预计需要 {need/1e9:.1f} GB 并保留 2 GB')
     build_helper()
     out.mkdir(parents=True, exist_ok=True)
-    (out/'notes.md').write_text(NOTES.format(name=name, segment=name, when=time.strftime('%Y-%m-%d %H:%M')))
+    (out/'notes.md').write_text(notes_text(name, time.strftime('%Y-%m-%d %H:%M'), setup))
 
     camera = None
     try:
@@ -267,7 +317,7 @@ def main():
     patch_device_json(out, args.color_mode, mapping)
     summary = write_summary(out, {'segment': name, 'depth_helper_log': depth.log[-20:],
                                   'depth_storage': 'raw' if args.raw else 'zlib', 'color_mode': args.color_mode,
-                                  'color_rb_start': ratio, 'color_cast_samples': cast_frames})
+                                  'color_rb_start': ratio, 'color_cast_samples': cast_frames, 'camera_setup': setup})
     if cast_frames:
         summary['problems'].append(f'录制中 {cast_frames} 个抽样帧严重偏蓝')
         (out/'capture-summary.json').write_text(json.dumps(summary, indent=2, ensure_ascii=False))
