@@ -21,6 +21,7 @@ def main():
         'person_interfaces', 'astra_body_adapter', 'yolo_person_tracker',
         'perception_bringup', 'bodyreader_msg', 'xfyun_speech', 'offline_voice',
         'deepseek_ros2', 'voice_command_router', 'red_object_tracker', 'motion_guard', 'navigation_bringup', 'roscar_interfaces', 'roscar_api',
+        'gimbal_interfaces', 'gimbal_bridge',
     }
     python_files = list(packages.rglob('*.py')) + list((root / 'scripts').glob('*.py')) + list((root / 'tests').glob('*.py'))
     for path in python_files:

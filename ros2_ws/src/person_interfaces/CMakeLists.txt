@@ -14,6 +14,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/PersonGroundArray.msg"
   "msg/PersonIdentity.msg"
   "msg/PersonIdentityArray.msg"
+  "msg/FloorPlane.msg"
   DEPENDENCIES std_msgs builtin_interfaces geometry_msgs
 )
 ament_export_dependencies(rosidl_default_runtime)

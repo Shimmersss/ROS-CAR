@@ -84,11 +84,11 @@ python3 scripts/export_yolo26_engine.py --task pose  # 只显示导出计划
 
 Jetson 本机才允许追加 `--execute` 生成 `yolo26s-pose-fp16.engine`。默认 FP16、640×640、batch=1、静态尺寸、免 NMS；预留出口并非已有 Jetson engine 验证。
 
-保留 `TargetState.source=yolo`、原目标坐标、锁定服务和消费者契约。关键点缺失不会使有效的人体框内多区域测距失效。`PersonStateArray` / `PersonState` 为新增接口：
+保留 `TargetState.source=yolo`、原目标坐标、锁定服务和消费者契约。关键点缺失不会使有效的人体框内多区域测距失效；但自 2026-10-08 门控起，仅有区域深度时不能单独起始新轨迹，需约 0.3 秒一致确认（见方案B文档末节）。`PersonStateArray` / `PersonState` 为新增接口：
 
 - `/perception/person_states` 的 header 为真实彩色观测时间；每个已有轨迹含 `epoch:track_id`、框、检测置信度、固定 17 点二维坐标/置信度及三维坐标/有效位、姿态、跌倒阶段和原因。
 - `posture`：0 未知、1 站立、2 坐蹲、3 躺卧、4 跌倒；`fall_stage`：0 无、1 疑似、2 确认。未知二维点与无效三维点为 NaN；不得把 0 坐标当有效关节。
-- 三维关节只用当前配准深度的 7×7 邻域：至少 8 个且 50% 有效像素，0.2–8 m，中位数，P90–P10 不超过 max(0.1 m, 8% Z)。与当帧人体深度相差过大、关节跳变超过 0.5 m、预测保持而无新测量时拒绝；不填补关节深度洞，不以躯干深度代替关节。
+- 三维关节只用当前配准深度的 7×7 邻域：至少 8 个且 50% 有效像素，0.2–8 m，中位数，P90–P10 不超过 max(0.1 m, 8% Z)。与当帧人体深度相差过大、关节跳变超过 `pose_joint_jump_m + pose_joint_jump_speed_mps × 距该关节上次接受样本的时间`（默认 0.5 m + 2 m/s，参考在 `pose_max_gap_s` 后过期）、预测保持而无新测量时拒绝；被拒绝的值不作为下一帧参考，重新出现的关节也与其上次接受值比较；不填补关节深度洞，不以躯干深度代替关节。
 - 无新鲜结果时发送 `valid=false` 的空人体列表并删除三维骨架；观测时间为零表示无当前有效观测，不刷新旧姿态时间。
 - `/perception/skeleton_markers` 为 MarkerArray，只连两端都有有效三维位置的骨段；轨迹消失立即 DELETE，并设置 0.5 秒寿命覆盖节点退出。
 - `/perception/performance` 每秒汇总完成推理次数/FPS、RGB-D 处理平均/P95 耗时、有效输出 FPS 和观测年龄。空采样 NaN；`performance_enabled:=false` 关闭采样/发布。此处 input_fps 是被接受处理的输入，不是相机原始 FPS。

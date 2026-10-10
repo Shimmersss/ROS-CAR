@@ -22,7 +22,7 @@ from person_interfaces.msg import TargetState
 from vision_msgs.msg import Detection2DArray
 from astra_body_adapter.detections import detection_array
 from .backend import YoloBackend
-from .depth import DepthTrackFilter, measure
+from .depth import DepthGate, DepthTrackFilter, measure
 from .state import Selection
 from .input_contract import stamp_seconds, validate_pair
 
@@ -54,6 +54,13 @@ class TrackerNode(Node):
             'kalman_measurement_std_m': .08,
             'kalman_acceleration_std_mps2': 2.0,
             'depth_jump_reset_m': .8,
+            # Gate replaces jump re-initialization; false restores the legacy filter.
+            'depth_gate_enabled': True,
+            'depth_gate_base_m': DepthGate.base_m,
+            'depth_gate_speed_mps': DepthGate.speed_mps,
+            'depth_gate_confirm_s': DepthGate.confirm_s,
+            'depth_fallback_gate_scale': DepthGate.fallback_scale,
+            'depth_fallback_noise_scale': DepthGate.fallback_noise_scale,
             'depth_min_fraction': .08,
             'position_hold_s': .25,
         }
@@ -77,6 +84,12 @@ class TrackerNode(Node):
         if (not math.isfinite(self.cfg['depth_jump_reset_m'])
                 or self.cfg['depth_jump_reset_m'] <= 0):
             raise ValueError('depth_jump_reset_m must be finite and positive')
+        self.depth_gate = DepthGate(
+            base_m=self.cfg['depth_gate_base_m'], speed_mps=self.cfg['depth_gate_speed_mps'],
+            confirm_s=self.cfg['depth_gate_confirm_s'],
+            fallback_scale=self.cfg['depth_fallback_gate_scale'],
+            fallback_noise_scale=self.cfg['depth_fallback_noise_scale'],
+        ) if self.cfg['depth_gate_enabled'] else None
         if (not math.isfinite(self.cfg['depth_min_fraction'])
                 or not 0 < self.cfg['depth_min_fraction'] <= 1):
             raise ValueError('depth_min_fraction must be finite and in (0, 1]')
@@ -206,6 +219,14 @@ class TrackerNode(Node):
                                     min_fraction=self.cfg['depth_min_fraction'])
                  for d in detections if d.track_id is not None}, {})
 
+    def measurement_is_fallback(self, track_id, evidence):
+        """Whether a measurement lacks torso corroboration; plain region depth never does."""
+        return False
+
+    def mark_rejected(self, evidence, rejected):
+        """Subclass hook: gated depth must not be republished as current evidence."""
+        return evidence
+
     def process_pair(self, color, depth, received_at, intrinsics, reset):
         # One worker owns all backend calls; no callback can reset/update ByteTrack concurrently.
         bridge = CvBridge()
@@ -217,14 +238,16 @@ class TrackerNode(Node):
             self.backend.reset()
         detections = self.backend.infer(image)
         observation_stamp = stamp_seconds(color.header.stamp)
+        # Keep tracks with recent accepted or still-pending (unconfirmed) evidence.
         self.depth_filters = {key: filt for key, filt in self.depth_filters.items()
-                              if filt.stamp is not None
-                              and 0 <= observation_stamp-filt.stamp <= self.cfg['max_age_s']}
+                              if filt.evidence_stamp is not None
+                              and 0 <= observation_stamp-filt.evidence_stamp <= self.cfg['max_age_s']}
         positions = {}
         position_ages = {}
         position_stamps = {}
         held_position_ids = set()
         evidence = {}
+        rejected = set()
         if self.cfg['depth_registered']:
             measurements, evidence = self.measure_frame(metres, detections, intrinsics)
             for d in detections:
@@ -236,19 +259,24 @@ class TrackerNode(Node):
                         measurement_std_m=self.cfg['kalman_measurement_std_m'],
                         acceleration_std_mps2=self.cfg['kalman_acceleration_std_mps2'],
                         jump_reset_m=self.cfg['depth_jump_reset_m'],
-                        reset_gap_s=self.cfg['max_age_s']))
+                        reset_gap_s=self.cfg['max_age_s'], gate=self.depth_gate))
                 measured = measurements.get(d.track_id)
-                xyz = filt.update(measured, observation_stamp)
+                xyz = filt.update(measured, observation_stamp,
+                                  self.measurement_is_fallback(d.track_id, evidence))
+                if filt.last_rejected:
+                    rejected.add(d.track_id)
                 if xyz is not None:
                     positions[d.track_id] = xyz
                     position_ages[d.track_id] = 0.0
                     position_stamps[d.track_id] = observation_stamp
-                elif measured is None:
+                elif measured is None or filt.last_rejected:
+                    # Rejected depth keeps the last real measurement age, like a gap.
                     held = filt.hold(observation_stamp, self.cfg['position_hold_s'])
                     if held is not None:
                         positions[d.track_id], position_ages[d.track_id] = held
                         position_stamps[d.track_id] = observation_stamp-position_ages[d.track_id]
                         held_position_ids.add(d.track_id)
+            evidence = self.mark_rejected(evidence, rejected)
         return ((color, metres, received_at, intrinsics, image, depth, evidence), detections,
                 positions, position_ages, position_stamps, held_position_ids)
 

@@ -42,6 +42,7 @@ def launch_route(context):
             'kalman_measurement_std_m': float(LaunchConfiguration('kalman_measurement_std_m').perform(context)),
             'kalman_acceleration_std_mps2': float(LaunchConfiguration('kalman_acceleration_std_mps2').perform(context)),
             'depth_jump_reset_m': float(LaunchConfiguration('depth_jump_reset_m').perform(context)),
+            'depth_gate_enabled': LaunchConfiguration('depth_gate_enabled').perform(context) == 'true',
             'depth_min_fraction': float(LaunchConfiguration('depth_min_fraction').perform(context)),
             'position_hold_s': float(LaunchConfiguration('position_hold_s').perform(context)),
         })
@@ -173,6 +174,8 @@ def generate_launch_description():
         DeclareLaunchArgument('kalman_measurement_std_m', default_value='0.08'),
         DeclareLaunchArgument('kalman_acceleration_std_mps2', default_value='2.0'),
         DeclareLaunchArgument('depth_jump_reset_m', default_value='0.8'),
+        # Temporal depth gate; false restores the legacy jump re-initialization.
+        DeclareLaunchArgument('depth_gate_enabled', default_value='true'),
         DeclareLaunchArgument('depth_min_fraction', default_value='0.08'),
         DeclareLaunchArgument('position_hold_s', default_value='0.25'),
         DeclareLaunchArgument('hue_low_max', default_value='10'),

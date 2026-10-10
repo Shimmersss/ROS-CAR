@@ -25,15 +25,58 @@ class PoseConfig:
     lying_aspect: float = 1.2
     knee_height_fraction: float = .2
     joint_jump_m: float = .5
+    joint_jump_speed_mps: float = 2.
+    # Missing shoulders/hips (occlusion while lying) pause the timers for up to max_gap_s
+    # instead of clearing a pending fall; false keeps the original clearing behaviour.
+    gap_pause: bool = False
+    # A lost upright track may hand its history to one new track appearing near and below it
+    # within this many seconds (falls often break the tracker ID); 0 disables.
+    handover_s: float = 0.
+    # Once a drop into lying raised suspicion, staying horizontal confirms it; the drop is not
+    # re-checked every frame (small movements while lying cancelled it). false: original rule.
+    confirm_lying_only: bool = False
 
     def __post_init__(self):
         for name, value in vars(self).items():
-            if name == 'upright_confirmed':
+            if name in ('upright_confirmed', 'gap_pause', 'confirm_lying_only'):
+                if not isinstance(value, bool):
+                    raise ValueError(f'pose {name} must be bool')
+                continue
+            if name == 'handover_s':
+                if not math.isfinite(value) or not 0 <= value <= 3:
+                    raise ValueError('pose handover_s must be in [0, 3]')
                 continue
             if not math.isfinite(value) or value <= 0:
                 raise ValueError(f'pose {name} must be finite and positive')
         if self.confidence > 1 or not 0 < self.standing_deg < self.horizontal_deg < 90:
             raise ValueError('Invalid pose confidence/angle thresholds')
+
+
+class JointJumpGate:
+    """Per-joint last ACCEPTED real sample; a rejected outlier never becomes the reference.
+
+    The allowance grows with the time since that joint's accepted sample, and the
+    reference expires after max_gap_s so genuine relocation is accepted again.
+    """
+
+    def __init__(self, jump_m, speed_mps, max_gap_s):
+        self.jump_m, self.speed_mps, self.max_gap_s = jump_m, speed_mps, max_gap_s
+        self.points = np.full((17,3), np.nan)
+        self.stamps = np.full(17, -np.inf)
+
+    def apply(self, xyz, stamp):
+        xyz = np.array(xyz, dtype=float)
+        age = stamp-self.stamps
+        recent = np.isfinite(self.points).all(axis=1) & (age > 0) & (age <= self.max_gap_s)
+        finite = np.isfinite(xyz).all(axis=1)
+        limit = self.jump_m+self.speed_mps*np.where(recent, age, 0.)
+        with np.errstate(invalid='ignore'):
+            jump = recent & finite & (np.linalg.norm(xyz-self.points, axis=1) > limit)
+        xyz[jump] = np.nan
+        accepted = finite & ~jump
+        self.points[accepted] = xyz[accepted]
+        self.stamps[accepted] = stamp
+        return xyz, int(jump.sum())
 
 
 def points2d(keypoints, confidence=.5):
@@ -80,6 +123,19 @@ def joints3d(depth, keypoints, intrinsics, confidence=.5, reference=None):
     return result
 
 
+def shift_timers(state, pause):
+    """Pause semantics: move every evidence timestamp forward so a gap never counts as evidence."""
+    if pause <= 0:
+        return
+    state['history'] = deque(((t+pause,)+tuple(rest) for t, *rest in state['history']), maxlen=120)
+    if state['baseline'] is not None:
+        state['baseline'] = (state['baseline'][0]+pause,)+tuple(state['baseline'][1:])
+    if state['pending'] is not None:
+        state['pending'] = (state['pending'][0]+pause,)+tuple(state['pending'][1:])
+    if state['recovery'] is not None:
+        state['recovery'] += pause
+
+
 class PostureTracker:
     def __init__(self, config=None):
         self.cfg = config or PoseConfig()
@@ -109,8 +165,19 @@ class PostureTracker:
         if geometry is None:
             geometry, reason = geometry2d(box, keypoints, cfg)
             if geometry is None:
+                if cfg.gap_pause and (state['pending'] or state['baseline'] or state['history']):
+                    state.setdefault('missing_since', None)
+                    if state['missing_since'] is None:
+                        state['missing_since'] = stamp
+                    if stamp-state['missing_since'] <= cfg.max_gap_s:
+                        phase = 1 if state['pending'] else 0
+                        return UNKNOWN, phase, f'{reason}; evidence timers paused'
                 state['history'].clear(); state['pending']=None; state['recovery']=None; state['baseline']=None
+                state['missing_since'] = None
                 return UNKNOWN, 0, reason
+        if state.get('missing_since') is not None:
+            shift_timers(state, stamp-state['missing_since'])
+            state['missing_since'] = None
         posture, center, height, lying = geometry
         history = state['history']
         while history and stamp-history[0][0] > cfg.transition_s:
@@ -136,7 +203,7 @@ class PostureTracker:
         pending=state['pending']
         if pending:
             low = center-pending[1] > cfg.drop_fraction*pending[2]
-            if not lying or not low:
+            if not lying or (not low and not cfg.confirm_lying_only):
                 state['pending']=None; history.clear()
             elif stamp-pending[0] >= cfg.lying_confirm_s:
                 if (cfg.upright_confirmed if fall_confirmed is None else fall_confirmed):

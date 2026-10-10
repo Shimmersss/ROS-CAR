@@ -204,7 +204,7 @@ Linux ARM64 Humble 8 包编译完成（7.26 秒），21 项 A、11 项 B、14 �
 ## 2026-09-29：三维卡尔曼与 TensorRT 入口
 
 - 三维状态为 `[x,y,z,vx,vy,vz]`，按彩色观测时间的实际间隔预测，XYZ 测量更新；Joseph 形式更新协方差。速度属于相机光学坐标系的相对速度，不是 odom 世界速度。小车急转时恒速假设可能失效，需用移动实测调整过程噪声。
-- `kalman_measurement_std_m=0.08` 为位置测量标准差，`kalman_acceleration_std_mps2=2.0` 为过程加速度标准差；这两个初始值未经过实车噪声标定。删除旧 `depth_smoothing_alpha` 参数，部署配置应同步迁移。`depth_jump_reset_m=0.8` 保留为大跳变重初始化阈值，不作为异常深度剔除的替代。
+- `kalman_measurement_std_m=0.08` 为位置测量标准差，`kalman_acceleration_std_mps2=2.0` 为过程加速度标准差；这两个初始值未经过实车噪声标定。删除旧 `depth_smoothing_alpha` 参数，部署配置应同步迁移。`depth_jump_reset_m=0.8` 保留为大跳变重初始化阈值，不作为异常深度剔除的替代。（2026-10-08 起默认由时间门控取代，仅 `depth_gate_enabled:=false` 时使用，见下节。）
 - 换轨迹、流 epoch/标定变化、时间倒退或超过 `max_age_s` 的观测间断清空/重建对应状态；过期 ID 定期清理。换 ID 不继承旧 ID 的速度。
 - 深度暂缺时 `position_hold_s=0.25` 窗口内改为卡尔曼预测；预测不改写最后真实测量时间，`measurement_age_s` 包含到发布时的总年龄，发布时再次检查窗口，超过窗口失效。下游测量年龄、请求超时和停车保护保持生效。
 - `start_project.sh` 与 `run_b_radar_foxglove.sh` 默认模型改为本板构建的 `models/weights/yolo26s-fp16.engine`；缺引擎明确失败，无静默 PyTorch 回退。需要对比时显式 `MODEL_PATH=.../yolo26s.pt`。底层 ROS launch 继续要求明确传入模型路径。
@@ -224,3 +224,15 @@ ROS_DOMAIN_ID=182 .venv-yolo/bin/python scripts/test_yolo_live_readonly.py \
 ```
 
 最后一条使用现有已确认配准的 `/camera/color/image_raw`、`/camera/depth/image_raw`、`/camera/color/camera_info`；只适用于当前相机配置，不能用脚本中的 `depth_registered=true` 代替实际配准验证。命名空间为 `/validation_yolo_20260929`，与正式目标话题分开。
+
+## 2026-10-08：三维位置时间门控（B/C 共用）
+
+起因见 [已有录像补充验证](已有录像补充验证20261008.md)：旧滤波对超过 0.8 m 的新息直接重初始化，单帧坏测量会原样输出。
+
+- `depth_gate_enabled=true`（默认）：新息超过 `depth_gate_base_m + depth_gate_speed_mps × 距上次接受测量的时间`（默认 0.35 m + 2 m/s）即拒绝；被拒测量不刷新测量时间，按真实测量年龄在 `position_hold_s` 内保持预测，超时失效。
+- 重定位需被拒证据彼此一致并跨越 `depth_gate_confirm_s=0.3` 秒，之后干净重初始化（速度清零），不以大增益混入；拒绝持续期间超过基础噪声的点一律走确认。
+- 断流按**最后一次输入**（含被拒测量）计时：超过 `max_age_s` 没有任何输入、时间倒退或换 epoch 时清空状态。输入持续但一直被拒、距上次接受超过 `max_age_s` 时，旧状态丢弃（不再外推、不保持），之后任何新位置（含躯干来源、含原位置）都必须一致确认 0.3 秒，不会因“超时”直接接受。修正前此情形会被当成断流直接重初始化，30Hz 交替 3/4 m 的坏深度在第 16 帧绕过门控。
+- C 融合中无躯干佐证的来源（`pose_lower_body`、`regions`）门限乘 `depth_fallback_gate_scale=0.6`，测量标准差乘 `depth_fallback_noise_scale=2`，且不能单独开始一条轨迹，需同样确认。因此关键点全部缺失、只剩框内区域深度时，已有轨迹照常更新，但断流后新起的轨迹要约 0.3 秒一致确认才有位置。B 的区域测距不视为退路来源。
+- C 中被门控的当帧人体深度不写入 `PersonState.body_depth_m`（`body_depth_valid=false`，detail 注明 withheld），统一定位/身体映射不会把它当作新鲜证据；当帧关节另由关节门控判断。
+- `depth_gate_enabled:=false` 恢复旧的跳变重初始化。单目地面滤波 `GroundTrackFilter` 本次未启用门控，行为不变。
+- 门限是根据单段录像和人体运动常识给出的初值，未经实车噪声标定；远距离（>5 m）深度噪声更大，0.35 m 基础门限可能偏紧，需现场复核。
