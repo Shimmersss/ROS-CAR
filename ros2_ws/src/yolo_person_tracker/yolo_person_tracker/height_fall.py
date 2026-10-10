@@ -25,7 +25,8 @@ class HeightFallConfig:
     min_points: int = 150
     cluster_m: float = .6           # depth band behind the nearest surface kept as the person
     box_shrink: float = .1          # horizontal margin removed from each box side
-    top_percentile: float = 95.
+    top_percentile: float = 95.     # decision value: robust, but usually lands near the shoulders
+    head_percentile: float = 99.    # display only: closer to the real head top (2026-10-10: 1.83 m for 1.78 m)
     top_edge_px: float = 15.        # a box this close to the image top is cut off (see clipped_at_top)
     veto_min_aspect: float = 1.5    # box height/width needed before an upright skeleton may veto
     # With a standing skeleton label (any box shape) a lower top still counts as upright (a far
@@ -33,20 +34,36 @@ class HeightFallConfig:
     # A lying person misread as standing has a top below both. Sitting is not used: sitting on
     # the floor then lying back would look like a fall (2026-10-09 A5).
     hint_upright_min_m: float = .65
+    # Optional, 0 = off (2026-10-10 seated falls):
+    # lost_hold_s: a suspected or confirmed track may hand over after this long unseen (a person
+    # lying feet-first towards a low camera is often not detected at all); the gap never counts.
+    lost_hold_s: float = 0.
+    # sit_hold_s: after a rapid drop, sitting up (top below upright_min_m) or a crouch veto keeps
+    # the fall suspected this long; lying low again for confirm_s confirms, standing up cancels.
+    sit_hold_s: float = 0.
+    # side_edge_px: a box this close to the left/right image edge cannot start a suspected fall
+    # (someone leaving the view past the camera shows only a leg, 2026-10-10 A5); its top still
+    # counts as measured, since lying people often reach the side edge too. 0 = off.
+    side_edge_px: float = 0.
 
     def __post_init__(self):
         for name, value in vars(self).items():
+            if name in ('lost_hold_s', 'sit_hold_s', 'side_edge_px') and math.isfinite(value) and value >= 0:
+                continue
             if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f'height fall {name} must be finite and positive')
-        if not self.low_max_m < self.hint_upright_min_m <= self.upright_min_m or not self.top_percentile <= 100:
+        if (not self.low_max_m < self.hint_upright_min_m <= self.upright_min_m or not self.top_percentile <= 100
+                or not self.head_percentile <= 100):
             raise ValueError('height fall requires low_max_m < hint_upright_min_m <= upright_min_m and percentile <= 100')
 
 
-def body_heights(depth_m, box, intrinsics, up, camera_height_m, config=None, extent=False):
+def body_heights(depth_m, box, intrinsics, up, camera_height_m, config=None, extent=False, head=False):
     """(top, median) height above the floor of the nearest surface inside the box, or None.
 
     extent=True appends the body's horizontal length (5-95 % along its main floor-plane axis),
-    which does not depend on the camera height and separates lying from crouching."""
+    which does not depend on the camera height and separates lying from crouching.
+    head=True appends the head_percentile height, an estimate of the head top for display; the
+    head has few points, so top (top_percentile) sits 0.15-0.25 m lower and drives the rules."""
     cfg = config or HeightFallConfig()
     fx, fy, cx, cy = map(float, intrinsics)
     h, w = depth_m.shape
@@ -70,13 +87,14 @@ def body_heights(depth_m, box, intrinsics, up, camera_height_m, config=None, ext
     up = np.asarray(up, float)
     height = points@up+float(camera_height_m)
     result = (float(np.percentile(height, cfg.top_percentile)), float(np.median(height)))
+    tail = (float(np.percentile(height, cfg.head_percentile)),) if head else ()
     if not extent:
-        return result
+        return result+tail
     flat = points-np.outer(points@up, up)
     flat -= flat.mean(axis=0)
     axis = np.linalg.svd(flat, full_matrices=False)[2][0]
     along = flat@axis
-    return result+(float(np.percentile(along, 95)-np.percentile(along, 5)),)
+    return result+(float(np.percentile(along, 95)-np.percentile(along, 5)),)+tail
 
 
 def clipped_at_top(box, config=None):
@@ -86,6 +104,12 @@ def clipped_at_top(box, config=None):
     passing close to the camera with the upper body out of view (2026-10-09 A1a/A1c)."""
     cfg = config or HeightFallConfig()
     return float(box[1]) <= cfg.top_edge_px
+
+
+def at_side_edge(box, width, config=None):
+    """True when side_edge_px > 0 and the box reaches the left or right image edge."""
+    cfg = config or HeightFallConfig()
+    return cfg.side_edge_px > 0 and (float(box[0]) <= cfg.side_edge_px or float(box[2]) >= width-cfg.side_edge_px)
 
 
 def skeleton_veto(upright, box, config=None):
@@ -110,8 +134,15 @@ class HeightFallTracker:
 
     def _state(self, identity, stamp):
         state = self.tracks.get(identity)
+        if (state is not None and self.cfg.max_gap_s*4 < stamp-state['stamp'] <= self.cfg.lost_hold_s
+                and (state['pending'] is not None or state['fallen'] or state['drop'] is not None)):
+            # Same identity back after a stretch that would reset it (> 4 max_gap_s) while down:
+            # pause instead. Shorter gaps keep their existing handling.
+            self._shift(state, stamp-state['stamp'])
+            state['stamp'] = stamp-1e-6
         if state is None or stamp <= state['stamp'] or stamp-state['stamp'] > self.cfg.max_gap_s*4:
-            state = dict(stamp=stamp, upright=deque(), baseline=None, pending=None, fallen=False, recovery=None)
+            state = dict(stamp=stamp, first=stamp, upright=deque(), baseline=None, pending=None, fallen=False,
+                         recovery=None, drop=None)
             self.tracks[identity] = state
         return state
 
@@ -120,7 +151,7 @@ class HeightFallTracker:
 
         With stamp, the unobserved gap since the old track's last frame pauses every evidence
         timer, so time when neither track was seen never counts towards confirmation."""
-        if old not in self.tracks or new in self.tracks:
+        if old not in self.tracks or (new in self.tracks and not self._fresh(self.tracks[new], stamp)):
             return
         state = self.tracks.pop(old)
         if stamp is not None and stamp > state['stamp']:
@@ -128,9 +159,16 @@ class HeightFallTracker:
             state['stamp'] = stamp-1e-6
         self.tracks[new] = state
 
+    def _fresh(self, state, stamp, limit_s=None):
+        """A track too young to hold its own evidence: the tracker re-identified a person while
+        the old identity was still listed (2026-10-10 A1a: two IDs overlapped for 0.1 s)."""
+        limit = self.cfg.max_gap_s*3 if limit_s is None else limit_s
+        return (stamp is not None and stamp-state.get('first', state['stamp']) <= limit and state['baseline'] is None
+                and state['pending'] is None and not state['fallen'] and not state['upright'])
+
     @staticmethod
     def _shift(state, gap):
-        for key in ('pending', 'recovery'):
+        for key in ('pending', 'recovery', 'drop'):
             if state[key] is not None:
                 state[key] += gap
         if state['baseline'] is not None:
@@ -143,28 +181,33 @@ class HeightFallTracker:
         boxes: last known box per identity (caller-maintained). Returns {new: old}.
         """
         from .pose3d import below_near
+        def hold(v):
+            down = v['pending'] is not None or v['fallen'] or v.get('drop') is not None
+            return max(limit_s, self.cfg.lost_hold_s) if down else limit_s
         lost = {k: boxes[k] for k, v in self.tracks.items()
-                if k not in present and k in boxes and 0 < stamp-v['stamp'] <= limit_s}
+                if k not in present and k in boxes and 0 < stamp-v['stamp'] <= hold(v)}
         pairs = {}
-        for new in (k for k in present if k not in self.tracks):
+        for new in (k for k in present if k not in self.tracks or self._fresh(self.tracks[k], stamp, limit_s)):
             matches = [old for old, box in lost.items() if below_near(box, present[new])]
             if len(matches) == 1:
                 pairs.setdefault(matches[0], []).append(new)
         moved = {}
         for old, news in pairs.items():
             if len(news) == 1:
+                self.tracks.pop(news[0], None)   # fresh by the rule above: its own state is discarded
                 self.move(old, news[0], stamp)
                 moved[news[0]] = old
         return moved
 
-    def update(self, identity, stamp, top, upright_hint=False, posture_upright=False, clipped=False):
+    def update(self, identity, stamp, top, upright_hint=False, posture_upright=False, clipped=False, side=False):
         """top: body top height in metres, or None when unmeasured. Returns (phase, reason).
 
         upright_hint: the skeleton shows standing or sitting/crouching in a tall box this frame
         (see skeleton_veto); a low top is then a crouch, so it neither starts nor keeps a
         suspected fall. posture_upright: the skeleton says standing (any box shape); a top above
         hint_upright_min_m then counts as upright, and above low_max_m as recovery. clipped: the
-        body reaches the image top (clipped_at_top); a top below upright_min_m is then unmeasured."""
+        body reaches the image top (clipped_at_top); a top below upright_min_m is then unmeasured.
+        side: the box reaches a side edge (at_side_edge); it may not start a suspected fall."""
         cfg, state = self.cfg, self._state(identity, stamp)
         if clipped and top is not None and top < cfg.upright_min_m:
             top = None
@@ -205,18 +248,32 @@ class HeightFallTracker:
         baseline = state['baseline']
         if baseline is not None and stamp-baseline[0] > cfg.transition_s and state['pending'] is None:
             state['baseline'] = baseline = None
+        held = cfg.sit_hold_s > 0 and state['drop'] is not None and stamp-state['drop'] <= cfg.sit_hold_s
+        if state['drop'] is not None and (not held or top >= cfg.upright_min_m):
+            state['drop'] = None
+            held = False
         if upright_hint and top <= cfg.low_max_m:
             state['pending'] = None
+            if held:
+                return 1, f'crouch after a drop; held, top={top:.2f}m'
             return 0, f'low top but skeleton upright (crouch); top={top:.2f}m'
         if state['pending'] is not None:
             if top > cfg.low_max_m:
                 state['pending'] = None
+                if held:
+                    return 1, f'sat up after a drop; held, top={top:.2f}m'
+                state['drop'] = None
                 return 0, f'rose before confirmation; top={top:.2f}m'
             if stamp-state['pending'] >= cfg.confirm_s:
-                state.update(fallen=True, pending=None, recovery=None)
+                state.update(fallen=True, pending=None, recovery=None, drop=None)
                 return 2, f'body top stayed low; top={top:.2f}m'
             return 1, f'rapid drop to the floor; top={top:.2f}m'
-        if (baseline is not None and top <= cfg.low_max_m and baseline[1]-top >= cfg.drop_min_m):
-            state['pending'] = stamp
+        if held:
+            if top <= cfg.low_max_m:
+                state['pending'] = stamp
+                return 1, f'low again after a drop; top={top:.2f}m'
+            return 1, f'sat up after a drop; held, top={top:.2f}m'
+        if (baseline is not None and top <= cfg.low_max_m and baseline[1]-top >= cfg.drop_min_m and not side):
+            state['pending'] = state['drop'] = stamp
             return 1, f'rapid drop to the floor; top {baseline[1]:.2f}->{top:.2f}m'
         return 0, f'top={top:.2f}m' + ('; static low, no observed drop' if top <= cfg.low_max_m else '')

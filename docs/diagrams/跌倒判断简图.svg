@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="440" viewBox="0 0 680 440" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, sans-serif">
+  <title>跌倒判断示意（高度线索）</title>
+  <rect width="680" height="440" fill="#FFFFFF"/>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#5F5E5A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <text x="90" y="44" font-size="12" fill="#5F5E5A">身体顶离地高度</text>
+  <rect x="90" y="60" width="520" height="120" rx="4" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+  <rect x="90" y="218" width="520" height="82" rx="4" fill="#FAECE7" stroke="#993C1D" stroke-width="0.5"/>
+  <text x="380" y="125" font-size="14" font-weight="500" fill="#085041" text-anchor="middle">直立区（≥ 0.8 米）</text>
+  <text x="180" y="273" font-size="14" font-weight="500" fill="#712B13" text-anchor="middle">低位区（≤ 0.55 米）</text>
+  <text x="84" y="184" font-size="12" fill="#5F5E5A" text-anchor="end">0.8</text>
+  <text x="84" y="222" font-size="12" fill="#5F5E5A" text-anchor="end">0.55</text>
+  <text x="84" y="304" font-size="12" fill="#5F5E5A" text-anchor="end">0</text>
+  <line x1="90" y1="300" x2="620" y2="300" stroke="#5F5E5A" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="620" y="318" font-size="12" fill="#5F5E5A" text-anchor="end">时间</text>
+  <path d="M90 80 L250 80 L290 250 L470 250 L510 80 L610 80" fill="none" stroke="#534AB7" stroke-width="2.5" stroke-linejoin="round"/>
+  <g font-size="14" font-weight="500" fill="#3C3489" text-anchor="middle">
+    <circle cx="170" cy="80" r="11" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/><text x="170" y="85">1</text>
+    <circle cx="276" cy="190" r="11" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/><text x="276" y="195">2</text>
+    <circle cx="400" cy="250" r="11" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/><text x="400" y="255">3</text>
+    <circle cx="560" cy="80" r="11" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/><text x="560" y="85">4</text>
+  </g>
+  <g text-anchor="middle">
+    <text x="120" y="344" font-size="14" font-weight="500" fill="#2C2C2A">1 站稳</text>
+    <text x="120" y="364" font-size="12" fill="#5F5E5A">记下站立高度</text>
+    <text x="270" y="344" font-size="14" font-weight="500" fill="#2C2C2A">2 疑似</text>
+    <text x="270" y="364" font-size="12" fill="#5F5E5A">快速掉进低位区</text>
+    <text x="420" y="344" font-size="14" font-weight="500" fill="#2C2C2A">3 确认</text>
+    <text x="420" y="364" font-size="12" fill="#5F5E5A">低位保持 1 秒</text>
+    <text x="570" y="344" font-size="14" font-weight="500" fill="#2C2C2A">4 解除</text>
+    <text x="570" y="364" font-size="12" fill="#5F5E5A">重新站起 1 秒</text>
+    <text x="340" y="400" font-size="12" fill="#5F5E5A">没看到“站着→快速变低”的不报（一出现就躺着、慢慢躺下）</text>
+    <text x="340" y="420" font-size="12" fill="#5F5E5A">重力和地面没确认时，最多只报“疑似”</text>
+  </g>
+</svg>

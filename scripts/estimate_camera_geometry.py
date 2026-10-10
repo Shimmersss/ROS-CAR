@@ -133,6 +133,8 @@ def main():
     parser.add_argument('--height-window', type=float, default=5.)
     parser.add_argument('--default-height', type=float,
                         help='camera height when no standing ankles are near (default: recording-wide ankle median)')
+    parser.add_argument('--fixed-height', type=float,
+                        help='tape-measured camera height used for every frame; ankle estimates are only reported')
     args = parser.parse_args()
     device = json.loads((args.recording/'device.json').read_text())
     c = device['color_intrinsic']
@@ -167,7 +169,7 @@ def main():
         t = f['time_s']
         up = up_at(t)
         near = values[np.abs(times-t) <= args.height_window] if len(times) else values
-        height = float(np.median(near)) if len(near) >= 5 else fallback
+        height = args.fixed_height or (float(np.median(near)) if len(near) >= 5 else fallback)
         row = dict(frame=f['frame'], t=round(t, 3), up=None, camera_height_m=None,
                    height_samples=int(len(near)))
         if up is not None and height is not None:
@@ -179,7 +181,8 @@ def main():
     args.output.write_text(''.join(json.dumps(r)+'\n' for r in rows))
     valid = [r for r in rows if r['up'] is not None]
     summary = dict(recording=args.recording.name, frames=len(rows), with_geometry=with_geometry,
-                   vanishing_samples=len(samples), ankle_samples=len(heights))
+                   vanishing_samples=len(samples), ankle_samples=len(heights),
+                   ankle_height_median_m=round(float(np.median(values)), 3) if len(values) else None)
     if valid:
         for key in ('camera_height_m', 'pitch_up_deg', 'roll_deg'):
             v = np.array([r[key] for r in valid])
