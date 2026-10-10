@@ -22,7 +22,7 @@ from .fusion import FALLBACK_SOURCES, FusionConfig, fuse_depth
 from .identity_selection import IdentitySelection
 from .pose3d import Pose3DConfig, EnhancedPostureTracker
 from .floor_plane import FloorConfig, FloorTracker, camera_angles, fit_floor
-from .height_fall import HeightFallConfig, HeightFallTracker, body_heights, clipped_at_top, skeleton_veto
+from .height_fall import HeightFallConfig, HeightFallTracker, at_side_edge, body_heights, clipped_at_top, skeleton_veto
 from .pose import FALLEN, SITTING_CROUCHING, STANDING
 from .ground import rotation_matrix
 
@@ -287,7 +287,8 @@ class PoseTrackerNode(TrackerNode):
         upright=person.posture in (STANDING,SITTING_CROUCHING)
         phase,reason=self.height_tracker.update(identity,stamp,top,
             upright_hint=skeleton_veto(upright,box,self.height_tracker.cfg),posture_upright=person.posture==STANDING,
-            clipped=clipped_at_top(box,self.height_tracker.cfg))
+            clipped=clipped_at_top(box,self.height_tracker.cfg),
+            side=self.snapshot is not None and at_side_edge(box,self.snapshot[0].width,self.height_tracker.cfg))
         if phase==2 and not (s.gravity_confirmed and s.ground_confirmed):
             phase,reason=1,reason+'; gravity/ground unconfirmed: suspected only'
         if phase>person.fall_stage:

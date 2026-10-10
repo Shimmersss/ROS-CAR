@@ -79,4 +79,7 @@
     height_recovery_s: 1.0
     height_veto_min_aspect: 1.5
     height_hint_upright_min_m: 0.65   # a STANDING skeleton counts as upright from this top (far people)
+    height_lost_hold_s: 0.0           # >0: a suspected/confirmed person unseen this long may still hand over (needs pose_handover_s)
+    height_sit_hold_s: 0.0            # >0: after a rapid drop, sitting up keeps the fall suspected this long
+    height_side_edge_px: 0.0          # >0: a box this close to a side edge cannot start a suspected fall (walk-outs)
     height_top_edge_px: 15.0          # box at the image top: top is a lower bound, never a drop

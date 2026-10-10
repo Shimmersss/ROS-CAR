@@ -17,6 +17,7 @@ from record_gemini_mac import PLAN, camera_setup, notes_text, resolve_segment  #
 from gemini_color import CROP, FULL, OUT, apply_charuco, fit_mapping, mode_intrinsics, rb_ratio, shrink  # noqa: E402
 from record_gemini_mac import patch_device_json  # noqa: E402
 from evaluate_falls import aggregate, falls_and_actions, score  # noqa: E402
+from fall_candidates import candidates, intervals  # noqa: E402
 
 
 def make_recording(root, color_n=90, depth_n=80, gap_at=None, compressed=True):
@@ -122,6 +123,35 @@ class LabelTests(unittest.TestCase):
             header = Path(tmp, 'labels.csv').read_text().splitlines()[0]
             self.assertEqual(header, 'segment,t_s,event,person,position,direction,notes,frame,host_wall_ns')
 
+    def test_candidate_review_jump_delete_confirm(self):
+        s = self.session()
+        s.marker = 0
+        for event, frame in zip(FALL_EVENTS, (40, 50, 60, 120, 150)):
+            s.labels.append(dict(segment='A1', event=event, person='A', position='', direction='', notes='auto', frame=frame))
+        s.labels.append(dict(segment='A1', event='fall_onset', person='A', position='', direction='', notes='auto', frame=250))
+        self.assertTrue(any('not yet confirmed' in p for p in s.problems()))
+        self.keys(s, 'l')
+        self.assertEqual(s.frame, 40)
+        self.keys(s, 'lll')
+        self.assertEqual(s.frame, 120)
+        self.keys(s, 'rpk')                  # side_right, person B, position 3m
+        self.keys(s, 'y')                    # confirms the 40..150 fall, not the lone onset at 250
+        group = [label for label in s.labels if label['frame'] <= 150]
+        self.assertEqual({(l['notes'], l['direction'], l['person'], l['position']) for l in group},
+                         {('', 'side_right', 'B', '3m')})
+        self.keys(s, 'c'*12+'x')             # frame 240: deletes the onset 10 frames away
+        self.assertEqual(len(s.labels), 5)
+        self.assertEqual(s.problems(), [])
+        s.frame = 200
+        self.keys(s, 'x')                    # nothing within 25 frames
+        self.assertEqual(len(s.labels), 5)
+
+    def test_unreviewed_candidates_are_not_ground_truth(self):
+        rows = [dict(t=float(i), event=e, notes='auto' if auto else '', direction='', person='A', position='')
+                for auto, base in ((True, 0), (False, 20)) for i, e in enumerate(FALL_EVENTS, base)]
+        falls, _ = falls_and_actions(rows)
+        self.assertEqual([f['fall_onset'] for f in falls], [20.])
+
     def test_navigation_is_clamped(self):
         s = self.session(5)
         self.keys(s, 'zzz')
@@ -130,6 +160,33 @@ class LabelTests(unittest.TestCase):
         self.assertEqual(s.frame, 4)
         self.assertIsNone(s.key('x'))
         self.assertEqual(s.key('q'), 'quit')
+
+
+class CandidateTests(unittest.TestCase):
+    @staticmethod
+    def samples(low, upright, end=60.):
+        """10 Hz (t, low, upright) from lists of (start, end) spans."""
+        out = []
+        for i in range(int(end*10)):
+            t = i/10
+            out.append((t, any(a <= t <= b for a, b in low), any(a <= t <= b for a, b in upright)))
+        return out
+
+    def test_low_stretches_before_standing_again_are_one_fall(self):
+        # Sit down, lie back, sit up, lie again, then stand: one fall; a later fall is separate.
+        s = self.samples(low=[(5, 8), (10, 12), (30, 33)], upright=[(0, 4), (15, 28), (36, 60)])
+        found = candidates(s, intervals(s, 1., .6))
+        self.assertEqual([(c['impact'], c['lying_start'], c['getup_start']) for c in found], [(5., 5.5, 12.), (30., 30.5, 33.)])
+        self.assertEqual([c['stand_stable'] for c in found], [15., 36.])
+        for c in found:
+            self.assertEqual([c[e] for e in FALL_EVENTS], sorted(c[e] for e in FALL_EVENTS))
+
+    def test_distant_low_stretch_is_not_merged_without_standing(self):
+        # Never seen standing in between (e.g. head out of view): far-apart stretches stay separate.
+        s = self.samples(low=[(5, 8), (40, 43)], upright=[])
+        found = candidates(s, intervals(s, 1., .6))
+        self.assertEqual(len(found), 2)
+        self.assertLess(found[0]['stand_stable'], found[1]['fall_onset'])
 
 
 class SegmentNameTests(unittest.TestCase):

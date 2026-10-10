@@ -147,7 +147,7 @@
 - Gemini 使用独立固定版本驱动及设备自身标定，不继承 Astra S 临时内参。要求明确序列号与标定文件，物理配准和安装外参分别确认；不能只改 frame_id。
 - C 单目地面定位为独立 `ground_localizer`：输出脚下接地点，`target_state_ground.source=yolo_ground`，不混入 `yolo` 光学目标或卡尔曼；安装外参与地面平面须分别确认，默认 NOT_READY；身高先验不是实测个体身高。设计和边界见 `docs/方案C实现与验收.md`。
 - 骨架/跌倒首版只发布人体状态与可视化，不接语音或运动。相机直立未确认最多疑似；静态躺卧不补报跌倒。新增入口及边界见 `docs/方案C实现与验收.md`。
-- 跌倒鲁棒开关 `pose_gap_pause`/`pose_handover_s`/`pose_confirm_lying_only`/`pose3d_knee_fallback` 与无骨架高度线索 `height_fall_enabled` 默认全关；高度线索需重力与地面均确认才可确认，否则最多疑似，只写 detail。默认值须经标注录像 `scripts/evaluate_falls.py` 复评后再定，见 `docs/跌倒检测优化20261009.md`。离线回放的相机几何用 `scripts/estimate_camera_geometry.py`（消失点重力 + 站立双踝高度，反光地面不能用深度地面拟合），结果仅诊断，不得据此置任何 `*_confirmed`。
+- 跌倒鲁棒开关 `pose_gap_pause`/`pose_handover_s`/`pose_confirm_lying_only`/`pose3d_knee_fallback` 与无骨架高度线索 `height_fall_enabled`（及其可选项 `height_lost_hold_s`/`height_sit_hold_s`/`height_side_edge_px`，0 为关）默认全关；高度线索需重力与地面均确认才可确认，否则最多疑似，只写 detail。默认值须经标注录像 `scripts/evaluate_falls.py` 复评后再定，见 `docs/跌倒检测优化20261009.md`。离线回放的相机几何用 `scripts/estimate_camera_geometry.py`（消失点重力 + 站立双踝高度，反光地面不能用深度地面拟合），结果仅诊断，不得据此置任何 `*_confirmed`。
 
 ## 云台约定
 
@@ -162,6 +162,6 @@
 - `.venv/bin/python scripts/charuco_calib_mac.py --square 实测米 --marker 实测米` 用 7×5 DICT_5X5 ChArUco 检查 Gemini 出厂彩色内参（S保存、C对比、Q退出），不含深度配准或安装外参，不能据此设置 `extrinsics_calibrated`。
 - `scripts/charuco_mount_mac.py --square --marker --board-x --board-y` 用地面平放 ChArUco 求 `base_footprint`→彩色光学系安装外参；只输出报告，确认开关须在实拍复核后人工修改。
 
-- Mac 录制：在“终端”运行 `.venv/bin/python scripts/record_gemini_mac.py <段名>`（SDK 深度 zlib 无损压缩 + UVC 彩色，主机时间配对非曝光同步；彩色默认 2592×1944 裁剪缩小到 640×480 避开原 640×480 模式偏蓝，`device.json` 的 `color_intrinsic` 为换算值、出厂值存 `factory_color_intrinsic`，换相机须重跑 `scripts/gemini_color.py measure`）；标注 `scripts/label_recording.py <录像目录>`。共享读取/汇总在 `scripts/gemini_recording.py`，分析脚本同时支持 `.depth` 与 `.depth.z`。重拍安排见 `docs/重拍视频要求20261010.md`（10-08 安排为动作来源）；每天开录前用 `--set-camera 高度cm 俯仰° 横滚°` 记录相机架设，各段自动写入 notes.md。
+- Mac 录制：在“终端”运行 `.venv/bin/python scripts/record_gemini_mac.py <段名>`（SDK 深度 zlib 无损压缩 + UVC 彩色，主机时间配对非曝光同步；彩色默认 2592×1944 裁剪缩小到 640×480 避开原 640×480 模式偏蓝，`device.json` 的 `color_intrinsic` 为换算值、出厂值存 `factory_color_intrinsic`，换相机须重跑 `scripts/gemini_color.py measure`）；标注 `scripts/label_recording.py <录像目录>`（可先用 `scripts/fall_candidates.py` 预填 `notes=auto` 候选，未确认的不计入评估）。共享读取/汇总在 `scripts/gemini_recording.py`，分析脚本同时支持 `.depth` 与 `.depth.z`。重拍安排见 `docs/重拍视频要求20261010.md`（10-08 安排为动作来源）；每天开录前用 `--set-camera 高度cm 俯仰° 横滚°` 记录相机架设，各段自动写入 notes.md。
 
 - 本机合成ROS时序测试可使用`tests/monotonic_ros_clock.py`及`use_sim_time=True`，避免Colima校时回拨扰动；正式时间倒退失效保护不得因此关闭，测试须保留显式回拨与超时检查。离线回放`--reid`显式加载本地OSNet，`--cached-poses`仅复用同录像的带置信度Pose结果；汇总入口为`scripts/summarize_recording_validation.py`。

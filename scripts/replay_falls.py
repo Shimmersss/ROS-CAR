@@ -29,13 +29,14 @@ from yolo_person_tracker.pose import JointJumpGate, LABELS, PoseConfig  # noqa: 
 from yolo_person_tracker.pose3d import EnhancedPostureTracker, Pose3DConfig  # noqa: E402
 from yolo_person_tracker.registration import Registration  # noqa: E402
 from yolo_person_tracker.height_fall import (HeightFallConfig, HeightFallTracker, body_heights,  # noqa: E402
-                                             clipped_at_top, skeleton_veto)
+                                             at_side_edge, clipped_at_top, skeleton_veto)
 from gemini_recording import load_depth_m, read_rows  # noqa: E402
 
 MODES = ('2d', '3d-fixed', '3d-floor', '3d-geometry', 'height')
 VARIANT = {}   # rule switches under evaluation, set from --variant
 HEIGHT_KEYS = dict(upright='upright_min_m', low='low_max_m', drop='drop_min_m', recovery='recovery_s', confirm='confirm_s',
-                   hint='hint_upright_min_m')
+                   hint='hint_upright_min_m', lost='lost_hold_s', sit='sit_hold_s', side='side_edge_px')
+IMAGE_WIDTH = 640   # recorder colour stream (record_gemini_mac.py)
 MERGE_S = 1.5   # detections closer than this belong to the same event
 
 
@@ -127,7 +128,8 @@ def replay_height(frames, heights):
             phase, detail = tracker.update(ident, stamp, heights.get((f['frame'], ident)),
                                            upright_hint=upright and skeleton_veto(True, box, tracker.cfg),
                                            posture_upright=upright and states.get(ident) == 'STANDING',
-                                           clipped=clipped_at_top(box, tracker.cfg))
+                                           clipped=clipped_at_top(box, tracker.cfg),
+                                           side=at_side_edge(box, IMAGE_WIDTH, tracker.cfg))
             state = 'FALLEN' if phase == 2 else 'LYING' if 'drop' in detail or 'low' in detail else 'UNKNOWN'
             timeline.append(dict(t=f['time_s'], id=ident, state=state, phase=phase, basis='height',
                                  detail=detail[:160], height=float(box[3]-box[1])))
@@ -245,7 +247,7 @@ def main():
                         help='per-frame gravity/camera height from estimate_camera_geometry.py (height, 3d-geometry)')
     parser.add_argument('--variant', default='baseline',
                         help="baseline, or comma list of gap_pause, knee_fallback, confirm_lying_only, veto2d, "
-                             "handover=<s>, transition=<s>, upright=<m>, low=<m>, drop=<m>, recovery=<s>, confirm=<s>, hint=<m>")
+                             "handover=<s>, transition=<s>, upright=<m>, low=<m>, drop=<m>, recovery=<s>, confirm=<s>, hint=<m>, lost=<s>, sit=<s>, side=<px>")
     args = parser.parse_args()
     for item in filter(None, args.variant.split(',')):
         if item == 'baseline':
