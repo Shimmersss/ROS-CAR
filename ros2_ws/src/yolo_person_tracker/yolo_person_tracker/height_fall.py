@@ -25,7 +25,8 @@ class HeightFallConfig:
     min_points: int = 150
     cluster_m: float = .6           # depth band behind the nearest surface kept as the person
     box_shrink: float = .1          # horizontal margin removed from each box side
-    top_percentile: float = 95.
+    top_percentile: float = 95.     # decision value: robust, but usually lands near the shoulders
+    head_percentile: float = 99.    # display only: closer to the real head top (2026-10-10: 1.83 m for 1.78 m)
     top_edge_px: float = 15.        # a box this close to the image top is cut off (see clipped_at_top)
     veto_min_aspect: float = 1.5    # box height/width needed before an upright skeleton may veto
     # With a standing skeleton label (any box shape) a lower top still counts as upright (a far
@@ -51,15 +52,18 @@ class HeightFallConfig:
                 continue
             if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f'height fall {name} must be finite and positive')
-        if not self.low_max_m < self.hint_upright_min_m <= self.upright_min_m or not self.top_percentile <= 100:
+        if (not self.low_max_m < self.hint_upright_min_m <= self.upright_min_m or not self.top_percentile <= 100
+                or not self.head_percentile <= 100):
             raise ValueError('height fall requires low_max_m < hint_upright_min_m <= upright_min_m and percentile <= 100')
 
 
-def body_heights(depth_m, box, intrinsics, up, camera_height_m, config=None, extent=False):
+def body_heights(depth_m, box, intrinsics, up, camera_height_m, config=None, extent=False, head=False):
     """(top, median) height above the floor of the nearest surface inside the box, or None.
 
     extent=True appends the body's horizontal length (5-95 % along its main floor-plane axis),
-    which does not depend on the camera height and separates lying from crouching."""
+    which does not depend on the camera height and separates lying from crouching.
+    head=True appends the head_percentile height, an estimate of the head top for display; the
+    head has few points, so top (top_percentile) sits 0.15-0.25 m lower and drives the rules."""
     cfg = config or HeightFallConfig()
     fx, fy, cx, cy = map(float, intrinsics)
     h, w = depth_m.shape
@@ -83,13 +87,14 @@ def body_heights(depth_m, box, intrinsics, up, camera_height_m, config=None, ext
     up = np.asarray(up, float)
     height = points@up+float(camera_height_m)
     result = (float(np.percentile(height, cfg.top_percentile)), float(np.median(height)))
+    tail = (float(np.percentile(height, cfg.head_percentile)),) if head else ()
     if not extent:
-        return result
+        return result+tail
     flat = points-np.outer(points@up, up)
     flat -= flat.mean(axis=0)
     axis = np.linalg.svd(flat, full_matrices=False)[2][0]
     along = flat@axis
-    return result+(float(np.percentile(along, 95)-np.percentile(along, 5)),)
+    return result+(float(np.percentile(along, 95)-np.percentile(along, 5)),)+tail
 
 
 def clipped_at_top(box, config=None):

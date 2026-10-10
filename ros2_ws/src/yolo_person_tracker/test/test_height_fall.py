@@ -41,6 +41,14 @@ class BodyHeightTests(unittest.TestCase):
         self.assertIsNone(body_heights(np.zeros((480, 640), np.float32), box_of(1.2, 0.), K, UP, CAM_H))
         self.assertIsNone(body_heights(person_depth(1.2, 0.), (300, 200, 301, 201), K, UP, CAM_H))
 
+    def test_head_estimate_is_display_only_and_higher(self):
+        depth, box = person_depth(1.2, 0.), box_of(1.2, 0.)
+        top, median, head = body_heights(depth, box, K, UP, CAM_H, head=True)
+        self.assertEqual((top, median), body_heights(depth, box, K, UP, CAM_H))   # rules unchanged
+        self.assertGreaterEqual(head, top)
+        *_, extent, head2 = body_heights(depth, box, K, UP, CAM_H, extent=True, head=True)
+        self.assertEqual(head2, head)
+
 
 class HeightFallTrackerTests(unittest.TestCase):
     def feed(self, tracker, samples, ident='0:1', hint=False):

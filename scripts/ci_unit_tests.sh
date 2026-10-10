@@ -6,6 +6,8 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 PY=${PYTHON:-python3}
+# Packages are tested from their own directory: make a relative interpreter path absolute.
+case $PY in */*) PY="$(cd "$(dirname "$PY")" && pwd)/$(basename "$PY")" ;; esac
 # These import rclpy; they belong to the ROS runtime checks (Docker/Jetson), not this job.
 NEEDS_ROS=(navigation_bringup/test/test_status_validation.py xfyun_speech/test/test_asr_timeout.py)
 status=0
