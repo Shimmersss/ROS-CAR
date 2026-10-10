@@ -1270,3 +1270,4 @@
 - 2026-10-11 近距离走过误报：A5 111.7 s 为人走到相机前后从左侧走出，贴边框只剩一条腿（0.37 m）被判快速下降。“侧边也按截断处理”会因躺下时腿出画暂停计时、延长基线而新增 A4 确认误报，已放弃；改为可选 `side_edge_px`（默认 0 关，`pose.yaml` 同步，ROS 节点用彩色图宽度传 `side`）：贴左右边的框不能发起疑似，其余处理不变。`+side=8` 后 10-10 标注外告警 1→0，检出与误报不变；10-09 不变。新增 1 项测试，height/fall_robustness/pose 43 项、录像工具 21 项通过。剩余误报为 A4 快速躺下（确认）与快速坐垫（疑似）。详见 docs §11.3。
 - 2026-10-11 新增 `docs/跌倒检测整体逻辑.md`：按代码现状汇总 C 路线二维骨架规则、三维度量规则、2D/3D 合并、高度线索（测量、状态机、交接与三个可选项）、确认门槛、全部开关默认值、离线评估口径与当前效果、已知漏判和待审阅判断点，供用户审阅；未改代码。
 - 2026-10-11 新增 CI：`.github/workflows/unit-tests.yml`（ubuntu-22.04、Python 3.10、固定 numpy 2.2.6 / opencv-python-headless 5.0.0.93 / pyyaml / pytest / websocket-client）调用新脚本 `scripts/ci_unit_tests.sh`，逐个跑未 COLCON_IGNORE 的 ros2_ws/src/*/test（10 个包 296 项）和录像工具 21 项；两项需要 rclpy 的测试（navigation_bringup status_validation、xfyun_speech asr_timeout）按名排除。本机全新虚拟环境验证通过，人为加入失败测试时脚本返回 1；ShellCheck 通过。仅单元测试，不代表编译或实机。
+- 2026-10-11 新增 docs/diagrams/跌倒判断简图.svg（高度线索四步示意，固定浅色配色），插入 docs/跌倒检测整体逻辑.md 开头并配一句话说明。
