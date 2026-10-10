@@ -4,7 +4,12 @@
 Run from Terminal (it needs camera permission). Q/Esc or Ctrl-C stops early. Output goes to
 data/recordings/gemini-YYYYMMDD-<segment>/ and matches scripts/analyze_gemini_recording.py.
 Host receive timestamps only: this is not exposure-synchronised RGB-D.
+
+Colour defaults to 2592x1944 shrunk to 640x480 (~25 fps): the native 640x480 mode often has a
+strong blue cast (docs/Gemini彩色偏蓝排查20261010.md). device.json then carries the matching
+colour intrinsics; the factory ones are kept as factory_color_intrinsic.
 """
+import json
 import argparse
 import csv
 import os
@@ -20,6 +25,7 @@ import zlib
 import cv2
 import numpy as np
 
+from gemini_color import CAST_RB, ColorCapture, check_cast, load_mapping, mode_intrinsics, rb_ratio
 from gemini_recording import DEPTH_SHAPE, depth_path, write_summary
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -134,6 +140,22 @@ def resolve_segment(segment, root, day):
     return out, seconds
 
 
+def patch_device_json(out, mode, mapping):
+    """Record the colour capture mode; in full mode replace color_intrinsic with the shrunk-crop one."""
+    path = out/'device.json'
+    if not path.exists():
+        return
+    device = json.loads(path.read_text())
+    capture = dict(mode=mode, native_cast_threshold_rb=CAST_RB)
+    if mode == 'full':
+        device.setdefault('factory_color_intrinsic', device['color_intrinsic'])
+        device['color_intrinsic'] = mode_intrinsics(device['factory_color_intrinsic'], mapping)
+        capture.update(source_size=[2592, 1944], crop=[16, 12, 2560, 1920], output_size=[640, 480],
+                       mapping=mapping)
+    device['color_capture'] = capture
+    path.write_text(json.dumps(device))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('segment', help='补录段号（如 A1a、B1，见 PLAN）或自定义段名；同名已存在时自动加 -part2…')
@@ -143,6 +165,9 @@ def main():
     parser.add_argument('--serial', default='AY2755200PW', help='空字符串表示不核对序列号')
     parser.add_argument('--raw', action='store_true', help='深度不压缩（每段约 1.8 GB）')
     parser.add_argument('--no-preview', action='store_true')
+    parser.add_argument('--color-mode', choices=('full', 'native'), default='full',
+                        help='full：2592x1944 裁剪缩小到 640x480（默认，颜色正常，约 25 fps）；native：原 640x480 模式（常偏蓝）')
+    parser.add_argument('--allow-color-cast', action='store_true', help='开录前检测到严重偏蓝也继续（不建议）')
     args = parser.parse_args()
     try:
         out, planned = resolve_segment(args.segment, args.root, time.strftime('%Y%m%d'))
@@ -162,15 +187,25 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     (out/'notes.md').write_text(NOTES.format(name=name, segment=name, when=time.strftime('%Y-%m-%d %H:%M')))
 
-    camera = cv2.VideoCapture(args.camera, cv2.CAP_AVFOUNDATION)
-    if not camera.isOpened():
-        sys.exit('打不开彩色相机：请在“终端”里运行（需要摄像头权限），或换 --camera 序号')
-    camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    camera.set(cv2.CAP_PROP_FPS, 30)
+    camera = None
+    try:
+        camera = ColorCapture(args.camera, args.color_mode)
+        ratio = check_cast(camera)
+    except RuntimeError as exc:
+        if camera is None or not args.allow_color_cast:
+            if camera is not None:
+                camera.release()
+            shutil.rmtree(out)      # only notes.md so far; the next run reuses the name
+            sys.exit(str(exc))
+        print(f'警告：{exc}（--allow-color-cast，继续录制）', flush=True)
+        ratio = float('nan')
+    mapping = load_mapping()
+    print(f'彩色模式 {args.color_mode}，开录前 R/B {ratio:.2f}'
+          + (f'，几何映射 {mapping.get("source")}' if args.color_mode == 'full' else ''), flush=True)
     ok, frame = camera.read()
-    if not ok or frame.shape[:2] != (480, 640):
-        sys.exit(f'彩色相机输出 {None if not ok else frame.shape[1::-1]}，需要 640×480：检查 --camera 是否为 Gemini')
+    if not ok:
+        camera.release()
+        sys.exit('彩色读帧失败')
 
     depth = DepthProcess(out, args.seconds, args.raw, args.serial)
     deadline = time.monotonic()+15
@@ -189,10 +224,10 @@ def main():
         cv2.waitKey(1)
         for _ in range(3):
             camera.read()
-    writer = cv2.VideoWriter(str(out/'color.avi'), cv2.VideoWriter_fourcc(*'MJPG'), 30, (640, 480))
+    writer = cv2.VideoWriter(str(out/'color.avi'), cv2.VideoWriter_fourcc(*'MJPG'), camera.fps, (640, 480))
     stopping = threading.Event()
     signal.signal(signal.SIGINT, lambda *_: stopping.set())
-    start, count, preview_depth, preview_at = time.monotonic(), 0, None, 0.
+    start, count, preview_depth, preview_at, cast_frames = time.monotonic(), 0, None, 0., 0
     with (out/'color_timestamps.csv').open('w', newline='') as handle:
         rows = csv.writer(handle)
         rows.writerow(['frame', 'host_wall_ns', 'host_monotonic_ns'])
@@ -204,6 +239,8 @@ def main():
                 break
             count += 1
             writer.write(frame)
+            if count % 15 == 0 and rb_ratio(frame) < CAST_RB:
+                cast_frames += 1
             rows.writerow([count, wall, mono])
             if depth.proc.poll() is not None:
                 print('深度进程意外退出，停止：\n'+'\n'.join(depth.log[-5:]), flush=True)
@@ -215,6 +252,9 @@ def main():
                 elapsed = time.monotonic()-start
                 text = f'{elapsed:5.1f}/{args.seconds:.0f}s  color {count}  depth {depth.frames}'
                 cv2.putText(shown, text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, .6, (0, 255, 255), 2)
+                if rb_ratio(frame) < CAST_RB:
+                    cv2.putText(shown, 'BLUE CAST - stop and restart', (10, 50), cv2.FONT_HERSHEY_SIMPLEX, .7,
+                                (0, 0, 255), 2)
                 if preview_depth is not None:
                     shown[480-200:, 640-320:] = preview_depth
                 cv2.imshow('Gemini recording - Q to stop', shown)
@@ -224,8 +264,13 @@ def main():
     camera.release()
     cv2.destroyAllWindows()
     depth.stop()
+    patch_device_json(out, args.color_mode, mapping)
     summary = write_summary(out, {'segment': name, 'depth_helper_log': depth.log[-20:],
-                                  'depth_storage': 'raw' if args.raw else 'zlib'})
+                                  'depth_storage': 'raw' if args.raw else 'zlib', 'color_mode': args.color_mode,
+                                  'color_rb_start': ratio, 'color_cast_samples': cast_frames})
+    if cast_frames:
+        summary['problems'].append(f'录制中 {cast_frames} 个抽样帧严重偏蓝')
+        (out/'capture-summary.json').write_text(json.dumps(summary, indent=2, ensure_ascii=False))
     print(f'彩色 {summary["color_frames"]} 帧，深度 {summary["depth_rows"]} 帧，重叠 {summary["overlap_seconds"]} 秒，'
           f'最大间断 彩色 {summary["color_max_gap_seconds"]} / 深度 {summary["depth_max_gap_seconds"]} 秒，'
           f'占用 {summary["disk_bytes"]/1e9:.2f} GB')

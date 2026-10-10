@@ -162,6 +162,6 @@
 - `.venv/bin/python scripts/charuco_calib_mac.py --square 实测米 --marker 实测米` 用 7×5 DICT_5X5 ChArUco 检查 Gemini 出厂彩色内参（S保存、C对比、Q退出），不含深度配准或安装外参，不能据此设置 `extrinsics_calibrated`。
 - `scripts/charuco_mount_mac.py --square --marker --board-x --board-y` 用地面平放 ChArUco 求 `base_footprint`→彩色光学系安装外参；只输出报告，确认开关须在实拍复核后人工修改。
 
-- Mac 录制：在“终端”运行 `.venv/bin/python scripts/record_gemini_mac.py <段名>`（SDK 深度 zlib 无损压缩 + UVC 彩色，主机时间配对非曝光同步）；标注 `scripts/label_recording.py <录像目录>`。共享读取/汇总在 `scripts/gemini_recording.py`，分析脚本同时支持 `.depth` 与 `.depth.z`。补录安排见 `docs/补录视频要求20261008.md`。
+- Mac 录制：在“终端”运行 `.venv/bin/python scripts/record_gemini_mac.py <段名>`（SDK 深度 zlib 无损压缩 + UVC 彩色，主机时间配对非曝光同步；彩色默认 2592×1944 裁剪缩小到 640×480 避开原 640×480 模式偏蓝，`device.json` 的 `color_intrinsic` 为换算值、出厂值存 `factory_color_intrinsic`，换相机须重跑 `scripts/gemini_color.py measure`）；标注 `scripts/label_recording.py <录像目录>`。共享读取/汇总在 `scripts/gemini_recording.py`，分析脚本同时支持 `.depth` 与 `.depth.z`。补录安排见 `docs/补录视频要求20261008.md`。
 
 - 本机合成ROS时序测试可使用`tests/monotonic_ros_clock.py`及`use_sim_time=True`，避免Colima校时回拨扰动；正式时间倒退失效保护不得因此关闭，测试须保留显式回拨与超时检查。离线回放`--reid`显式加载本地OSNet，`--cached-poses`仅复用同录像的带置信度Pose结果；汇总入口为`scripts/summarize_recording_validation.py`。

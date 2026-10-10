@@ -7,12 +7,15 @@ import tempfile
 import unittest
 import zlib
 
+import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 from gemini_recording import load_depth_m, load_depth_raw, summarize  # noqa: E402
 from label_recording import FALL_EVENTS, LabelSession  # noqa: E402
 from record_gemini_mac import PLAN, resolve_segment  # noqa: E402
+from gemini_color import CROP, FULL, OUT, fit_mapping, mode_intrinsics, rb_ratio, shrink  # noqa: E402
+from record_gemini_mac import patch_device_json  # noqa: E402
 from evaluate_falls import aggregate, falls_and_actions, score  # noqa: E402
 
 
@@ -178,6 +181,61 @@ class EvaluateTests(unittest.TestCase):
         self.assertFalse(second['suspected'] or second['confirmed'])
         self.assertTrue(second['suspected_carried_in'] and second['confirmed_carried_in'])
         self.assertEqual(stray, [30.0])
+
+
+class ColorModeTests(unittest.TestCase):
+    FACTORY = dict(width=640, height=480, fx=452.447, fy=452.447, cx=325.75, cy=245.025)
+
+    def test_shrink_and_cast_ratio(self):
+        frame = np.zeros((FULL[1], FULL[0], 3), np.uint8)
+        frame[:, :, 0], frame[:, :, 2] = 200, 40
+        frame[CROP[1]:CROP[1]+4, CROP[0]:CROP[0]+4] = 255          # first output pixel only
+        small = shrink(frame)
+        self.assertEqual(small.shape, (OUT[1], OUT[0], 3))
+        self.assertTrue((small[0, 0] == 255).all() and (small[0, 1] != 255).any())
+        self.assertAlmostEqual(rb_ratio(small), .2, places=2)
+
+    def test_intrinsics_follow_the_mapping(self):
+        # A point seen at native pixel (u, v) must land at the same place via the shrunk crop.
+        mapping = dict(scale=.2501, tx=4.1, ty=.4)
+        k = mode_intrinsics(self.FACTORY, mapping)
+        for x, y, z in ((.3, -.2, 2.), (-.5, .4, 3.)):
+            u = self.FACTORY['fx']*x/z+self.FACTORY['cx']
+            v = self.FACTORY['fy']*y/z+self.FACTORY['cy']
+            full = ((u-mapping['tx'])/mapping['scale'], (v-mapping['ty'])/mapping['scale'])
+            out = ((full[0]-CROP[0])/4, (full[1]-CROP[1])/4)
+            self.assertAlmostEqual(k['fx']*x/z+k['cx'], out[0], places=6)
+            self.assertAlmostEqual(k['fy']*y/z+k['cy'], out[1], places=6)
+        self.assertEqual((k['width'], k['height']), OUT)
+
+    def test_fit_mapping_recovers_a_synthetic_offset(self):
+        rng = np.random.default_rng(1)
+        full = np.full((FULL[1], FULL[0]), 128, np.uint8)
+        for _ in range(400):                                   # textured scene of random shapes
+            x, y, r = int(rng.integers(0, FULL[0])), int(rng.integers(0, FULL[1])), int(rng.integers(15, 90))
+            cv2.circle(full, (x, y), r, int(rng.integers(0, 256)), -1)
+            cv2.rectangle(full, (x, y), (x+r, y+2*r//3), int(rng.integers(0, 256)), -1)
+        full = cv2.GaussianBlur(full, (0, 0), 2)
+        # native = 0.25 * full + (4, 0.6): shift by 4x the offset, then area-shrink 4x
+        shifted = cv2.warpAffine(full, np.float32([[1, 0, 16.], [0, 1, 2.4]]), (4*OUT[0], 4*OUT[1]))
+        native = cv2.resize(shifted, OUT, interpolation=cv2.INTER_AREA)
+        fit = fit_mapping(native, full)
+        self.assertAlmostEqual(fit['scale'], .25, delta=.0005)
+        self.assertAlmostEqual(fit['tx'], 4., delta=.3)
+        self.assertAlmostEqual(fit['ty'], .6, delta=.3)
+
+    def test_device_json_keeps_factory_intrinsics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, 'device.json').write_text(json.dumps(dict(color_intrinsic=self.FACTORY)))
+            mapping = dict(scale=.25, tx=4., ty=.6, source='measured')
+            patch_device_json(Path(tmp), 'full', mapping)
+            device = json.loads(Path(tmp, 'device.json').read_text())
+            self.assertEqual(device['factory_color_intrinsic'], self.FACTORY)
+            self.assertAlmostEqual(device['color_intrinsic']['cx'], 325.75-4.-4., places=6)
+            self.assertEqual(device['color_capture']['mode'], 'full')
+            patch_device_json(Path(tmp), 'full', mapping)      # idempotent: never re-derive from derived
+            again = json.loads(Path(tmp, 'device.json').read_text())
+            self.assertEqual(again['color_intrinsic'], device['color_intrinsic'])
 
 
 if __name__ == '__main__':

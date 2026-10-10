@@ -4,6 +4,9 @@
 Live: shows board distance (PnP with factory intrinsics) and reprojection error.
 Keys: S/space save view, C calibrate saved views and compare with factory, Q quit.
 Offline: --images a.png b.png ... runs the same comparison on saved frames.
+--color-mode full checks the 2592x1944-shrunk stream used by record_gemini_mac.py against the
+intrinsics derived from scripts/config/gemini_color_mode_*.json (the "factory" fields of the report
+then hold those derived values).
 """
 import argparse
 import json
@@ -15,6 +18,8 @@ import cv2
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT/'scripts'))
+from gemini_color import ColorCapture, load_mapping, mode_intrinsics  # noqa: E402
 MIN_CORNERS = 12
 MIN_VIEWS = 12
 
@@ -98,11 +103,19 @@ def main():
     parser.add_argument('--dictionary', default='DICT_5X5_50')
     parser.add_argument('--out', default=str(ROOT/f'artifacts/charuco-{time.strftime("%Y%m%d-%H%M%S")}'))
     parser.add_argument('--images', nargs='*', help='Offline frames instead of the live camera')
+    parser.add_argument('--color-mode', choices=('native', 'full'), default='native',
+                        help='native: factory 640x480 mode; full: 2592x1944 shrunk to 640x480 as recorded')
     args = parser.parse_args()
     if not 0 < args.marker < args.square:
         parser.error('--marker must be positive and smaller than --square')
 
     calibration, matrix, dist, size = load_factory(args.calibration)
+    if args.color_mode == 'full':
+        mapping = load_mapping()
+        i = mode_intrinsics(calibration['color_intrinsic'], mapping)
+        matrix = np.array([[i['fx'], 0, i['cx']], [0, i['fy'], i['cy']], [0, 0, 1]], dtype=float)
+        print(f'Full mode: reference intrinsics from mapping {mapping.get("source")}: '
+              f'fx {i["fx"]:.2f} cx {i["cx"]:.2f} cy {i["cy"]:.2f}')
     dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, args.dictionary))
     board = cv2.aruco.CharucoBoard((args.cols, args.rows), args.square, args.marker, dictionary)
     detector = cv2.aruco.CharucoDetector(board)
@@ -122,11 +135,7 @@ def main():
         write_report(out, compare(views, size, matrix, dist))
         return
 
-    capture = cv2.VideoCapture(args.camera, cv2.CAP_AVFOUNDATION)
-    if not capture.isOpened():
-        raise RuntimeError('Cannot open selected camera')
-    capture.set(cv2.CAP_PROP_FRAME_WIDTH, size[0])
-    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, size[1])
+    capture = ColorCapture(args.camera, args.color_mode)
     views = []
     title = 'ChArUco factory-intrinsic check - S save, C compare, Q quit'
     cv2.namedWindow(title, cv2.WINDOW_NORMAL)
