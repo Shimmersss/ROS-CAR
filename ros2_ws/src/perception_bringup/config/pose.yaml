@@ -78,3 +78,5 @@
     height_transition_s: 2.0
     height_recovery_s: 1.0
     height_veto_min_aspect: 1.5
+    height_hint_upright_min_m: 0.65   # a STANDING skeleton counts as upright from this top (far people)
+    height_top_edge_px: 15.0          # box at the image top: top is a lower bound, never a drop

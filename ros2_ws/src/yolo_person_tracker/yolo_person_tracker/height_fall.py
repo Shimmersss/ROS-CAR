@@ -26,14 +26,20 @@ class HeightFallConfig:
     cluster_m: float = .6           # depth band behind the nearest surface kept as the person
     box_shrink: float = .1          # horizontal margin removed from each box side
     top_percentile: float = 95.
+    top_edge_px: float = 15.        # a box this close to the image top is cut off (see clipped_at_top)
     veto_min_aspect: float = 1.5    # box height/width needed before an upright skeleton may veto
+    # With a standing skeleton label (any box shape) a lower top still counts as upright (a far
+    # person whose head leaves the depth view) for the baseline, and above low_max_m for recovery.
+    # A lying person misread as standing has a top below both. Sitting is not used: sitting on
+    # the floor then lying back would look like a fall (2026-10-09 A5).
+    hint_upright_min_m: float = .65
 
     def __post_init__(self):
         for name, value in vars(self).items():
             if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f'height fall {name} must be finite and positive')
-        if not self.low_max_m < self.upright_min_m or not self.top_percentile <= 100:
-            raise ValueError('height fall requires low_max_m < upright_min_m and percentile <= 100')
+        if not self.low_max_m < self.hint_upright_min_m <= self.upright_min_m or not self.top_percentile <= 100:
+            raise ValueError('height fall requires low_max_m < hint_upright_min_m <= upright_min_m and percentile <= 100')
 
 
 def body_heights(depth_m, box, intrinsics, up, camera_height_m, config=None, extent=False):
@@ -71,6 +77,15 @@ def body_heights(depth_m, box, intrinsics, up, camera_height_m, config=None, ext
     axis = np.linalg.svd(flat, full_matrices=False)[2][0]
     along = flat@axis
     return result+(float(np.percentile(along, 95)-np.percentile(along, 5)),)
+
+
+def clipped_at_top(box, config=None):
+    """True when the box reaches the image top: the measured top is then only a lower bound.
+
+    It still proves an upright body when high enough, but a low value may just be a person
+    passing close to the camera with the upper body out of view (2026-10-09 A1a/A1c)."""
+    cfg = config or HeightFallConfig()
+    return float(box[1]) <= cfg.top_edge_px
 
 
 def skeleton_veto(upright, box, config=None):
@@ -125,15 +140,28 @@ class HeightFallTracker:
                 moved[news[0]] = old
         return moved
 
-    def update(self, identity, stamp, top, upright_hint=False):
+    def update(self, identity, stamp, top, upright_hint=False, posture_upright=False, clipped=False):
         """top: body top height in metres, or None when unmeasured. Returns (phase, reason).
 
-        upright_hint: the skeleton clearly shows standing or sitting/crouching this frame; a
-        low top is then a crouch, so it neither starts nor keeps a suspected fall."""
+        upright_hint: the skeleton shows standing or sitting/crouching in a tall box this frame
+        (see skeleton_veto); a low top is then a crouch, so it neither starts nor keeps a
+        suspected fall. posture_upright: the skeleton says standing (any box shape); a top above
+        hint_upright_min_m then counts as upright, and above low_max_m as recovery. clipped: the
+        body reaches the image top (clipped_at_top); a top below upright_min_m is then unmeasured."""
         cfg, state = self.cfg, self._state(identity, stamp)
+        if clipped and top is not None and top < cfg.upright_min_m:
+            top = None
         gap = stamp-state['stamp']
         state['stamp'] = stamp
         if top is None or not math.isfinite(top):
+            if state['fallen'] and upright_hint and posture_upright:
+                # Unmeasured but a standing skeleton in a tall box: recovery evidence on its own
+                # (2026-10-09: getting up while the geometry was unavailable kept the alarm on).
+                state['recovery'] = stamp if state['recovery'] is None else state['recovery']
+                if stamp-state['recovery'] >= cfg.recovery_s:
+                    state.update(fallen=False, recovery=None, pending=None, baseline=None, upright=deque())
+                    return 0, 'upright recovery complete (skeleton; height unmeasured)'
+                return 2, 'confirmed fall; height unmeasured, skeleton standing'
             if gap <= cfg.max_gap_s:
                 # Unmeasured frame: shift every timer, never count it as evidence.
                 for key in ('pending', 'recovery'):
@@ -143,8 +171,9 @@ class HeightFallTracker:
                     state['baseline'] = (state['baseline'][0]+gap, state['baseline'][1])
                 state['upright'] = deque((t+gap, h) for t, h in state['upright'])
             return (2 if state['fallen'] else 1 if state['pending'] is not None else 0), 'height unmeasured; timers paused'
+        upright_now = top >= cfg.upright_min_m or (posture_upright and top >= cfg.hint_upright_min_m)
         if state['fallen']:
-            if top >= cfg.upright_min_m:
+            if top >= cfg.upright_min_m or (posture_upright and top > cfg.low_max_m):
                 state['recovery'] = stamp if state['recovery'] is None else state['recovery']
                 if stamp-state['recovery'] >= cfg.recovery_s:
                     state.update(fallen=False, recovery=None, pending=None, baseline=None, upright=deque())
@@ -153,7 +182,7 @@ class HeightFallTracker:
                 state['recovery'] = None
             return 2, f'confirmed fall; top={top:.2f}m'
         upright = state['upright']
-        if top >= cfg.upright_min_m:
+        if upright_now:
             upright.append((stamp, top))
             while upright and stamp-upright[0][0] > cfg.transition_s:
                 upright.popleft()

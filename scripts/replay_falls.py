@@ -6,6 +6,8 @@ Modes (offline experiment; the *_confirmed flags are forced on here, never in de
   3d-fixed  3D rules with one gravity/camera height per segment (median of stable RANSAC fits,
             standing in for a manual mount calibration)
   3d-floor  3D rules with this frame's stable RANSAC floor (pose3d_up_source=floor)
+  3d-geometry  3D rules with this frame's gravity/camera height from --geometry
+  height    body-top height cue; per-frame --geometry when given, else the 3d-fixed geometry
 Inputs: a recording plus frames.jsonl written by analyze_gemini_recording.py for it.
 Host-receive colour/depth pairing only; not exposure-synchronised.
 """
@@ -26,12 +28,14 @@ from yolo_person_tracker.floor_plane import FloorConfig, FloorTracker, camera_an
 from yolo_person_tracker.pose import JointJumpGate, LABELS, PoseConfig  # noqa: E402
 from yolo_person_tracker.pose3d import EnhancedPostureTracker, Pose3DConfig  # noqa: E402
 from yolo_person_tracker.registration import Registration  # noqa: E402
-from yolo_person_tracker.height_fall import HeightFallConfig, HeightFallTracker, body_heights, skeleton_veto  # noqa: E402
+from yolo_person_tracker.height_fall import (HeightFallConfig, HeightFallTracker, body_heights,  # noqa: E402
+                                             clipped_at_top, skeleton_veto)
 from gemini_recording import load_depth_m, read_rows  # noqa: E402
 
-MODES = ('2d', '3d-fixed', '3d-floor', 'height')
+MODES = ('2d', '3d-fixed', '3d-floor', '3d-geometry', 'height')
 VARIANT = {}   # rule switches under evaluation, set from --variant
-HEIGHT_KEYS = dict(upright='upright_min_m', low='low_max_m', drop='drop_min_m', recovery='recovery_s', confirm='confirm_s')
+HEIGHT_KEYS = dict(upright='upright_min_m', low='low_max_m', drop='drop_min_m', recovery='recovery_s', confirm='confirm_s',
+                   hint='hint_upright_min_m')
 MERGE_S = 1.5   # detections closer than this belong to the same event
 
 
@@ -71,8 +75,9 @@ def floor_fits(recording, frames, cache_path):
     return out
 
 
-def person_heights(recording, frames, fixed, cache_path):
-    """Body top height per tracked person and frame with the segment's fixed gravity (cached)."""
+def person_heights(recording, frames, geometry_of, cache_path):
+    """Body top height per tracked person and frame (cached); geometry_of(frame) -> (up, camera
+    height) or None, in which case the frame is unmeasured."""
     if cache_path.exists():
         return {(r['frame'], r['id']): r['top'] for r in map(json.loads, cache_path.read_text().splitlines())}
     reg = Registration(json.loads((recording/'device.json').read_text()))
@@ -80,15 +85,16 @@ def person_heights(recording, frames, fixed, cache_path):
     intrinsics = (k['fx'], k['fy'], k['cx'], k['cy'])
     depths = {r['frame']: r for r in read_rows(recording/'timestamps.csv')}
     blank = np.zeros((k['height'], k['width'], 3), np.uint8)
-    up, camera_height = fixed
     out = {}
     with cache_path.open('w') as handle:
         for f in frames:
             if not f['depth_matched']:
                 continue
             tracked = [p for p in f['people'] if p['id'] is not None]
-            if not tracked:
+            geometry = geometry_of(f)
+            if not tracked or geometry is None:
                 continue
+            up, camera_height = geometry
             _, aligned = reg.apply(blank, load_depth_m(recording, depths[f['depth_frame']]))
             for p in tracked:
                 measured = body_heights(aligned, p['box'], intrinsics, up, camera_height)
@@ -117,16 +123,18 @@ def replay_height(frames, heights):
             boxes[ident] = box
             # veto2d[=<r>]: a skeleton upright label vetoes only in a box r times taller than wide
             # (default HeightFallConfig.veto_min_aspect; veto2d=0 is the ungated veto).
-            hint = VARIANT.get('veto2d', False) and skeleton_veto(
-                states.get(ident) in ('STANDING', 'SITTING_CROUCHING'), box, tracker.cfg)
-            phase, detail = tracker.update(ident, stamp, heights.get((f['frame'], ident)), upright_hint=hint)
+            upright = VARIANT.get('veto2d', False) and states.get(ident) in ('STANDING', 'SITTING_CROUCHING')
+            phase, detail = tracker.update(ident, stamp, heights.get((f['frame'], ident)),
+                                           upright_hint=upright and skeleton_veto(True, box, tracker.cfg),
+                                           posture_upright=upright and states.get(ident) == 'STANDING',
+                                           clipped=clipped_at_top(box, tracker.cfg))
             state = 'FALLEN' if phase == 2 else 'LYING' if 'drop' in detail or 'low' in detail else 'UNKNOWN'
             timeline.append(dict(t=f['time_s'], id=ident, state=state, phase=phase, basis='height',
                                  detail=detail[:160], height=float(box[3]-box[1])))
     return timeline
 
 
-def replay(frames, floors, mode, pose, spatial, fixed):
+def replay(frames, floors, mode, pose, spatial, fixed, geometry=None):
     from dataclasses import replace
     spatial = dict(spatial)
     if VARIANT.get('knee_fallback'):
@@ -146,8 +154,11 @@ def replay(frames, floors, mode, pose, spatial, fixed):
     tracker, gates, epoch, timeline = EnhancedPostureTracker(pose, s), {}, None, []
     for f in frames:
         stamp = f['time_s']+1.
-        floor = floors.get(f['frame'], {})
-        gravity = (np.array(floor['up']), floor['height']) if floor.get('stable') else None
+        if mode == '3d-geometry':
+            gravity = geometry.get(f['frame'])
+        else:
+            floor = floors.get(f['frame'], {})
+            gravity = (np.array(floor['up']), floor['height']) if floor.get('stable') else None
         present = {p['id']: tuple(p['box']) for p in f['people'] if p['id'] is not None}
         epochs = {i.split(':')[0] for i in present}
         if epochs and epoch not in epochs:
@@ -230,9 +241,11 @@ def main():
     parser.add_argument('poses', type=Path, help='directory containing frames.jsonl for this recording')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--modes', nargs='+', choices=MODES, default=list(MODES))
+    parser.add_argument('--geometry', type=Path,
+                        help='per-frame gravity/camera height from estimate_camera_geometry.py (height, 3d-geometry)')
     parser.add_argument('--variant', default='baseline',
                         help="baseline, or comma list of gap_pause, knee_fallback, confirm_lying_only, veto2d, "
-                             "handover=<s>, transition=<s>, upright=<m>, low=<m>, drop=<m>, recovery=<s>, confirm=<s>")
+                             "handover=<s>, transition=<s>, upright=<m>, low=<m>, drop=<m>, recovery=<s>, confirm=<s>, hint=<m>")
     args = parser.parse_args()
     for item in filter(None, args.variant.split(',')):
         if item == 'baseline':
@@ -256,18 +269,32 @@ def main():
     floors = floor_fits(args.recording, frames, args.output/'floor.jsonl')
     floor = summarize_floor(floors)
     fixed = (floor['up'], floor['camera_height_m']) if 'up' in floor else None
-    timelines, report = {}, dict(recording=args.recording.name, frames=len(frames), floor=floor, variant=args.variant, modes={})
+    geometry = {}
+    if args.geometry:
+        for row in map(json.loads, args.geometry.read_text().splitlines()):
+            if row['up'] is not None:
+                geometry[row['frame']] = (np.array(row['up']), row['camera_height_m'])
+    timelines, report = {}, dict(recording=args.recording.name, frames=len(frames), floor=floor, variant=args.variant,
+                                 geometry=str(args.geometry) if args.geometry else None, modes={})
     for mode in args.modes:
         if mode in ('3d-fixed',) and fixed is None:
             report['modes'][mode] = 'skipped: no stable floor fit'
             continue
+        if mode == '3d-geometry' and not geometry:
+            report['modes'][mode] = 'skipped: no --geometry'
+            continue
         if mode == 'height':
-            if fixed is None:
+            if geometry:
+                heights = person_heights(args.recording, frames, lambda f: geometry.get(f['frame']),
+                                         args.output/'heights-geometry.jsonl')
+            elif fixed is not None:
+                heights = person_heights(args.recording, frames, lambda f: fixed, args.output/'heights.jsonl')
+            else:
                 report['modes'][mode] = 'skipped: no stable floor fit'
                 continue
-            timeline = replay_height(frames, person_heights(args.recording, frames, fixed, args.output/'heights.jsonl'))
+            timeline = replay_height(frames, heights)
         else:
-            timeline = replay(frames, floors, mode, pose, spatial, fixed)
+            timeline = replay(frames, floors, mode, pose, spatial, fixed, geometry)
         timelines[mode] = timeline
         three = sum(r['basis'] == '3d' for r in timeline)
         report['modes'][mode] = dict(
