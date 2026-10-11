@@ -20,6 +20,7 @@
 - C：跌倒检测处于离线评估阶段。10-10 按车载机位（镜头离地 27 cm、俯仰 15.1°）重拍并人工标注 20 次跌倒、19 个反例动作；高度线索及可选开关的复评见 `docs/跌倒检测评估记录.md`，按代码现状的逻辑见 `docs/跌倒检测整体逻辑.md`。C 尚未在 Jetson 上做真人或跌倒实测，现场项见 `docs/现场实测要求20261008.md`。
 - B：Jetson 上 YOLO26s/ByteTrack 有真人在线检测；RGB-D 配准、安装外参和绝对测距精度待验收。
 - 语音：正式入口为本地 Qwen3-ASR + Silero VAD + 固定规则 + 本地 TTS，见 `docs/语音入口与回退.md`。
+- `scripts/start_robot.sh` 是板上整车配置，会启动底盘、语音和经 motion_guard 的自动跟随（`MOTION_ENABLED=true`、`auto_arm:=true`，三项跟随确认为用户临时授权，不启 N10P）；感知验证只用 `start_project.sh` / `start_c.sh`，文档不得把 `start_robot.sh` 写成不运动。
 - 底盘串口已在 Jetson 收发里程计；N10P、motion_guard、导航和云台桥接有软件与本机测试，实车运动、避障和云台硬件均未验收。
 
 ## C 路线入口约定

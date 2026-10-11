@@ -12,7 +12,7 @@
 | C 定位、三维姿态、ReID | 软件已实现，安装外参、重力和地面确认开关默认关闭；ReID 默认关闭 |
 | B 人体检测/跟踪 | Jetson 上 YOLO26s/ByteTrack 有真人在线检测；RGB-D 配准、外参和绝对测距精度待验收 |
 | 语音 | 本地 Qwen3-ASR + Silero VAD 连续收音 + 固定规则控制 + 本地 TTS；讯飞可回退 |
-| 底盘、N10P、运动保护、导航 | 底盘串口在 Jetson 收发里程计；motion_guard、N10P、SLAM/Nav2 有软件和本机测试，实车运动与避障未验收 |
+| 底盘、N10P、运动保护、导航 | 底盘串口在 Jetson 收发里程计；`start_robot.sh` 配置会启用受保护自动跟随（无雷达）。motion_guard、N10P、SLAM/Nav2 有软件和本机测试，实车跟随效果、避障与停车距离未验收 |
 | 云台 | 设计与串口协议草案、桥接软件（仅仿真），无硬件 |
 
 ## 快速入口
@@ -39,7 +39,9 @@ bash scripts/start_c.sh
 bash scripts/start_project.sh
 ```
 
-这条命令启动相机、B、Foxglove 和语音，默认不接底盘；`scripts/start_robot.sh` 另外启动底盘串口收发。两者都不启动跟随，并拒绝 `MOTION_ENABLED=true`。查看选项用 `--help`。
+这条命令启动相机、B、Foxglove 和语音。默认不接底盘、不启动跟随、运动关闭；`WITH_FOLLOWER=true` 时必须同时显式设置 `MOTION_ENABLED=true`。查看选项用 `--help`。
+
+> **注意：`scripts/start_robot.sh` 会让车动。** 它是板上安装的整车配置：开启底盘、语音和**受保护自动跟随**（`WITH_FOLLOWER=true`、`MOTION_ENABLED=true`、`auto_arm:=true`，三项跟随确认按用户临时授权置 true，跟随距离 1 m），使用驱动注册深度和临时内参，不启动 N10P（无雷达避障）。只在清空场地、可人工急停时运行；只做感知验证时用 `start_project.sh` 或 `start_c.sh`。
 
 **对外 ROS 2 接口**：`ros2 launch roscar_api api.launch.py` 默认 IDLE、运动关闭、不启动硬件。外部速度只发 `/chassis/cmd_vel`，由唯一的 motion_guard 输出 `/cmd_vel`。不要与已包含 motion_guard 的入口叠加启动。详见 [ROS 接口使用文档](docs/ROS接口使用文档.md)。
 
