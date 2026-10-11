@@ -1,7 +1,8 @@
 import math
 import unittest
 import numpy as np
-from yolo_person_tracker.height_fall import HeightFallConfig, HeightFallTracker, body_heights, clipped_at_top, skeleton_veto
+from yolo_person_tracker.height_fall import (HeightFallConfig, HeightFallTracker, at_side_edge, body_heights,
+                                             clipped_at_top, skeleton_veto)
 
 K = (500., 500., 320., 240.)
 UP = np.array([0., -1., 0.])      # level camera
@@ -39,6 +40,14 @@ class BodyHeightTests(unittest.TestCase):
         self.assertGreater(extent, 1.)          # 1.6 m slab minus box margins and 5-95 % tails
         self.assertIsNone(body_heights(np.zeros((480, 640), np.float32), box_of(1.2, 0.), K, UP, CAM_H))
         self.assertIsNone(body_heights(person_depth(1.2, 0.), (300, 200, 301, 201), K, UP, CAM_H))
+
+    def test_head_estimate_is_display_only_and_higher(self):
+        depth, box = person_depth(1.2, 0.), box_of(1.2, 0.)
+        top, median, head = body_heights(depth, box, K, UP, CAM_H, head=True)
+        self.assertEqual((top, median), body_heights(depth, box, K, UP, CAM_H))   # rules unchanged
+        self.assertGreaterEqual(head, top)
+        *_, extent, head2 = body_heights(depth, box, K, UP, CAM_H, extent=True, head=True)
+        self.assertEqual(head2, head)
 
 
 class HeightFallTrackerTests(unittest.TestCase):
@@ -139,6 +148,69 @@ class HeightFallTrackerTests(unittest.TestCase):
         # 0.8 s with neither track seen: 1 s of measured low time ends at 3.6 s, not 2.8 s.
         self.assertEqual([p for p, _ in self.feed(t, [(2.6, .3), (3.0, .3), (3.5, .3)], ident='0:7')], [1, 1, 1])
         self.assertEqual(self.feed(t, [(3.65, .3)], ident='0:7')[0][0], 2)
+
+    def test_handover_to_a_fresh_track_that_overlapped(self):
+        # The new ID appears one frame before the old one is dropped (2026-10-10 A1a fall 2).
+        t = HeightFallTracker()
+        boxes = {'0:1': (50., 130., 250., 220.)}
+        self.feed(t, [(1., 1.), (1.2, 1.), (1.4, 1.), (1.8, .3)])           # pending from 1.8 s
+        t.handover(2.0, {'0:1': boxes['0:1'], '0:7': (40., 140., 260., 225.)}, boxes)
+        self.feed(t, [(2.0, .3)])
+        self.assertEqual(self.feed(t, [(2.0, .3)], ident='0:7')[0][1].split(';')[-1].strip(), 'static low, no observed drop')
+        boxes['0:7'] = (40., 140., 260., 225.)
+        self.assertEqual(t.handover(2.1, {'0:7': boxes['0:7']}, boxes), {'0:7': '0:1'})
+        self.assertEqual(self.feed(t, [(2.1, .3), (2.5, .3)], ident='0:7')[-1][0], 1)
+        self.assertEqual(self.feed(t, [(2.95, .3)], ident='0:7')[0][0], 2)   # 0.1 s unseen gap excluded
+
+    def test_track_with_its_own_evidence_is_not_replaced(self):
+        t = HeightFallTracker()
+        boxes = {'0:1': (50., 130., 250., 220.), '0:7': (40., 10., 260., 225.)}
+        self.feed(t, [(1., 1.), (1.2, 1.), (1.4, 1.)])
+        self.feed(t, [(1.0, 1.6), (1.2, 1.6), (1.4, 1.6)], ident='0:7')     # standing: has a baseline
+        self.assertEqual(t.handover(1.6, {'0:7': boxes['0:7']}, boxes), {})
+
+    def test_lost_hold_hands_over_a_suspected_track_after_a_long_gap(self):
+        boxes = {'0:1': (50., 130., 250., 220.)}
+        def run(cfg):
+            t = HeightFallTracker(cfg)
+            self.feed(t, [(1., 1.), (1.2, 1.), (1.4, 1.), (1.8, .3)])       # suspected from 1.8 s, then lost
+            moved = t.handover(6.8, {'0:9': (40., 140., 260., 225.)}, boxes, 1.5)
+            return moved, [p for p, _ in self.feed(t, [(6.8, .3), (7.5, .3), (7.85, .3)], ident='0:9')]
+        self.assertEqual(run(HeightFallConfig()), ({}, [0, 0, 0]))           # 5 s gap: static low only
+        # Held: the 5 s unseen never counts; 1 s of measured low after reappearing confirms.
+        self.assertEqual(run(HeightFallConfig(lost_hold_s=6.)), ({'0:9': '0:1'}, [1, 1, 2]))
+
+    def test_lost_hold_keeps_the_same_identity_and_leaves_short_gaps_alone(self):
+        t = HeightFallTracker(HeightFallConfig(lost_hold_s=6.))
+        self.feed(t, [(1., 1.), (1.2, 1.), (1.4, 1.), (1.8, .3)])
+        self.assertEqual([p for p, _ in self.feed(t, [(5.0, .3), (5.9, .3), (6.05, .3)])], [1, 1, 2])
+        t = HeightFallTracker(HeightFallConfig(lost_hold_s=6.))
+        self.feed(t, [(1., 1.), (1.2, 1.), (1.4, 1.), (1.8, .3)])
+        self.assertEqual(self.feed(t, [(2.5, .3), (2.85, .3)])[-1][0], 2)  # 0.7 s gap still counts, as before
+
+    def test_sit_hold_keeps_a_fall_through_sitting_up(self):
+        drop = [(1., 1.5), (1.2, 1.5), (1.4, 1.5), (1.8, .35)]
+        sit_then_lie = drop+[(2.2, .7), (3.0, .7), (3.6, .3), (4.0, .3), (4.65, .3)]
+        self.assertEqual([p for p, _ in self.feed(HeightFallTracker(), sit_then_lie)][4:], [0, 0, 0, 0, 0])
+        held = [p for p, _ in self.feed(HeightFallTracker(HeightFallConfig(sit_hold_s=3.)), sit_then_lie)]
+        self.assertEqual(held[4:], [1, 1, 1, 1, 2])
+        # Standing back up cancels; lying only after the window is static low.
+        stood = drop+[(2.2, 1.4), (2.4, 1.4), (4.5, .3), (5.0, .3), (5.6, .3)]   # lying only after the baseline expired
+        self.assertEqual([p for p, _ in self.feed(HeightFallTracker(HeightFallConfig(sit_hold_s=3.)), stood)][4:],
+                         [0, 0, 0, 0, 0])
+        late = drop+[(2.2, .7), (4.0, .7), (5.0, .3), (5.5, .3), (6.2, .3)]
+        self.assertEqual(self.feed(HeightFallTracker(HeightFallConfig(sit_hold_s=3.)), late)[-1][0], 0)
+
+    def test_side_edge_box_cannot_start_a_fall(self):
+        cfg = HeightFallConfig(side_edge_px=8.)
+        self.assertTrue(at_side_edge((4., 51., 213., 466.), 640, cfg))
+        self.assertTrue(at_side_edge((300., 51., 636., 466.), 640, cfg))
+        self.assertFalse(at_side_edge((4., 51., 213., 466.), 640, HeightFallConfig()))   # off by default
+        t = HeightFallTracker(cfg)
+        self.feed(t, [(1., 1.), (1.2, 1.), (1.4, 1.)])
+        self.assertEqual(t.update('0:1', 1.6, .3, side=True)[0], 0)          # leg of someone walking out
+        self.assertEqual(t.update('0:1', 1.7, .3)[0], 1)                     # same drop seen in full view
+        self.assertEqual(t.update('0:1', 2.0, .3, side=True)[0], 1)          # an ongoing fall is kept
 
     def test_config_validation(self):
         with self.assertRaises(ValueError): HeightFallConfig(low_max_m=1.)

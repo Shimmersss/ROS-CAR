@@ -9,7 +9,11 @@ must point straight forward, away from the car, and the green axis (board Y) to 
 Keys: S/space add frame (keep car and board still), C compute, R reset frames, Q quit.
 Offline: --images a.png b.png ... (all frames of the same placement).
 Height, pitch and roll come from the board plane; x, y and yaw are only as good as the tape and
-alignment. Factory color intrinsics are used (checked in WORKLOG 2026-10-08).
+alignment. --color-mode full (default) captures like record_gemini_mac.py (2592x1944 shrunk to
+640x480) and uses the intrinsics derived for that stream; native uses the factory 640x480 mode.
+Needs the board close and well inside the view: a low camera tilted up does not see the floor
+within ~1.6 m, and a flat A4 board farther away is too foreshortened to detect (2026-10-10
+synthetic check); measure such a tripod setup with a tape and phone level instead.
 """
 import argparse
 import json
@@ -20,6 +24,7 @@ import cv2
 import numpy as np
 
 from charuco_calib_mac import ROOT, detect, load_factory
+from gemini_color import ColorCapture, load_mapping, mode_intrinsics
 
 MIN_FRAMES = 10
 # Board X forward, board Y to the right, board Z into the floor.
@@ -75,6 +80,7 @@ def solve(frames, matrix, dist, board_origin):
             optical_axis_pitch_down_deg=float(np.degrees(np.arcsin(-optical_z[2]))),
             optical_axis_yaw_left_deg=float(np.degrees(np.arctan2(optical_z[1], optical_z[0]))),
             image_x_axis_tilt_deg=float(np.degrees(np.arcsin(-optical_x[2]))),
+            lens_height_above_floor_cm=float(translation[2]*100),
             per_frame_height_spread_m=float(np.ptp(heights)),
         ),
     )
@@ -110,11 +116,18 @@ def main():
     parser.add_argument('--base-frame', default='base_footprint')
     parser.add_argument('--out', default=str(ROOT/f'artifacts/charuco-mount-{time.strftime("%Y%m%d-%H%M%S")}'))
     parser.add_argument('--images', nargs='*')
+    parser.add_argument('--color-mode', choices=('full', 'native'), default='full',
+                        help='full: stream used by record_gemini_mac.py (default); native: factory 640x480 mode')
     args = parser.parse_args()
     if not 0 < args.marker < args.square:
         parser.error('--marker must be positive and smaller than --square')
 
     calibration, matrix, dist, size = load_factory(args.calibration)
+    if args.color_mode == 'full':
+        mapping = load_mapping()
+        i = mode_intrinsics(calibration['color_intrinsic'], mapping)
+        matrix = np.array([[i['fx'], 0, i['cx']], [0, i['fy'], i['cy']], [0, 0, 1]], dtype=float)
+        print(f'Full mode: intrinsics from mapping {mapping.get("source")}: fx {i["fx"]:.2f} cx {i["cx"]:.2f} cy {i["cy"]:.2f}')
     dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, args.dictionary))
     board = cv2.aruco.CharucoBoard((args.cols, args.rows), args.square, args.marker, dictionary)
     detector = cv2.aruco.CharucoDetector(board)
@@ -128,12 +141,18 @@ def main():
         report = check(solve(frames, matrix, dist, origin))
         report.update(base_frame=args.base_frame, child_frame='camera_color_optical_frame',
                       board_origin_in_base_m=origin.tolist(), serial=calibration['serial'],
-                      square_m=args.square, marker_m=args.marker,
+                      square_m=args.square, marker_m=args.marker, color_mode=args.color_mode,
+                      camera_matrix=matrix.tolist(),
                       note='Tape-measured x/y/yaw; not yet a confirmed mount. camera_link needs the driver TF.')
         out.mkdir(parents=True, exist_ok=True)
         (out/'report.json').write_text(json.dumps(report, indent=2, ensure_ascii=False))
         print(json.dumps(report, indent=2, ensure_ascii=False))
         print(f'Report written to {out/"report.json"}')
+        r = report['readable']
+        # Roll as in --set-camera / estimate_camera_geometry.py: atan2(up_x, -up_y), = -image x tilt.
+        print('record_gemini_mac.py --set-camera '
+              f'{r["lens_height_above_floor_cm"]:.0f} {-r["optical_axis_pitch_down_deg"]:.1f} {-r["image_x_axis_tilt_deg"]:.1f}'
+              + ('' if not report['warnings'] else '   (resolve the warnings first)'))
 
     if args.images:
         frames = []
@@ -147,11 +166,7 @@ def main():
         finish(frames)
         return
 
-    capture = cv2.VideoCapture(args.camera, cv2.CAP_AVFOUNDATION)
-    if not capture.isOpened():
-        raise RuntimeError('Cannot open selected camera')
-    capture.set(cv2.CAP_PROP_FRAME_WIDTH, size[0])
-    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, size[1])
+    capture = ColorCapture(args.camera, args.color_mode)
     frames = []
     title = 'ChArUco floor mount - S add, C compute, R reset, Q quit'
     cv2.namedWindow(title, cv2.WINDOW_NORMAL)

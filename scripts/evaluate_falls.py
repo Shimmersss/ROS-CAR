@@ -33,8 +33,10 @@ def falls_and_actions(labels):
             if row['event'] == 'fall_onset':
                 current = dict(direction=row['direction'], person=row['person'], position=row['position'])
             current[row['event']] = row['t']
+            current['auto'] = current.get('auto', False) or row.get('notes') == 'auto'
             if row['event'] == 'stand_stable' and 'fall_onset' in current:
-                falls.append(current)
+                if not current.pop('auto'):     # unreviewed candidates from fall_candidates.py are not ground truth
+                    falls.append(current)
                 current = {}
         elif row['event'] == 'action_start':
             opened[row['notes']] = row

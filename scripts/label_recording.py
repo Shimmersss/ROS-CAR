@@ -8,6 +8,9 @@ Keys
   b / e  action_start / action_end (action name cycles with n)
   r      cycle direction     n  cycle action     p  cycle person     k  cycle position
   u      undo last label     s  save             q  save and quit    h  toggle help
+Candidates (notes=auto, from scripts/fall_candidates.py) must be reviewed:
+  j / l  previous / next label    x  delete the label nearest this frame
+  y      confirm the fall around this frame (clears auto, applies person/pos/dir)
 """
 import argparse
 import csv
@@ -25,6 +28,8 @@ ACTIONS = ('fast_chair_sit', 'fast_floor_sit', 'fast_lie_down', 'stumble_recover
            'enroll_front_turn', 'cross_occlusion', 'exit_reenter', 'full_occlusion', 'swap_back', 'other')
 PERSONS = ('A', 'B', 'A+B')
 POSITIONS = ('1.9m', '3m', '1.2m', '2m', '2.5m', '4m', '')
+AUTO = 'auto'            # notes of an unreviewed candidate; evaluate_falls.py ignores such falls
+NEAR_FRAMES = 25
 COLUMNS = ('segment', 't_s', 'event', 'person', 'position', 'direction', 'notes', 'frame', 'host_wall_ns')
 
 
@@ -83,11 +88,46 @@ class LabelSession:
             self.position = cycle(POSITIONS, self.position)
         elif char == 'u' and self.labels:
             self.labels.pop()
+        elif char in 'jl':
+            self.playing = False
+            frames = sorted({label['frame'] for label in self.labels})
+            later = [f for f in frames if f > self.frame] if char == 'l' else [f for f in frames if f < self.frame]
+            if later:
+                self.frame = later[0] if char == 'l' else later[-1]
+        elif char == 'x':
+            near = self.nearest()
+            if near is not None:
+                self.labels.remove(near)
+        elif char == 'y':
+            for label in self.fall_group():
+                label.update(notes='', person=self.person, position=self.position, direction=self.direction)
         elif char == 's':
             return 'save'
         elif char == 'q':
             return 'quit'
         return None
+
+    def nearest(self, within=NEAR_FRAMES):
+        if not self.labels:
+            return None
+        label = min(self.labels, key=lambda item: abs(item['frame']-self.frame))
+        return label if abs(label['frame']-self.frame) <= within else None
+
+    def fall_group(self):
+        """Fall events of the fall whose fall_onset..stand_stable span contains (or is nearest) this frame."""
+        events = sorted((label for label in self.labels if label['event'] in FALL_EVENTS), key=lambda item: item['frame'])
+        groups, current = [], []
+        for label in events:
+            if label['event'] == 'fall_onset' and current:
+                groups.append(current)
+                current = []
+            current.append(label)
+        if current:
+            groups.append(current)
+        if not groups:
+            return []
+        return min(groups, key=lambda g: 0 if g[0]['frame'] <= self.frame <= g[-1]['frame']
+                   else min(abs(g[0]['frame']-self.frame), abs(g[-1]['frame']-self.frame)))
 
     def rows(self):
         out = []
@@ -120,6 +160,9 @@ class LabelSession:
                 else:
                     open_actions[row['notes']] -= 1
         issues += [f'{name}: action_start without end' for name, n in open_actions.items() if n]
+        unreviewed = sum(label['notes'] == AUTO for label in self.labels)
+        if unreviewed:
+            issues.append(f'{unreviewed} candidate labels not yet confirmed (y) or deleted (x)')
         return issues
 
     def save(self, recording):
@@ -171,14 +214,19 @@ def run(recording, segment):
                 continue
             position = session.frame
         shown = image.copy()
-        last = session.rows()[-4:]
+        rows_now = session.rows()
+        near = sorted(rows_now, key=lambda r: abs(r['frame']-1-session.frame))[:5]
+        last = sorted(near, key=lambda r: r['frame'])
         lines = [f'frame {session.frame+1}/{len(rows)}  t={session.seconds(session.frame):.2f}s'
                  f'{"" if session.marker is not None else " (no marker)"}{"  PLAY" if session.playing else ""}',
                  f'person {session.person}  pos {session.position}  dir {session.direction or "-"}  action {session.action}']
-        lines += [f'  {r["t_s"]}s {r["event"]} {r["direction"] or r["notes"]}' for r in last]
+        lines += [f'{">" if r["frame"]-1 == session.frame else " "} {r["t_s"]}s {r["event"]} '
+                  f'{r["direction"] or ("" if r["notes"] == AUTO else r["notes"])}{"  AUTO" if r["notes"] == AUTO else ""}'
+                  for r in last]
         if help_on:
             lines += ['space play | a/d +-1 | z/c +-10 | m marker | 1-5 fall events | b/e action',
-                      'r dir | n action | p person | k pos | u undo | s save | q quit | h help']
+                      'r dir | n action | p person | k pos | u undo | s save | q quit | h help',
+                      'j/l prev/next label | x delete nearest | y confirm fall here']
         for i, line in enumerate(lines):
             cv2.putText(shown, line, (8, 20+18*i), cv2.FONT_HERSHEY_SIMPLEX, .5, (0, 255, 255), 1)
         cv2.imshow(title, shown)
