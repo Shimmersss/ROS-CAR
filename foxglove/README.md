@@ -1,5 +1,7 @@
 # Foxglove：B 方案、N10P、语音与底盘
 
+> C 路线（`scripts/start_c.sh`）使用 [c-layout.json](c-layout.json)：骨架视频、逐人状态、三维骨架、目标状态与性能，实际客户端显示待现场验收。下文为 B 与整机布局。
+
 当前布局为 [b-radar-layout.json](b-radar-layout.json)。Mac Foxglove 经网口连接 `ws://192.168.100.2:8765`，从文件导入布局；同一 Wi-Fi 下也可用 `ws://192.168.1.240:8765`。总入口 `bash scripts/start_robot.sh` 启动 Astra、YOLO26s/ByteTrack、N10P、语音和底盘串口收发；`bash scripts/start_project.sh` 可按开关运行。布局本身不控制车辆。
 
 | 区域 | 话题 | 当前含义 |

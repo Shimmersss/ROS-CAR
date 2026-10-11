@@ -1,9 +1,8 @@
 # 启动与演示
 
-> 方案 A 在分支 `a` 改为红色目标 + 配准深度；原 `route:=astra` 保留，B 不变。最新入口、串口与本机/实机边界见 [红色方案 A](../../../docs/方案A红色物体跟随.md)。本轮未部署小车。
+> 当前主线为 C（`route:=yolo_pose`，见 [方案 C 实现与验收](../../../docs/方案C实现与验收.md)）；默认 route 仍为 B（`yolo`）。`astra` 骨架和 `red` 红色目标为已退役的历史路线，资料见 [归档](../../../docs/archive/README.md)。
 
-
-perception.launch.py 的 route 只能为 astra、yolo 或 demo，默认 yolo。
+perception.launch.py 的 route 可选 yolo_pose、yolo、astra、red 或 demo，默认 yolo。yolo_pose 额外启动骨架/跌倒状态、地面定位与统一定位节点，参数在 `config/pose.yaml`。
 astra 启动真实 `/bodylist` 适配器；yolo 已接入真实 RGB-D 跟踪节点，未配置模型或未确认配准时发布 NOT_READY；只有显式 route:=demo 才会产生模拟位置。
 with_foxglove:=true 时需要另行安装 ros-humble-foxglove-bridge。
 当前 launch 不自动启动相机、厂商 SDK 或底盘；方案 A 的安全组合入口为 `scripts/run_astra_foxglove.sh`。

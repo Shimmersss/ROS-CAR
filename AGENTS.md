@@ -2,144 +2,25 @@
 
 1. 每次项目更新后更新 WORKLOG.md，并做与改动范围相称的最小审查；仅在长期规则或项目入口变化时更新 AGENTS.md，避免堆积历史日志。
 2. 缺少必要环境时主动补齐；不得将静态检查描述为编译通过或实机验证。
+3. 当前主线为 C（Gemini Pro + YOLO26s-pose 骨架/跌倒）；项目默认入口仍为 B。A 骨架与红色目标路线已退役，资料在 `docs/archive/`。历史上下文见 `docs/archive/AGENTS历史上下文.md`，逐次记录见 WORKLOG.md。
+4. 文档新增或退役时同步维护 README.md 的文档索引；过时文档移入 `docs/archive/` 并在其 README 登记原因，不直接删除。
 
-## B 路线当前入口约定
+## 项目概况
 
-- B 管理入口默认 `models/weights/yolo26s-fp16.engine`，由目标 Jetson 导出；缺文件必须报错，不静默回退。显式 `MODEL_PATH=.../yolo26s.pt` 可做基线对比。
-- YOLO 三维位置使用独立恒速卡尔曼；`kalman_measurement_std_m` / `kalman_acceleration_std_mps2` 替代 `depth_smoothing_alpha`。预测必须保留真实测量年龄和超时失效。默认时间门控拒绝不一致测量（被拒不刷新测量时间），重定位须一致证据确认后干净重初始化；断流按最后一次输入（含被拒）计时，输入持续但一直被拒超过 `max_age_s` 时丢弃旧状态，新位置仍须确认；无躯干佐证的退路深度门限更严且不能单独起始轨迹。`depth_gate_enabled:=false` 恢复旧跳变重初始化。
-- 与语音并行协作时只改 YOLO 相关文件，不重启整套服务；板端验证优先使用隔离目录和独立命名空间。
+- 目标：室内人体跟随小车（含跌倒检测）。主控 Orin Nano Super 8GB：Ubuntu 22.04.5 aarch64、JetPack 6.2 / CUDA 12.6、ROS 2 Humble；Mac 上用 Foxglove 与 SSH 调试。
+- SSH：Wi-Fi `wheeltec@192.168.1.240`（别名 `roscar-wifi`）、网线 `wheeltec@192.168.100.2`（`roscar-ethernet`），端口 22。密码、代理订阅 URL、节点和登录凭据、讯飞/DeepSeek 凭据不得写入项目文件或日志；语音凭据只存板上权限 0600 的私有文件。小车上的 Codex CLI 与 Clash Verge 配置见 `deploy/README.md`。
+- 相机：C 使用 Gemini Pro（序列号 AY2755200PW）；早期 Astra 实物为 ORBBEC ASTRA S（2bc5:0402），两者标定不能混用。底盘 OLED 显示 `Akm`，车型键按 `mini_akm`，不要用源码默认 `mini_mec`。底盘商品型号仍待核对。
+- 代码：主动工作区 `ros2_ws/src/`，构建只扫描此处。厂商原包 `JP6.2_wheeltec_ros2_src_20260903/` 保持原样并排除 Git 和同步。迁入的厂商包（chassis_vendor、radar_vendor、wheeltec_mic、wheeltec_mic_aiui、tts_make_ros2）保留 `COLCON_IGNORE`，由独立脚本构建；`SOURCE_MANIFEST.json` 保留原始哈希，本地补丁记 `local_modifications`。
+- Jetson 正式目录 `/home/wheeltec/ROSCAR-current`（含在运行的语音服务），离线语音依赖在 `/home/wheeltec/ROSCAR-offline`。Mac 同步脚本默认 dry-run、按白名单，不传厂商包、权重、录像、构建产物或代理配置，不执行远端删除。旧 A 的 `roscar-route-a.service` 若在运行会占用相机，启动其他相机入口前先停止。
+- 只有显式 `route:=demo` 输出 `is_simulated=true` 的模拟数据；demo、容器编译、CI 单测、合成测试和离线录像回放都不能描述为实机识别或实车验收。感知验收中不得混入跟随或底盘控制节点。
+- 流程图位于 `docs/diagrams/`，必须区分“已有源码/库”“待开发/接入”“待实机验证”；修改 SVG 后如需分享合并图，同步重新导出 PNG。
 
-## C 深度融合约定
+## 当前状态（2026-10-11）
 
-- C 默认 `fusion_enabled=true`，统一关联当帧关节和区域真实深度；关节缺失保持 NaN。目标是框中心射线上的虚拟代表点，不是骨盆或地面点，后续地面定位不得直接混入同一观测。`pose.yaml` 中关闭融合可恢复原 C 路径；B 区域测距保持兼容。参数与验收边界见 `docs/方案C实现与验收.md`。
-
-- C 单目地面定位默认要求双踝一致，禁止无接地证据的框底回退。身高先验默认关闭，需绑定已确认的 epoch:track_id 且持续站立；UNKNOWN 不套站立先验。预测发布必须按真实测量年龄复核保持期限。
-
-- C ReID默认关闭；显式REID_ENABLED/REID_MODEL_PATH启用本地OSNet ONNX及校验文件，不自动下载。另需REID_LOCK_ENABLED=true才接入身份锁定恢复：禁用邻框接续，连续新鲜身份确认后才关联当前轨迹，歧义/失效保持LOST，释放清除身份。持久身份与epoch:track_id分离，不转移身高先验或旧轨迹滤波状态。入口与测试见docs/方案C身份ReID接入与验收.md。
-
-- C统一定位使用独立 `/perception/person_positions` 与 `target_state_unified`，参考点为双踝中点的地面投影；不把原框中心代表点混入。原躯体深度需先通过同轨迹近期确认的关系换算为脚下参考点，才与脚部观测作保守相关融合；映射有龄期且不跨身份。各来源必须有一致性和新鲜度；未确认安装/地面不发布有效统一位置，身高先验不进入统一输出。
-- C三维姿态仅使用真实有效关节；`pose3d_gravity_confirmed` / `pose3d_ground_confirmed` 默认false，依据不足降级二维并标注basis，异常几何未知。二维时序持续更新，三维时序独立保存，短时缺深度暂停确认计时、超时仅清三维候选；不跨像素/米搬用基线。已确认三维事件需三维直立证据恢复。参数及边界见 `docs/方案C统一定位与三维姿态.md`。
-
-## 当前上下文（2026-09-14）
-
-- 目标：室内人体跟随小车，计划使用 Orin Nano Super 8GB，通过 Mac 上的 Foxglove 和 SSH 调试。
-- 用户最初称相机为 Astra Pro；保存的商品资料涉及 Astra Pro Plus 和 Gemini Pro。实际到手型号及 USB 标识仍需核对。
-- 厂商代码位于 `JP6.2_wheeltec_ros2_src_20260903/`，来自 Humble 源码目录，文件夹标注 JP6.2。
-- 底盘准确商品型号仍待核对；2026-09-16 实物照片确认 OLED 显示 `Akm` 且有转向舵机，本次底盘测试按仓库车型键 `mini_akm` 运行。不要将源码默认 `mini_mec` 当作用户车型。已 SSH 确认小车为 Ubuntu 22.04.5 LTS、aarch64，JetPack 6.2 / CUDA 12.6 已通过 SSH 核对。
-- SSH 地址已由用户确认：Wi-Fi 为 `wheeltec@192.168.1.240`，网线为 `wheeltec@192.168.100.2`，端口均为 22。本机 `~/.ssh/config` 已添加 `roscar-wifi`、`roscar-ethernet` 别名；两地址均曾登录成功，安装期间网线连接中断，后续使用 Wi-Fi。密码不写入项目文档或 SSH 配置。此前 Codex 应用内新增连接受界面工具安全限制，未由本任务完成。
-- 小车已安装 Codex CLI 0.154.0、Clash Verge Rev 2.5.2 与必要桌面依赖。Codex 已确认 ChatGPT 登录；启动器自动使用 `127.0.0.1:7897` 代理。Clash 已导入用户订阅、使用规则模式和新加坡节点，关闭 TUN/局域网代理访问，配置桌面登录自启动。配置位置及验证范围见 `deploy/README.md`；订阅 URL、节点凭据和登录凭据禁止写入项目文件。
-- 已完成源码静态初查，具体证据与待办见 WORKLOG.md；尚未在 Jetson 编译或连接硬件。
-- 当前任务边界：用户要求先不考虑下位机；先研究和验证人体感知、目标跟踪、深度测距及 Foxglove 展示，暂不接车辆运动。
-- 当前路线建议：相机驱动 + YOLO11n + ByteTrack + 配准后的深度测距，按需求再评估 Pose、分割或 ReID。此路线已在 codex/route-b 分支补齐本地软件实现，尚未实机验收。
-- 方案主文档为 `人体跟随感知方案.md`，包含硬件区别、骨架 SDK 路线、源码现状、YOLO/深度流程、Foxglove/SSH 配置和感知验收顺序。更新方案时同步维护此文档。
-- 已补充骨架与滤波逻辑：可见人体应用代码为姿势锁定、平均 RGB 恢复和简化 PD，没有显式人体卡尔曼；SDK 内部未知。ByteTrack 自带检测框卡尔曼，空间深度滤波需独立设计；整车 EKF 不等于人体滤波。
-- 两条路线的 SVG 图位于 `docs/diagrams/`，主文档已链接。图中必须区分“已有源码/库”“待开发/接入”“待实机验证”，避免将库已附带表述为已部署成功。
-- 两图并排合并的 PNG 为 `docs/diagrams/人体跟随两方案对比.png`（5780×3800）；修改 SVG 后如需分享合并图，应同步重新导出。
-- 主动开发工作区为 `ros2_ws/src/`，包含 person_interfaces、astra_body_adapter、yolo_person_tracker、perception_bringup。厂商目录保持原样并排除普通 Git；构建仅扫描主动工作区。
-- 正式 `route:=astra` 已接入实测 bodylist_adapter；`route:=yolo` 已接入真实 RGB-D 节点，默认缺少模型/配准配置时为 NOT_READY。只有显式 `route:=demo` 才输出 `is_simulated=true` 的演示数据，禁止将 demo 或容器验证描述为实机人体识别。
-- 四个包已在本机 Docker 的 Linux ARM64 ROS 2 Humble 环境编译通过；A/B、demo 与非法 route 运行检查通过。尚未在 Jetson 连接相机、验证 SDK 或 CUDA。
-- 项目入口见 README.md，接口见 docs/interfaces.md，任务顺序见 docs/roadmap.md。Mac 同步脚本默认 dry-run，不传厂商原包、权重、录像或构建产物，不执行远端删除。
-
-- 用户已授权迁入串口相关代码但暂不启动：ros2_ws/src/chassis_vendor/ 包含原样复制的 turn_on_wheeltec_robot、wheeltec_robot_msg、serial，42 个源文件由 SOURCE_MANIFEST.json 记录哈希。COLCON_IGNORE 默认跳过这三个包，未接入 perception_bringup；仅原四包有既往编译验证，迁入串口包尚未编译或实机验证。
-
-- 新增约 4000 字课程设计报告 `docs/室内人体跟随小车课程设计.md`，汇总识别、锁定、深度、滤波、控制与实验设计；该文档为方案及阶段总结，不能视为算法或实车已完成。
-
-- 用户澄清需要选题框架而非完整课设论文。新增 `docs/智能车方向大作业选题.md`，按示例 PDF 的场景、技术栈、完成要求、评分与交付物结构提供 8 个独立选题；先前课设报告保留，仅作背景资料。
-- 新增 `deploy/clash-hk-vps.yaml`：仅使用香港 VPS `8.217.15.181` 的 VMess/Hysteria2 节点，供 Clash Verge 导入；未修改服务器现有业务服务。
-
-- 2026-09-14 环境检查见 docs/小车环境检查.md：GPU 张量运算及 torchvision CUDA NMS 成功；系统 Python 缺 ultralytics，未发现 Foxglove bridge，torchvision 图像扩展缺 libnvjpeg.so.12。USB 实测 ORBBEC ASTRA S（2bc5:0402），与先前型号描述不一致，RGB 来源及实物标签待核对。厂商工作区已有安装包但未启动验证；本次未更改远端配置。
-
-- 2026-09-14 已首次部署项目到 Jetson `/home/wheeltec/ROSCAR`，原生 Humble 四包编译通过（16.5s）；原厂工作区未改，串口继续 COLCON_IGNORE，未设置自启动。同步脚本 deploy 改为明确文件白名单，排除代理节点配置。真实感知算法仍未接入。
-- 首次部署后 Jetson 本机隔离 ROS 域的 A/B/demo 与非法 route 运行检查全部通过，测试已退出；不是相机或人体识别实测。
-
-- 2026-09-14 方案A联调：用户授权3个Sol子代理协助。ASTRA S深度流实测640×480/16UC1，15秒窗口收到345帧；SDK main报0x50000a19授权无效，用户需找厂商确认。禁止把SDK帧编号当骨架成功。
-- 新增bodyreader_msg和独立bodylist_adapter（默认A占位入口不变），5包Jetson编译成功，5个纯逻辑单测与Jetson合成ROS状态测试通过。毫米转米，Y轴取反是待实机验证的约定；无传感器时间戳。测试不启动底盘，厂商bodydata_process也发布cmd_vel，因此不使用。见docs/方案A联调记录.md。
-
-- Foxglove bridge 3.4.3 与 rosx_introspection 2.3.0 已解包到 Jetson tools/foxglove-root，脚本 scripts/run_foxglove.sh 手动启动、仅监听本机。foxglove.sdk.v1握手通过，旧协议探针失败，客户端展示待验收；未设置自启动。骨架错误摘录 docs/方案A骨架错误日志.txt 可转厂商，完整日志保存在 artifacts。
-
-- 用户在场复测：40秒窗口1005条Bodylist全部count=0，无ID/关节识别结果；授权错误文字仍出现，代码本轮0x50000739。未跑通但原因未定，需继续核对视野/配置/厂商程序，不能仅根据日志认定授权必然阻塞。测试已停止。
-- 随后人体实测复测成功：40秒 1004 条 Bodylist，707 条检测到 1 人（ID 93）、707 条有效质心、706 条有效关节、最大19关节，叉腰判定1帧，Z约0.99–1.18m。Invalid Orbbec Body Tracking license 仍出现（0x50000719），但未阻止实际骨架输出；记录为待厂商解释的SDK异常/授权提示，不再作为当前功能硬阻塞。未启底盘或任何控制节点。
-- 方案 A Foxglove 链路已补齐：bodyreader/main → bodylist_adapter → TargetState + visualization Marker → 用户目录 foxglove_bridge。启动脚本 `scripts/run_astra_foxglove.sh` 使用 ROS 域182、ROS_LOCALHOST_ONLY=0、独立进程组；无底盘、cmd_vel或自启动。Mac 隧道使用本地8766（8765被其他本地服务占用），实际 WebSocket握手通过。骨架和RGB并开时本机实测Bodylist不出数据，当前启动默认骨架流；Image面板待单独排查。当前会话已手动启动该链路，Foxglove客户端布局仍需人在画面中叉腰后验收 TRACKING/Marker。
-- Foxglove Desktop 自动深链接没有产生 Bridge 客户端连接记录；改为在应用内手动选择 Foxglove WebSocket、填写 ws://localhost:8766。在线链路当前无人时验证为 SEARCHING + Marker DELETE，实际人体 TRACKING/Marker 待用户配合叉腰。
-- 本轮继续联调确认：Jetson bridge 持续监听 127.0.0.1:8765，并已广播 `/perception/target_state`、`/perception/target_marker`、`/bodylist`；Mac 8766 隧道可达。Foxglove 当前界面曾回到“没有数据源”，需通过“打开连接”重新选择 `ws://localhost:8766`，再验收面板消息。
-- 用户指出需要 SSH ROS 小车数据源；新增 `foxglove/ssh-ros-datasource.json` 与 `scripts/connect_foxglove_roscar.sh`，明确 `roscar-wifi`、ROS 域 182、远端 bridge 8765 和本地 WebSocket 8766。该配置已写入仓库，但尚未发布到外部服务或远端仓库。
-- 用户要求迁入示范中的语音模块：已将 `wheeltec_mic`（含 `wheeltec_mic_msg`、`wheeltec_mic_ros2`）、`wheeltec_mic_aiui` 和 `tts_make_ros2` 原样复制到 `ros2_ws/src/`，保留讯飞/AIUI 原生库、ASR/TTS 资源和反馈音频，排除 Git/Python 缓存。三个顶层包新增 `COLCON_IGNORE`，默认不参与主动工作区构建，未接入 `perception_bringup`，未启动麦克风、声卡、语音节点或底盘控制。迁入包尚未编译或实机验证；依赖实际麦克风串口、ALSA 声卡、厂商动态库和讯飞配置。
-
-- 2026-09-14 20:12 修复 Foxglove 断连：Mac 8766 无监听，重建 SSH 隧道后客户端自动恢复。修正掩码适配器尺寸：厂商将 640×480 下采样为 320×240，Maskdata 固定 76800 项；旧 640×480 检查丢弃所有帧。Jetson 编译成功，6 秒收到 164 帧 mono8 图像，Foxglove 已显示；当前人数 0、黑色掩码、SEARCHING，真人轮廓/锁定仍待验收。链路以 RGB_STREAM=false 手动运行，无底盘；SDK 旧进程未响应 TERM，经核对 PID 后 KILL 清理才重启。
-- 用户随后要求用小车 Wi-Fi 地址替代 localhost。Bridge 已改为默认监听 `0.0.0.0:8765`，Mac 直连 `ws://192.168.1.240:8765`；TCP 与 foxglove.sdk.v1 WebSocket 101 握手实测通过。`connect_foxglove_roscar.sh` 现检查直连，SSH 隧道脚本仅作离开当前 Wi-Fi 后的备用。该端口可被同一局域网设备访问；仍为手动启动、未设自启动、未启动底盘。
-- 20 秒真人锁定验收中，Bodylist 521/521 帧检测到人体，掩码 528/528 帧有前景，出现人体 ID 135、237；但未触发叉腰，适配器仍锁定旧 ID 96，554 条 TargetState 全为 LOST，无有效位置或 Marker ADD。链路和人体分割正常，本次目标锁定未通过；需要再次保持标准叉腰姿势并采集关节条件，另需关注单人 ID 在窗口内变化的问题。
-- 随后 15 秒复测通过真人锁定验收：人体 ID 41 有 404 帧，33 帧满足全部叉腰条件；约 1.93 秒进入 TRACKING，363 条 TargetState 均位置有效，距离约 0.865–1.264 m、偏角约 -0.140–0.007 rad，目标球和检测体积框各 363 条 ADD。Foxglove 客户端同步显示 status=2、target_id=41、position_valid=true、人体掩码和 3D 面板。当前 Foxglove 标签仍显示旧 localhost 数据源，用户表示自行改为已验证的 `ws://192.168.1.240:8765`。
-- 正式 A route 接入完成：perception_bringup 的 `route:=astra` 改为 bodylist_adapter，方案 A 组合脚本也通过该 route 启动。Jetson 两包编译成功；合成 A 状态机测试、A/B/demo 与非法 route 回归均通过。当前在线进程已是正式 route，6 秒收到 108 条 Bodylist 和 147 条 SEARCHING，`/cmd_vel` 不存在；当时画面无人。启动脚本清理增加 3 秒后进程组 KILL 兜底，处理厂商 SDK 不响应 TERM 的情况。
-- 用户要求叉腰锁定更宽松：默认阈值由厂商等价 50/100/50 mm 调整为手高于脊柱 20 mm、手肩横差小于 160 mm、肩高于手 20 mm；单帧触发改为最近 10 帧中 3 帧投票。五项参数由正式 astra launch 暴露。Jetson 两包编译、7 个逻辑测试和正式 route 合成测试通过；本机 Linux ARM64 Humble 容器五包编译、7 个逻辑测试、正式 A 合成测试、A/B/demo 与非法 route 回归也全部通过。小车因没电离线，在线进程尚未重启加载新值。
-- 已整理 `docs/物理串口协议说明.md` 并生成可交付 ZIP，包含底盘串口字节表、ROS 映射、厂商源码、消息定义和配置。当前串口包仍未编译或实机验证，方案 A 没有打开串口或发布 `/cmd_vel`。静态审查发现厂商安全新协议帧尾赋值被注释、机械臂路径构造 10 字节却发送 11 字节，启用前必须修复并核对固件协议。
-- 已核对用户提供的 `R550_C30D(2.0)_Mini小车STM32源码_GMR编码器_2026.08.21.zip`：这是 STM32F407ZG + FreeRTOS 的 R550/C30D 2.0/GMR 下位机工程，115200、11 字节控制帧、24 字节基础回传、`0x7B/0x7D` 和异或 BCC 均与迁入的 ROS 2 驱动匹配。该候选源码检查到 Mec/4WD/MecV/4WDV，而实物 OLED 实际为 `Akm`，因此基础协议匹配仍成立，但不能再把该候选包描述成实物当前模式的精确固件。安全 `0xB0/0xB1` 和机械臂 `0xAA/0xBB` 扩展未在该固件中检出对应解析，不计入基础协议匹配结论。
-- 2026-09-14 语音方案 B 已新增 `xfyun_speech`、`deepseek_ros2`、`voice_command_router` 三个主动包：讯飞流式 IAT、DeepSeek 文本桥和受限工具路由。Orin 实测 XFM-DP-V0.0.18 可用 `plughw:CARD=XFMDPV0018,DEV=0` 采集 16 kHz/16-bit/单声道音频，三包原生 Humble 编译成功，真人语音 → 讯飞 IAT → `/voice/asr_text` → DeepSeek 中文回答已跑通。静音底噪峰值约 2441，阈值由 500 调至 2800，并增加连续 160 ms 起音判定；本地 VAD 未确认语音时丢弃云端误识别文本。TTS 与蜂鸣器启动参数默认 false；蜂鸣器属于下位机，本轮延后，不使用 Jetson GPIO，不启动底盘。凭据只存于板子权限 0600 的私有文件，不得写入仓库或日志。
-
-- 嘈杂车内环境改用精确 `/voice_words = 小车唤醒` 事件授权一轮识别，不直接信任厂商会对多种 AIUI 事件发布的 `/awake_flag`；交互为“小微小微”后停约 1 秒再提问。手动服务触发仍要求本地 VAD，纯噪声云端文本不会进入 DeepSeek。启动脚本仅附带厂商串口唤醒节点，不启动其离线识别、反馈音频、运动控制或灯光控制。DeepSeek 最终回答同时发布 `/voice/assistant_text` 并追加到 `/home/wheeltec/ROSCAR/logs/deepseek_responses.jsonl`，只存 UTC 时间和回答正文。
-- 新增方案 A 一键管理：Jetson 使用 `scripts/route_a.sh start|stop|restart|status|logs`，Mac 使用 `scripts/route_a_remote.sh`，也可双击根目录 `启动方案A.command`。入口后台管理现有 bodyreader + 正式 astra route + Foxglove Bridge，默认 `RGB_STREAM=false` 以保留已验证的骨架输出；不启动底盘、不发布 `/cmd_vel`。已通过 Bash 语法、ShellCheck、模拟进程生命周期和模拟 SSH 调用检查。
-- 新增并已安装 `roscar-route-a.service` 与 `scripts/install_route_a_autostart.sh`，用于 Jetson 开机自动启动方案 A，并在前台进程异常退出后延迟 5 秒重启。服务固定使用 `wheeltec` 和 `/home/wheeltec/ROSCAR`，保持 `ROS_DOMAIN_ID=182`、`RGB_STREAM=false`；手动入口会识别 systemd 服务，避免重复启动。
-- 2026-09-15 实际部署结果：同步白名单已加入 `deploy/systemd/`；Jetson 服务为 `enabled/active/running`、`NRestarts=0`，骨架、正式 astra 适配器和 Foxglove Bridge 均在其 cgroup 内。8765 从 Mac 可达，五个感知话题存在，`TargetState` 为真实 Astra 的 SEARCHING，`/cmd_vel` 不存在。尚未为验收而重启整车，因此“重启后自动拉起”目前依据 systemd enabled 状态，未做断电重启验证。
-- 2026-09-15 用户将范围扩展到无避障人体跟随。`astra_body_adapter` 新增默认禁用的 `person_follower`，将已验证 `TargetState` 转换为 `/cmd_vel`；仅 TRACKING+有效+未超时时动作，2.0 m 目标距离、0.15 m/s 前进上限、0.5 rad/s 转向上限、不倒车。Jetson 已构建并运行21项逻辑测试；底盘与跟随以临时用户服务运行，并执行过1秒 0.15 m/s 的受限直行指令及后续零速度。未由远程日志证明实际位移，不得描述为完整实车跟随验收；当前无避障，且 STM32 指令丢失保护仍需独立验证。
-- Foxglove 掩码“无消息”诊断：在线 `/bodylist` 约 29.6 Hz、`/perception/body_mask_image` 约 27.1 Hz，服务和链路完整；当前客户端 Image 面板主题为空，手动选为 `/perception/body_mask_image` 后立即显示并由 foxglove_bridge 建立订阅。此刻 `Bodylist.count=0`，所以画面为黑色。`astra-layout.json` 已补当前面板字段 `imageMode.imageTopic`，保留旧 `topic` 兼容字段。
-- 叉腰未识别在线诊断：正式 adapter 已加载放宽参数 20/160/20 mm、10 帧 3 票，功能处于开启状态；采样 `Bodylist.count=0`，所以本次失败发生在 SDK 人体/关节检测之前，无法进入叉腰条件判断。检查时另发现独立手动进程 `person_follower(enabled=true)` 和厂商 `wheeltec_robot` 使 `/cmd_vel` 出现，已停止两组进程并刷新 ROS 发现；复核仅余方案 A 三节点，`/cmd_vel` 为 Unknown topic，A 服务保持 active。不得再次把控制节点混入感知验收。
-- 用户随后要求恢复最初叉腰条件。默认值已回退为厂商等价 50/100/50 mm、1 帧 1 票；本机 7 个逻辑测试通过，Jetson 两包原生 Humble 编译成功，直接 unittest 共 21 项通过（其中叉腰状态机 7 项）。A 服务已重启并实查参数生效，`/cmd_vel` 不存在。重启后 15 秒 388 帧 Bodylist 全部 count=0；USB 仍识别 ASTRA S，只有 bodyreader 占用，SDK 报 0x500007c9 Invalid license。该提示过去与成功骨架输出并存，当前不能单独认定为根因；锁定阈值不参与 SDK 骨架生成。
-- 用户现场叉腰时连续监视两轮各 60 秒：第一轮 1785 帧中 365 帧有人，第二轮 1757 帧中 641 帧有人，最大均 1 人；人体 ID 由已锁定的 210 丢失后变为 161、3、171，未重新 TRACKING。有关节的帧主要不满足原始条件中的肩高手 50 mm，手肩横差也偶尔超过 100 mm。结论是人体骨架间歇输出和 ID 跳变为首要问题，严格原始条件进一步降低重新锁定机会；不是叉腰功能未开启。
-
-- 2026-09-15 B 方案按用户要求先仅本机推进：实现 YOLO11n/ByteTrack 后端、显式中央目标锁定/释放、轨迹 epoch 防重置误接、配准深度躯干统计及 Foxglove 图像/目标球。相机配准必须人工确认，默认 depth_registered=false。详细输入与验收边界见 docs/方案B实现与验收.md；不部署或切换小车 A 服务。用户收窄范围前远端创建过 .venv-yolo，pip 下载超时退出，未完成应用依赖安装，未停止 A。
-
-- 2026-09-15 B 本机验证完成：Linux ARM64 Humble 8 包编译（8.58s），A/B 逻辑、合成 RGB-D 与 A 适配器、14 项语音逻辑、A/B/demo/非法路由回归通过；本机 Python 3.12 的真实 yolo11n 权重哈希、CPU 两帧空图推理、ByteTrack 调用与 reset 通过。不是 Jetson GPU、真实相机配准或真人 B 验收。支持 yolo_python 指定 ABI 匹配的 ROS 虚拟环境解释器，默认仍要求显式模型和配准确认。
-
-- 2026-09-16 本地已同步远端 main 合并提交 `cb0b87a`（#2，Astra 跟随控制）；`main` 与当前 `codex/route-b` 均指向该提交，本地未提交的 B 实现和 A 调整完整保留。三处文档冲突已合并，叉腰默认继续 50/100/50 mm、1 帧 1 票；21 项 A 锁定/跟随逻辑测试通过。本轮仅同步本地 Git，未部署或启动车辆节点；同步前 stash 保留作备份。
-
-- 2026-09-16 已从 `909123d` 创建分支 `a` 并实现新 A 红色目标路线：独立 red_object_tracker 使用双区间 HSV、最大红块三帧锁定、时序关联、丢失立即失效及一秒后重新搜索、配准掩码深度测距。`route_a.launch.py` 和一键管理默认红色感知，原 `route:=astra` 及骨架脚本保留，B 未改。配准、串口与运动默认关闭；没有本轮远端访问或部署。
-- 新 A 复用 person_follower，新增 expected_source 和观测/发布/测量年龄校验，拒绝模拟数据。可选底盘通过 `scripts/build_chassis.sh` 构建到独立 chassis_install，保留原三个 COLCON_IGNORE；迁入驱动两个源文件已加固，不再是原样副本，SOURCE_MANIFEST.json 保留初始来源哈希。基本帧发送限幅、命令/回传超时停车、发布者数量检查、串口进程锁、20 ms 读取超时及滑动重同步；不注册未验证扩展命令，退出只发基本停车帧。
-- 本机 Linux ARM64 Humble 最终验证：9 个主动包编译 7.38 秒，可选串口 3 包 12.5 秒；53 项算法/控制/语音逻辑测试、真实 C++ 驱动伪终端收发与合成红色 RGB-D 控制闭环、A/B/red/demo/非法 route 及 A 启动退出检查通过。日志 `artifacts/route-a-red-test-final.log`。厂商 serial 库仍有既存 signedness/unused 编译警告，不影响本次构建。Foxglove 新布局 `foxglove/red-layout.json`；具体参数和边界见 `docs/方案A红色物体跟随.md`。本轮仅依据历史合并记录整理部署状态，未核对在线文件，不能称与实际部署完全一致。
-- 2026-09-16 红色 Foxglove 视频补齐：`/perception/color_image` 原样转发输入彩色帧，`/perception/detections_image` 输出 bgr8 检测框视频；两者保留输入 header，red-layout 上方并排显示。视频检测与深度同步解耦，缺深度/配准时也显示候选框，TargetState 仍 NOT_READY。RGB-only ROS 测试已验证像素、header、黄框及无运动；本机 ARM64 Humble 构建与闭环回归见 artifacts/route-a-video-test.log。未部署或更改在线 Foxglove。
-- 2026-09-16 一键启动收尾：`启动方案A.command`、remote/manager/runner 统一提示红色路线、原始/画框话题、red-layout 路径和上位机运动开关。远端缺新版 runner 或 active systemd 仍指向骨架时明确报错，不伪报红色已启动。Bash/ShellCheck、模拟 SSH 与新旧 systemd 检查通过；未连接或更新小车。
-- 2026-09-16 新增 Jetson 总入口 scripts/start_project.sh，默认统一启动相机、新 A/Foxglove、语音；底盘/运动显式开启，缺车型/串口/环境时报错。Ctrl-C 或任一子模块退出清理整组，日志 artifacts/project；旧 A systemd active 时拒绝争抢相机。相机脚本使用厂商 astra.launch.xml 固定 camera namespace、开启彩色/深度；配准仍须现场验证。Bash/ShellCheck 和配置拒绝检查通过，未部署或实机启动。
-- 2026-09-16 新增 RuntimeMetrics，红色节点 /perception/performance 与跟随器 /control/performance 默认每秒汇总 FPS、彩色/RGB-D 回调平均与 P95 耗时、观测年龄和有效控制延迟。空样本 NaN、空窗口零 FPS，样本缓冲有界；PERFORMANCE_ENABLED=false 或 launch performance_enabled:=false 重启关闭。Foxglove red-layout 底部增加三组性能图表。ARM64 Humble 构建、指标/视频/控制闭环及原 A/B/语音回归通过，日志 artifacts/performance-test.log；未部署、未量化 Jetson 统计开销。保留已有未提交的空串口参数修复，本轮未远端应用。
-- 2026-09-16 新增 `scripts/chassis_motion_smoke_test.sh`：独立启动底盘驱动，使用隔离 ROS 域并要求显式车型；默认仅验证串口回传，`--move` 才由唯一 `/cmd_vel` 发布者执行短直行脉冲，随后连续归零并关闭驱动。三套底盘包已在 Jetson `/home/wheeltec/ROSCAR-red` 原生构建成功；按照片确认的 `mini_akm` 收到约 11.337 V 回传。0.08 m/s、1 秒测试的里程计反馈峰值约 0.088 m/s 并回零，远程未肉眼观察车身位移；测试后驱动退出、串口释放，实车测试状态见 WORKLOG.md。
-- 2026-09-16 已将分支 `a` 的红色目标跟随部署到 Jetson `/home/wheeltec/ROSCAR-red`。为释放相机停止旧 `roscar-route-a.service`（服务仍 enabled，停止后因旧脚本退出码显示 failed）；以 ROS 域 182 启动 Astra 注册深度、红色跟踪、Foxglove、`mini_akm` 底盘和 person_follower。实测相机彩色/深度同为 640×480 且 optical frame 一致，TargetState 为真实 `red_object`、约 0.03 s 新鲜度；底盘电压约 12.03 V，`/cmd_vel` 恰有一个发布者和一个订阅者。跟随参数已动态设为 enabled=true；当时无红色目标，复核速度全零。现场红物体运动效果仍待用户确认，且该路线无避障。
-- 2026-09-16 按用户要求暂停跟随工作、只处理语音。板上独立启动 wheeltec_mic_wake、xfyun_asr、voice_command_router、deepseek_chat、xfyun_tts，麦克风串口打开。确认默认 PulseAudio 错投板载声卡；USB 播放设备为 `plughw:CARD=Device,DEV=0`，测试音和讯飞中文 TTS 均由用户确认可听。修复 ASR 的 1 ms 接收轮询超时泄漏到下一帧发送、导致 Wi-Fi 下 `write operation timed out`；板上构建及 5 项测试通过，真人连续完成“你是人类吗”“你好吗”两轮唤醒→ASR→DeepSeek→TTS。`run_voice_assistant.sh` 默认开启 TTS，可用 `VOICE_TTS_ENABLED=false` 关闭。蜂鸣器继续关闭，不修改跟随代码或参数。
-- 2026-09-16 16:19 左右用户授权只读上车核对坐标：在线目录为 /home/wheeltec/ROSCAR-red，相机/红色节点 depth_registered=true、640×480 RGB 与16UC1深度均使用 camera_color_optical_frame。12秒240条TargetState中31条有效、182条depth rejected、其余LOST/SEARCHING；最大红块多数采样深度全零，全图有效深度约23–24%。后续6秒122条全部无有效位置。不能称稳定准确坐标；偶然掩码测距约1.107m未经物理真值核验。发现 person_follower enabled=true、12秒读到5条非零cmd_vel，已告知用户，未更改开关/部署/启动节点。深度CameraInfo.K有NaN而P有限，彩色K/P有限，需进一步核验标定及真实配准。
-- 2026-09-16 用户更换红纸板后复测：已将在线 /person_follower enabled 设为 false 并验证301条cmd_vel全零。15秒302/302条TargetState有效、ID red:17稳定，300条Marker ADD，frame=camera_color_optical_frame；中位XYZ约(0.0504,-0.0455,1.4020)m，Z窗口内为1.402m。新目标下坐标稳定恢复，未改过滤/配准算法。物理真值待用户量距，不能把发布稳定等同绝对准确。
-- 2026-09-16 用户明确要求打开跟随，已在线设置 /person_follower enabled=true 并读回确认。开启前红色目标red:22坐标有效、距离约1.402m、偏角0.0184rad且速度为零；开启后抽样速度仍为零，符合当前2m保持距离和偏角死区。未更改限速/距离/源码，非完整实车跟随验收。
-
-- 2026-09-16 用户要求超过1m跟随：FollowConfig默认目标距离改为1.0m、距离死区0，保留0.15m/s前进和0.5rad/s转向上限、不倒车。在线 /home/wheeltec/ROSCAR-red 定点修改并原生编译 astra_body_adapter 成功，停旧栈后在 tmux roscar-red-1m 中以运动关闭重启，读回新参数后恢复 enabled=true。抽样有效红色目标水平距离1.000526m、cmd_vel.linear.x约0.000351m/s；仅证明指令链路，不证明实际位移。1m按相机测得水平距离判断，先前约8cm测距偏差未校正。
-- 1米阈值回归：本机ARM64 Humble 9+3包构建、控制边界、PTY真实驱动/合成红色闭环及A/B/语音回归通过，见 artifacts/follow-1m-test.log；启动默认运动仍关闭，本次在线enabled=true为运行期设置。
-
-- 2026-09-16 用户进一步要求30cm跟随：共享FollowConfig默认目标距离改为0.30m（距离死区仍0），在线ROSCAR-red原生构建完成并重启至tmux roscar-red-30cm；读回0.3/0.0及初始disabled后恢复enabled=true。cmd_vel抽样前进0.15m/s、转向0，仅证明指令输出。启动默认运动仍关闭，测距偏差未校正。
-- 本机Linux ARM64 Humble完整回归通过：9个主动包与3个底盘包编译、真实驱动PTY和红色RGB-D闭环、A/B/red/demo/非法路由、视频/性能及语音测试，日志artifacts/follow-30cm-test.log。最小审查和git diff --check通过。
-- 2026-09-16：新增 `ros2_ws/src/radar_vendor/`，暂存厂商毫米波/激光雷达包；默认 `COLCON_IGNORE`，依赖、型号、串口和实机行为尚未验证。
-
-- 2026-09-16 雷达迁入复核：`ros2_ws/src/radar_vendor/` 已完整包含厂商 `wheeltec_radar/` 与 `wheeltec_lidar_ros2/` 下六组目录、7个ROS包；238个厂商文件逐一比对一致，现有239项清单（含本地README）哈希通过。无需重复复制，保留默认COLCON_IGNORE；本轮未编译、部署或启动。
-
-- 2026-09-20 用户要求雷达实际融入 ROS，并确认型号 N10P。本机接入 lslidar_driver 的 N10Plus 配置（串口 460800、10 Hz），新增 build_radar.sh 独立覆盖工作区、run_radar.sh、radar.launch.py 和 with_radar:=true 组合入口；默认现有感知不启用雷达。输出 /scan、/radar/points、/radar/status；安装 TF 默认关闭，只有确认实测外参才发布。未融合避障或车辆控制。
-- 本轮 9 个主动包与 lslidar_msgs/lslidar_driver 两包在 Linux ARM64 Humble 编译通过；真实驱动读取伪串口 N10Plus 108 字节合成帧，扫描/点云及左侧 1m、其余 2m 方向检查通过，健康状态、未标定 TF 拒绝及 A/B/red/demo/非法路由回归通过。修复厂商 X10 扫描 atan2(-y,x) 与同 frame 点云不一致问题，原始哈希保留，local_modifications 记补丁。日志 artifacts/radar-test.log；COLCON_IGNORE 保留，其他雷达包未启用。未 SSH/部署或读取实物，默认 /dev/wheeltec_lidar 仍需现场确认；详见 docs/N10P雷达接入.md。
-
-- 2026-09-20 用户要求补齐控制保护代码：新增主动包 motion_guard，person_follower 改发带时间戳的 /control/cmd_vel_request，由 guard 作为正式链路唯一 /cmd_vel 出口。默认 PERCEPTION_ONLY；尺寸、雷达安装和停车模型均有独立确认开关，未确认仅阻止运动，不改变感知。显式 arm 后方可动作，近障/目标或扫描或请求失效/TF 缺失/重复发布者触发 FAULT，恢复数据与重启均不自动续动。stop/disarm 服务发零回待命。
-- 保护采用包围车体并增加反应/刹车距离的全方向保守圆形包络，覆盖转弯和指令突变；默认未知回波不作为通行证。雷达 TF 按扫描时刻查询、仅支持水平二维安装；A 观测时间未知保持兼容。现有底盘命令与反馈超时继续保留。新的受保护组合入口默认跟随距离 1m，旧 FollowConfig 默认值未修改。
-- 新增 record_follow.sh / replay_follow.sh，回放域174、本机且仅白名单话题，速度重映射到 /replay/cmd_vel。新增 6 项纯保护测试、ROS 服务/故障锁存+真实 C++ 底盘伪串口测试、真实 rosbag 隔离回放测试。10 个主动包与 3 个底盘包本机构建通过，新增专项均通过，详见 artifacts/motion-guard-test.log。测试中的 legacy 红色跟随/串口回归使用明确标记的测试专用桥，正式启动只能经 guard。未 SSH/部署/启动车辆；停车模型和传感器覆盖仍需实车验收。
-
-- 2026-09-20 用户要求接入 SLAM、Nav2、自动绕障及 Foxglove。本机新增 navigation_bringup（第11个主动包），提供 SLAM Toolbox 建图、AMCL 已有地图定位、NavFn/DWB、观测时刻 TF 人体留距目标和串行取消/更新；模式互斥，速度统一经 motion_guard，默认不运动、不启底盘、不部署。
-- 新增 odom_tf 平面桥修正厂商 odom.position.z 存航向的问题（只影响 TF，不改原消息）；有 EKF 时必须禁用该桥。外参占位不发布，未确认标定不进入导航跟随。原 A/B 感知默认入口不变。Foxglove 地图/代价地图/路径/导航状态布局与录包隔离回放已补齐；实际客户端和实车导航仍待验收。完整启动与标定边界见 docs/导航与自动绕障.md。
-- 导航最终本机验收：11 主动包构建，真实 SLAM 地图、NavFn 障碍绕行路径、BT/DWB 原始速度、map_server/AMCL 定位输出以及导航桥故障/目标ID/停走状态测试通过；完整旧功能与真实驱动 PTY、rosbag 隔离回放回归通过。日志 artifacts/navigation-test.log、artifacts/navigation-regression.log；均为合成输入软件测试，不是实车自主导航成功。
-
-- 2026-09-20 用户要求审查当天新增代码并修复：已修复 SIGTERM/重复信号停车清理、跟随请求 frame 写死与红色目标 frame 未透传、性能开关漏传、短暂 TF 到达延迟误锁存、导航状态类型校验、雷达健康计时暂停，以及构建/同步遗漏。保护新增最小量程盲区必须位于车体内的校验；未确认参数仍不影响原感知。审查清单见 docs/2026-09-20代码审查.md；本轮仅本机，无远端/硬件操作。
-- 本轮修复最终验证：导航、原功能完整回归、雷达专项全部退出码0；11主动包、3底盘包、2雷达包构建及真实驱动PTY验证通过。新增SIGTERM最终零速/重复信号清理、TF短延迟与持续缺失、盲区、错误状态类型、暂停ROS时钟等回归通过。日志 artifacts/review-navigation-final.log、review-regression-final.log、review-radar.log；结构/配置/ShellCheck/同步单测及最小复审通过。
-
-- 2026-09-20 用户再次明确 B 方案仅本机完善。本轮新增只读 `scripts/check_rgbd_input.py` 与共享 `input_contract.py`，输出帧率、缺流/陈旧状态、时间差/消息年龄、内参和全图深度有效率 JSON；`metadata_pass` 仅表示格式/时间/解码预检，`registration_verified` 始终 false。正式 B 节点同步加强 P 矩阵检查。Linux ARM64 Humble 8 包编译（7.26s）、21 项 A、11 项 B、14 项语音逻辑、A/B 合成及路由回归全部通过；未访问或部署小车。厂商源码发现配准设置失败可能仍标 aligned frame、OpenNI 图像使用回调时刻打时间戳，后续必须现场另验配准/同步。详见 docs/方案B实现与验收.md。
-- 2026-09-20 用户选择 YOLO26s 检测版并要求官方预训练权重/加速推理。已从 Ultralytics assets v8.4.0 下载 yolo26s.pt（20,422,725 字节），与官方 digest 的 SHA-256 `646f8bc3fe0a656803d95c294f7852321748cb29d13466a1af8862e2db384a1b` 一致；模型准备脚本默认选该权重，保留 YOLO11n 基线。Ultralytics 固定 8.4.156、thop 2.1.6，B 默认 `nms_free=true`（nms=False）和固定方形输入，继续 ByteTrack/相机深度。Mac 真实权重空图与官方 bus.jpg 四帧跟踪通过；不是现场真人/遮挡验收。TensorRT FP16 导出入口 scripts/export_yolo26_engine.py 已准备，默认仅计划，--execute 仅允许目标 Jetson，engine 尚未构建。仍仅本机，未访问或部署小车；8 包 Humble 编译、48 项逻辑测试、A/B 合成及路由回归通过。
-- 2026-09-20 用户要求补齐 B 的受控并发与真实 tf2 三维变换，并强调未标定不能影响既有功能。跟踪器改为 2 线程 ROS executor + 单一工作线程顺序图像转换/YOLO/ByteTrack/测距，回调状态用 RLock 保护。独立 target_transform 只派生 target_state_base/target_marker_base，原光学 target_state、图像、Marker 与锁定接口不变。camera_mount.yaml 用零平移/单位四元数占位，extrinsics_calibrated=false、publish_mount_tf=false，不把占位 TF 写入现有树；标定缺失只让新 base 位置无效。tf2 按 observation_stamp 非阻塞查询，base 偏角左正，旧光学偏角右正，禁止直接把新 base 话题接给旧光学 follower。Linux ARM64 Humble 8 包编译（7.28s）、48 项逻辑、TF/并发专项及完整合成/路由回归通过，包含未标定时原 TRACKING/测距/图像/Marker 正常的断言。仅本机，实际安装外参和实机时延仍未验收。
-
-- 2026-09-20 本机代码审查见 `docs/代码审查-2026-09-20.md`：确认跟随节点未拒绝模拟目标、仅按接收时刻判断新鲜度（均本机拦截速度输出复现），可选 GPIO 禁用参数在初始化后失效（假 GPIO 复现）；另发现厂商 arm_cmd 数组无长度检查、A 服务重启退避期可重复手动启动。均待修复，本轮未改业务代码、未部署或启动车辆。B 未标定兼容、TF 与并发专项测试通过。
-
-- 2026-09-20 用户授权全部修复审查问题：R1–R5 和两项串口遗留问题已本地修复。跟随拒绝模拟/未知来源与过期发布/观测，保留 A 未知传感器时间戳契约；GPIO 禁用/退出收尾改为定时器；A 服务安装后统一由 systemd 管理，手动生命周期加 flock；机械臂输入检查及 10 字节发送、安全帧尾均修正。8 主动包编译、48 逻辑测试和新增控制/GPIO/生命周期回归、既有 TF/并发/A/B/路由回归通过。另补齐容器依赖并首次在本机独立副本编译串口 3 包，通过真实回调串口替身 ASan/UBSan 检查；COLCON_IGNORE 保留，扩展固件支持未确认，无部署/实机验证。SOURCE_MANIFEST 原哈希保留，local_modifications 记录本地补丁哈希。
-
-- 对外 ROS 2 入口为 `ros2 launch roscar_api api.launch.py`，默认 IDLE/运动关闭/不启硬件。接口手册 `docs/ROS接口使用文档.md`；外部速度只发 `/chassis/cmd_vel`，模式服务 `/control/set_mode`，由唯一 motion_guard 输出 `/cmd_vel`。禁止与已有包含 guard 的组合入口重复启动。检测列表沿用同步 RGB-D，未跟踪框不参与目标锁定。
-- V5.1 语音入口保留 V5 的本地控制与 DeepSeek 结构化控制工具，但不再声明或接受蜂鸣器动作；`voice_assistant.launch.py` 不启动蜂鸣器适配节点。独立 `voice_command_router` 包内的蜂鸣器解析与 GPIO 源码保留，历史条目中关于语音蜂鸣器的描述不代表当前入口行为。
-- 当前正式 `/home/wheeltec/ROSCAR-current` 的语音入口默认为本地 Qwen3-ASR 0.6B INT8、Silero VAD 连续收音、固定规则控制和本地 TTS；不启动 Ollama。路由器独占语音会话，首条明确运动口令自动请求模式和授权，必须读回 guard 的 `ARMED` 状态才发速度。`CONTINUOUS_ASR=false` 回退旧逐轮本地收音，`ASR_BACKEND=xfyun` 回退讯飞识别。离线依赖在 `/home/wheeltec/ROSCAR-offline`；部署和回退见 `docs/连续语音控制与回退.md`。
-- C深度地面拟合（`floor_fit_enabled`，发布`floor_plane`）与动态重力（`pose3d_up_source=floor|tf`）、统一定位实测地面（`floor_plane_enabled`）默认全部关闭；实测地面只作逐帧证据，替代而非叠加标定平面上的单目双踝，按完全相同时间戳匹配，永不自动置任何`*_confirmed`。动态来源缺失时本帧退二维且不复用旧值，横滚超限二维未知，相机转动重置二维像素下坠参考。见`docs/方案C统一定位与三维姿态.md`。
+- C：跌倒检测处于离线评估阶段。10-10 按车载机位（镜头离地 27 cm、俯仰 15.1°）重拍并人工标注 20 次跌倒、19 个反例动作；高度线索及可选开关的复评见 `docs/跌倒检测评估记录.md`，按代码现状的逻辑见 `docs/跌倒检测整体逻辑.md`。C 尚未在 Jetson 上做真人或跌倒实测，现场项见 `docs/现场实测要求20261008.md`。
+- B：Jetson 上 YOLO26s/ByteTrack 有真人在线检测；RGB-D 配准、安装外参和绝对测距精度待验收。
+- 语音：正式入口为本地 Qwen3-ASR + Silero VAD + 固定规则 + 本地 TTS，见 `docs/语音入口与回退.md`。
+- 底盘串口已在 Jetson 收发里程计；N10P、motion_guard、导航和云台桥接有软件与本机测试，实车运动、避障和云台硬件均未验收。
 
 ## C 路线入口约定
 
@@ -147,22 +28,42 @@
 - Gemini 使用独立固定版本驱动及设备自身标定，不继承 Astra S 临时内参。要求明确序列号与标定文件，物理配准和安装外参分别确认；不能只改 frame_id。
 - C 单目地面定位为独立 `ground_localizer`：输出脚下接地点，`target_state_ground.source=yolo_ground`，不混入 `yolo` 光学目标或卡尔曼；安装外参与地面平面须分别确认，默认 NOT_READY；身高先验不是实测个体身高。设计和边界见 `docs/方案C实现与验收.md`。
 - 骨架/跌倒首版只发布人体状态与可视化，不接语音或运动。相机直立未确认最多疑似；静态躺卧不补报跌倒。新增入口及边界见 `docs/方案C实现与验收.md`。
-- 跌倒鲁棒开关 `pose_gap_pause`/`pose_handover_s`/`pose_confirm_lying_only`/`pose3d_knee_fallback` 与无骨架高度线索 `height_fall_enabled`（及其可选项 `height_lost_hold_s`/`height_sit_hold_s`/`height_side_edge_px`，0 为关）默认全关；高度线索需重力与地面均确认才可确认，否则最多疑似，只写 detail。默认值须经标注录像 `scripts/evaluate_falls.py` 复评后再定，见 `docs/跌倒检测优化20261009.md`。离线回放的相机几何用 `scripts/estimate_camera_geometry.py`（消失点重力 + 站立双踝高度，反光地面不能用深度地面拟合），结果仅诊断，不得据此置任何 `*_confirmed`。
+- 跌倒鲁棒开关 `pose_gap_pause`/`pose_handover_s`/`pose_confirm_lying_only`/`pose3d_knee_fallback` 与无骨架高度线索 `height_fall_enabled`（及其可选项 `height_lost_hold_s`/`height_sit_hold_s`/`height_side_edge_px`，0 为关）默认全关；高度线索需重力与地面均确认才可确认，否则最多疑似，只写 detail。默认值须经标注录像 `scripts/evaluate_falls.py` 复评后再定，见 `docs/跌倒检测评估记录.md`。离线回放的相机几何用 `scripts/estimate_camera_geometry.py`（消失点重力 + 站立双踝高度，反光地面不能用深度地面拟合），结果仅诊断，不得据此置任何 `*_confirmed`。
+
+## C 深度融合、定位与三维姿态
+
+- C 默认 `fusion_enabled=true`，统一关联当帧关节和区域真实深度；关节缺失保持 NaN。目标是框中心射线上的虚拟代表点，不是骨盆或地面点，后续地面定位不得直接混入同一观测。`pose.yaml` 中关闭融合可恢复原 C 路径；B 区域测距保持兼容。参数与验收边界见 `docs/方案C实现与验收.md`。
+- C 单目地面定位默认要求双踝一致，禁止无接地证据的框底回退。身高先验默认关闭，需绑定已确认的 epoch:track_id 且持续站立；UNKNOWN 不套站立先验。预测发布必须按真实测量年龄复核保持期限。
+- C ReID默认关闭；显式REID_ENABLED/REID_MODEL_PATH启用本地OSNet ONNX及校验文件，不自动下载。另需REID_LOCK_ENABLED=true才接入身份锁定恢复：禁用邻框接续，连续新鲜身份确认后才关联当前轨迹，歧义/失效保持LOST，释放清除身份。持久身份与epoch:track_id分离，不转移身高先验或旧轨迹滤波状态。入口与测试见docs/方案C身份ReID接入与验收.md。
+- C统一定位使用独立 `/perception/person_positions` 与 `target_state_unified`，参考点为双踝中点的地面投影；不把原框中心代表点混入。原躯体深度需先通过同轨迹近期确认的关系换算为脚下参考点，才与脚部观测作保守相关融合；映射有龄期且不跨身份。各来源必须有一致性和新鲜度；未确认安装/地面不发布有效统一位置，身高先验不进入统一输出。
+- C三维姿态仅使用真实有效关节；`pose3d_gravity_confirmed` / `pose3d_ground_confirmed` 默认false，依据不足降级二维并标注basis，异常几何未知。二维时序持续更新，三维时序独立保存，短时缺深度暂停确认计时、超时仅清三维候选；不跨像素/米搬用基线。已确认三维事件需三维直立证据恢复。参数及边界见 `docs/方案C统一定位与三维姿态.md`。
+- C深度地面拟合（`floor_fit_enabled`，发布`floor_plane`）与动态重力（`pose3d_up_source=floor|tf`）、统一定位实测地面（`floor_plane_enabled`）默认全部关闭；实测地面只作逐帧证据，替代而非叠加标定平面上的单目双踝，按完全相同时间戳匹配，永不自动置任何`*_confirmed`。动态来源缺失时本帧退二维且不复用旧值，横滚超限二维未知，相机转动重置二维像素下坠参考。见`docs/方案C统一定位与三维姿态.md`。
 
 ## 云台约定
 
 - 相机云台接口见 `docs/云台跟随设计与串口协议.md`（草案，未实现；含坐标系、数据流、云台与底盘运动方法）：云台 yaw 为相对车体关节角、pitch 相对重力，人位置估计在 `odom`；底盘跟随目标位置而非云台角。pan 角无可信来源时不得发布相机到车体 TF，云台转动后不得再用光学系偏角直接转向。跟随距离暂定 1.9 m（后轴起算，整人入画），tilt 以头脚居中为准；控制主输入为躯干深度，脚部深度缺失（深色裤子）时由统一定位退到躯干投影/单目双踝。云台桥接为独立入口 `gimbal_bridge/gimbal.launch.py`，`gimbal_mount.yaml` 未确认时不发布云台 TF，`allow_unconfirmed_mount` 仅限 `mock:=true` 仿真；关节时间戳必须是 MCU 采样时刻换算值。
 
-## Mac C 画面调试入口
+## Mac C 调试、录制与离线评估
 
 - `.venv/bin/python scripts/preview_pose_mac.py` 打开本机USB相机的框、骨架和二维状态预览，默认camera=0，可显式`--camera`选择；使用本地Pose模型和pose.yaml，不自动下载。它没有同步深度、ROS、ReID或车辆输出，不作为三维/实车验收。按Q或关闭窗口退出。
-
 - `scripts/analyze_gemini_recording.py RECORDING --output OUTPUT`用于Mac采集格式离线回放，默认每6帧推理一次，按采集时间驱动二维规则。主机接收时间最近邻配对仅作诊断；没有曝光同步和安装标定不能声称真实三维姿态/地面验收。
-
 - `.venv/bin/python scripts/charuco_calib_mac.py --square 实测米 --marker 实测米` 用 7×5 DICT_5X5 ChArUco 检查 Gemini 出厂彩色内参（S保存、C对比、Q退出），不含深度配准或安装外参，不能据此设置 `extrinsics_calibrated`。
 - `scripts/charuco_mount_mac.py --square --marker --board-x --board-y` 用地面平放 ChArUco 求 `base_footprint`→彩色光学系安装外参；只输出报告，确认开关须在实拍复核后人工修改。
-
-- Mac 录制：在“终端”运行 `.venv/bin/python scripts/record_gemini_mac.py <段名>`（SDK 深度 zlib 无损压缩 + UVC 彩色，主机时间配对非曝光同步；彩色默认 2592×1944 裁剪缩小到 640×480 避开原 640×480 模式偏蓝，`device.json` 的 `color_intrinsic` 为换算值、出厂值存 `factory_color_intrinsic`，换相机须重跑 `scripts/gemini_color.py measure`）；标注 `scripts/label_recording.py <录像目录>`（可先用 `scripts/fall_candidates.py` 预填 `notes=auto` 候选，未确认的不计入评估）。共享读取/汇总在 `scripts/gemini_recording.py`，分析脚本同时支持 `.depth` 与 `.depth.z`。重拍安排见 `docs/重拍视频要求20261010.md`（10-08 安排为动作来源）；每天开录前用 `--set-camera 高度cm 俯仰° 横滚°` 记录相机架设，各段自动写入 notes.md。
-
+- Mac 录制：在“终端”运行 `.venv/bin/python scripts/record_gemini_mac.py <段名>`（SDK 深度 zlib 无损压缩 + UVC 彩色，主机时间配对非曝光同步；彩色默认 2592×1944 裁剪缩小到 640×480 避开原 640×480 模式偏蓝，`device.json` 的 `color_intrinsic` 为换算值、出厂值存 `factory_color_intrinsic`，换相机须重跑 `scripts/gemini_color.py measure`）；标注 `scripts/label_recording.py <录像目录>`（可先用 `scripts/fall_candidates.py` 预填 `notes=auto` 候选，未确认的不计入评估）。共享读取/汇总在 `scripts/gemini_recording.py`，分析脚本同时支持 `.depth` 与 `.depth.z`。重拍安排与交付格式见 `docs/重拍视频要求20261010.md`；每天开录前用 `--set-camera 高度cm 俯仰° 横滚°` 记录相机架设，各段自动写入 notes.md。
 - 本机合成ROS时序测试可使用`tests/monotonic_ros_clock.py`及`use_sim_time=True`，避免Colima校时回拨扰动；正式时间倒退失效保护不得因此关闭，测试须保留显式回拨与超时检查。离线回放`--reid`显式加载本地OSNet，`--cached-poses`仅复用同录像的带置信度Pose结果；汇总入口为`scripts/summarize_recording_validation.py`。
+
+## B 路线约定
+
+- B 管理入口默认 `models/weights/yolo26s-fp16.engine`，由目标 Jetson 导出；缺文件必须报错，不静默回退。显式 `MODEL_PATH=.../yolo26s.pt` 可做基线对比。
+- YOLO 三维位置使用独立恒速卡尔曼；`kalman_measurement_std_m` / `kalman_acceleration_std_mps2` 替代 `depth_smoothing_alpha`。预测必须保留真实测量年龄和超时失效。默认时间门控拒绝不一致测量（被拒不刷新测量时间），重定位须一致证据确认后干净重初始化；断流按最后一次输入（含被拒）计时，输入持续但一直被拒超过 `max_age_s` 时丢弃旧状态，新位置仍须确认；无躯干佐证的退路深度门限更严且不能单独起始轨迹。`depth_gate_enabled:=false` 恢复旧跳变重初始化。
+- 与语音并行协作时只改 YOLO 相关文件，不重启整套服务；板端验证优先使用隔离目录和独立命名空间。
+
+## 对外接口与语音
+
+- 对外 ROS 2 入口为 `ros2 launch roscar_api api.launch.py`，默认 IDLE/运动关闭/不启硬件。接口手册 `docs/ROS接口使用文档.md`；外部速度只发 `/chassis/cmd_vel`，模式服务 `/control/set_mode`，由唯一 motion_guard 输出 `/cmd_vel`。禁止与已有包含 guard 的组合入口重复启动。检测列表沿用同步 RGB-D，未跟踪框不参与目标锁定。
+- V5.1 语音入口保留 V5 的本地控制与 DeepSeek 结构化控制工具，但不再声明或接受蜂鸣器动作；`voice_assistant.launch.py` 不启动蜂鸣器适配节点。独立 `voice_command_router` 包内的蜂鸣器解析与 GPIO 源码保留，历史条目中关于语音蜂鸣器的描述不代表当前入口行为。
+- 当前正式 `/home/wheeltec/ROSCAR-current` 的语音入口默认为本地 Qwen3-ASR 0.6B INT8、Silero VAD 连续收音、固定规则控制和本地 TTS；不启动 Ollama。路由器独占语音会话，首条明确运动口令自动请求模式和授权，必须读回 guard 的 `ARMED` 状态才发速度。`CONTINUOUS_ASR=false` 回退旧逐轮本地收音，`ASR_BACKEND=xfyun` 回退讯飞识别。离线依赖在 `/home/wheeltec/ROSCAR-offline`；部署和回退见 `docs/语音入口与回退.md`。
+
+## 测试与 CI
+
 - GitHub Actions `unit-tests` 在 PR 和 main 推送时运行 `scripts/ci_unit_tests.sh`（主动包纯 Python 单测 + 录像工具，Python 3.10，无 ROS/硬件/权重/录像）；本机 `PYTHON=.venv/bin/python scripts/ci_unit_tests.sh` 同口径。通过不等于 colcon 编译、ROS 运行时或实机验证；需要 rclpy 的测试列在脚本 `NEEDS_ROS`。

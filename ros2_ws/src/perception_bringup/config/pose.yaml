@@ -61,7 +61,7 @@
     floor_max_tilt_deg: 35.0
     floor_confirm_frames: 3
 
-    # Fall-rule robustness switches from the 2026-10-09 recordings (docs/跌倒检测优化20261009.md).
+    # Fall-rule robustness switches from the 2026-10-09 recordings (docs/跌倒检测评估记录.md).
     # All off: behaviour is unchanged until labelled evaluation supports turning them on.
     pose_gap_pause: false            # missing shoulders/hips pause timers instead of clearing
     pose_handover_s: 0.0             # lost track -> one new track near/below it (falls break IDs)
