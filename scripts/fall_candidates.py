@@ -9,7 +9,8 @@ lying_start 0.5 s later, getup_start at its end (often late: kneeling is still l
 Candidates come from the detector's own signals, so a fall it never saw low is not proposed:
 the reviewer still watches the whole segment. evaluate_falls.py ignores candidates until each
 fall is confirmed (y) in the label tool; slow sit/lie-downs are deleted (x) and labelled as
-actions (b/e). Existing reviewed labels are kept; earlier candidates are replaced.
+actions (b/e). Existing reviewed labels are kept; earlier candidates are replaced, and no new
+candidate is placed over a reviewed fall or action, so reruns never duplicate ground truth.
 """
 import argparse
 import csv
@@ -121,6 +122,28 @@ def candidates(samples, spans, lead_s=.6, settle_s=.5, stable_s=1., max_wait_s=8
     return out
 
 
+def reviewed_spans(rows, seconds):
+    """(start, end) seconds of every reviewed fall (fall_onset..stand_stable) and action
+    (action_start..action_end); seconds(frame) maps a 1-based labels.csv frame to replay time."""
+    spans, fall, actions = [], None, {}
+    for row in sorted(rows, key=lambda r: int(r['frame'])):
+        t = seconds(int(row['frame']))
+        if row['event'] == 'fall_onset':
+            fall = t
+        elif row['event'] == 'stand_stable' and fall is not None:
+            spans.append((fall, t))
+            fall = None
+        elif row['event'] == 'action_start':
+            actions[row['notes']] = t
+        elif row['event'] == 'action_end' and row['notes'] in actions:
+            spans.append((actions.pop(row['notes']), t))
+    return spans
+
+
+def without_reviewed(found, spans):
+    return [c for c in found if not any(c['fall_onset'] <= b and a <= c['stand_stable'] for a, b in spans)]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('recording', type=Path)
@@ -147,6 +170,8 @@ def main():
         with path.open(newline='') as handle:
             kept = [r for r in csv.DictReader(handle) if r['notes'] != AUTO]
     rows = list(kept)
+    proposed = len(found)
+    found = without_reviewed(found, reviewed_spans(kept, lambda frame: rel[frame-1]))
     for i, c in enumerate(found, 1):
         print(f'{i:2d}  onset {c["fall_onset"]:6.1f}s  lying {c["lying_start"]:6.1f}-{c["getup_start"]:6.1f}s'
               f'  stable {c["stand_stable"]:6.1f}s')
@@ -154,7 +179,8 @@ def main():
             frame = int(np.argmin(np.abs(rel-c[event])))
             rows.append(dict(segment=segment, t_s=f'{rel[frame]:.3f}', event=event, person='A', position='',
                              direction='', notes=AUTO, frame=frame+1, host_wall_ns=colours[frame]['host_wall_ns']))
-    print(f'{args.recording.name}: {len(found)} candidates, {len(kept)} reviewed labels kept')
+    print(f'{args.recording.name}: {len(found)} candidates ({proposed-len(found)} over reviewed labels skipped), '
+          f'{len(kept)} reviewed labels kept')
     if args.dry_run:
         return
     rows.sort(key=lambda r: int(r['frame']))
