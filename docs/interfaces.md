@@ -2,7 +2,7 @@
 
 完整对外接口、字段、QoS、失败语义与 Python 示例见 [ROS接口使用文档](ROS接口使用文档.md)。新增 `roscar_interfaces/srv/SetControlMode`、`/chassis/cmd_vel` 和 `/perception/detections`；本页 TargetState 结构不变。`/control/state` 新增 `command_mode`，切换来源总是停车并解除授权。
 
-> 方案 A 在分支 `a` 改为红色目标 + 配准深度；原 `route:=astra` 保留，B 不变。最新入口、串口与本机/实机边界见 [红色方案 A](方案A红色物体跟随.md)。本轮未部署小车。
+> 历史路线：A 骨架（`route:=astra`）与红色目标（`route:=red`）已退役，资料见 [归档](archive/README.md)。C（`route:=yolo_pose`）沿用本页 TargetState，`source=yolo`；人体状态、地面与统一定位的附加话题见 [方案 C 实现与验收](方案C实现与验收.md) 与 [统一定位与三维姿态](方案C统一定位与三维姿态.md)。
 
 
 话题：/perception/target_state；消息：person_interfaces/msg/TargetState。

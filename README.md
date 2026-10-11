@@ -1,148 +1,124 @@
-# ROSCAR · 室内人体跟随感知
+# ROSCAR · 室内人体跟随与跌倒检测
 
-当前稳定版本：V5.1。本分支试验端侧语音，默认入口改为离线 ASR/TTS 和本机 Qwen3；`VOICE_BACKEND=online` 保留原讯飞/DeepSeek 路径。语音控制支持模式切换、短时运动、停止和状态查询；蜂鸣器代码保留为独立模块，不接入语音控制。部署与回退见 [离线语音部署与回退](docs/离线语音部署与回退.md)。
-当前版本：V5.1。语音控制支持 V5 的模式切换、短时运动、停止和状态查询；蜂鸣器代码保留为独立模块，不接入语音控制。
+**当前主线：C 路线**。Gemini Pro RGB-D 加 YOLO26s-pose，实现人体骨架、姿态与跌倒检测，并沿用 B 的跟踪、测距和选人契约。项目默认入口仍为 B（YOLO26s 检测 + ByteTrack）。A 骨架和红色目标路线已退役，资料在 [归档](docs/archive/README.md)。
 
-当前目标：Orin Nano Super 8GB 上的 B 人体感知、N10P 雷达、语音、底盘回传和 Foxglove。总入口不启动车辆跟随；B 的测距仍等待 RGB-D 配准实物验收。各模块验证范围见 WORKLOG。
+各模块的验证程度不同。容器编译、CI 单测、合成测试和离线录像回放都不等于 Jetson 实机或实车验收；具体证据见 [WORKLOG](WORKLOG.md)。
 
-## 对外 ROS 2 接口
+## 当前状态（2026-10-11）
 
-统一入口 `ros2 launch roscar_api api.launch.py` 默认 IDLE、运动关闭、不启动硬件。新增 `/chassis/cmd_vel`（TwistStamped）、`/control/set_mode`（IDLE/EXTERNAL/FOLLOW）和 RGB-D `/perception/detections`（全部二维候选框）；原 TargetState 保持不变。字段、QoS、中文 CLI/Python 示例见 [ROS 接口使用文档](docs/ROS接口使用文档.md)。不要与已有包含 motion_guard 的入口叠加启动。
-
-## 框架状态
-
-| 内容 | 状态 |
+| 模块 | 状态 |
 |---|---|
-| 公共 TargetState/模式服务、13 个主动 ROS 2 包、A/B/demo 启动选择 | 已建立 |
-| B 节点 | 已在 Jetson 运行 YOLO26s/ByteTrack，真人检测和临时内参三维坐标有在线样本；连续跟踪与绝对精度待验收 |
-| demo | 显式模拟数据：9 秒目标可见、3 秒丢失，用于验证消息与展示 |
-| Mac → Jetson 同步脚本、模型清单、测试脚本 | 已建立 |
-| 离线语音分支 | sherpa-onnx 流式 ASR、MeloTTS 与本机 Ollama/Qwen3；实机验收状态见 WORKLOG |
-| 原讯飞/DeepSeek 语音助手 | V5.1 已跑通；本分支通过 `VOICE_BACKEND=online` 回退 |
-| 讯飞流式 ASR/TTS → DeepSeek 语音助手 | Orin 真人语音 → 讯飞 IAT → DeepSeek 回答 → 讯飞 TTS 扬声器播报已跑通 |
-| 语音控制工具 | 支持受限运动、模式切换、停止和状态查询；不提供蜂鸣器工具 |
-| 相机与测距 | 彩色/深度 CameraInfo 已加载用户临时值；B 在线有有效 XYZ，仍需重新标定和物理量距 |
-| 底盘串口驱动 | 已在 Jetson 构建并运行，仅收发里程计；当前无速度发布者 |
-| Foxglove | 当前使用 B + 雷达布局；网口地址 `ws://192.168.100.2:8765` |
+| C 跌倒检测 | 已在 Mac 上用车载机位重拍并人工标注 20 次跌倒和 19 个反例动作，正在做离线评估与规则调整；Jetson 真人/跌倒实测未做。见 [整体逻辑](docs/跌倒检测整体逻辑.md)、[评估记录](docs/跌倒检测评估记录.md) |
+| C 定位、三维姿态、ReID | 软件已实现，安装外参、重力和地面确认开关默认关闭；ReID 默认关闭 |
+| B 人体检测/跟踪 | Jetson 上 YOLO26s/ByteTrack 有真人在线检测；RGB-D 配准、外参和绝对测距精度待验收 |
+| 语音 | 本地 Qwen3-ASR + Silero VAD 连续收音 + 固定规则控制 + 本地 TTS；讯飞可回退 |
+| 底盘、N10P、运动保护、导航 | 底盘串口在 Jetson 收发里程计；`start_robot.sh` 配置会启用受保护自动跟随（无雷达）。motion_guard、N10P、SLAM/Nav2 有软件和本机测试，实车跟随效果、避障与停车距离未验收 |
+| 云台 | 设计与串口协议草案、桥接软件（仅仿真），无硬件 |
 
-B 当前选用官方预训练 **YOLO26s 检测版 + ByteTrack**，默认免 NMS 推理；B 管理入口默认使用目标 Jetson 构建的 TensorRT FP16 engine，缺失时明确报错；三维位置使用独立恒速卡尔曼。权重准备、本机测试和导出命令见 [B 方案实现与验收](docs/方案B实现与验收.md)。
+## 快速入口
 
-具体测试结果见 [工作记录](WORKLOG.md)。容器编译通过不等于 Jetson 相机或 GPU 已验证。
-
-## 目录
-
-```text
-ros2_ws/src/
-  roscar_interfaces/    对外 SetControlMode 服务
-  roscar_api/           统一安全默认入口与四个 Python 示例
-  person_interfaces/     公共目标观测消息
-  astra_body_adapter/    A 路线真实 /bodylist 适配器
-  yolo_person_tracker/   B 路线（YOLO/ByteTrack/配准深度）
-  perception_bringup/    单路线启动与显式 demo
-  xfyun_speech/          讯飞 WebSocket 流式 ASR/TTS
-  deepseek_ros2/         DeepSeek 文本对话桥
-  voice_command_router/  语音控制路由；独立蜂鸣器源码保留但不接入语音
-  chassis_vendor/       原厂串口驱动与依赖，COLCON_IGNORE 暂不编译
-scripts/                 构建、检查、同步与模型准备
-foxglove/                连接说明和面板计划
-models/                  权重来源、哈希；大文件留本地
-data/                   录像目录与实验元数据
-deploy/                 容器测试与部署约定
-docs/                   架构、接口、开发计划、原厂资料索引及流程图
-JP6.2_wheeltec_ros2_src_20260903/  本地厂商参考，排除在普通 Git 与日常同步外
-淘宝信息/                 原始商品资料，本地保留
-```
-
-厂商目录保持原路径，已有文档链接继续可用。主动开发代码放 ros2_ws/src，构建时只扫描该目录，不把 114 个厂商包一次性编入新工作区。
-
-## 在已安装 Humble 的 Jetson / Ubuntu 上
+**C 路线（Jetson）**
 
 ```bash
-# 仓库根目录
-source /opt/ros/humble/setup.bash
-rosdep install --from-paths ros2_ws/src --ignore-src -r -y
-bash scripts/build_ros.sh
-source ros2_ws/install/setup.bash
-
-# 默认 B 入口未配置模型/配准时报告 NOT_READY
-ros2 launch perception_bringup perception.launch.py route:=yolo
-# 当前整机入口：Astra + B + N10P + 语音 + 底盘回传，运动关闭
-bash scripts/start_robot.sh
-# 显式启用模拟数据：route:=demo（仅测试）
+bash scripts/start_c.sh
 ```
 
-红色目标路线已退出当前启动链路；旧脚本和历史资料保留作版本记录，不用于现行部署。Foxglove 导入 [B + 雷达布局](foxglove/b-radar-layout.json)。
+`start_c.sh` 等价于 `PERCEPTION_ROUTE=c bash scripts/start_project.sh`。默认要求 Jetson 上导出的 Pose FP16 engine，缺失时报错，不会退回 detect。语音、雷达和底盘开关与 B 相同；运动默认关闭，跌倒状态不接语音或运动。Foxglove 导入 `foxglove/c-layout.json`。参数、模型准备和验收边界见 [方案 C 实现与验收](docs/方案C实现与验收.md)。
 
-另一个终端加载相同环境后检查：
+**C 离线评估（Mac）**
 
 ```bash
-ros2 topic echo /perception/target_state
+.venv/bin/python scripts/record_gemini_mac.py <段名>
 ```
 
-如需 Foxglove，先安装 ros-humble-foxglove-bridge，再在启动命令追加 `with_foxglove:=true`。当前 Wi-Fi 直连地址与 SSH 隧道备用方案见 [Foxglove 说明](foxglove/README.md)。
+上面是录制命令。标注用 `scripts/label_recording.py`，回放与评估用 `scripts/replay_falls.py` 和 `scripts/evaluate_falls.py`，本机骨架预览用 `scripts/preview_pose_mac.py`。录制与交付要求见 [重拍视频要求](docs/重拍视频要求20261010.md)。
 
-## Mac 上的检查
-
-```bash
-python3 scripts/check_project.py
-# 已有 Docker 服务时，构建真正的 Humble 测试环境并执行 ROS 运行测试
-bash scripts/test_container.sh
-```
-
-容器只挂载主动开发源码、脚本和测试。构建输出保存在容器内，结果日志保存到 artifacts/，不会运行厂商节点或接硬件。
-
-## 代码与数据管理
-
-Mac 保存代码、文档和 Git 历史，Jetson 保存运行副本并执行硬件测试。默认只做同步预览：
-
-```bash
-python3 scripts/sync_to_jetson.py --host 用户名@IP --dest /home/用户名/ROSCAR
-# 核对预览后，同一命令追加 --apply 实际同步
-```
-
-同步不会传输厂商原包、权重、录像、Git 和构建产物，也不执行远端删除。远端目录应为本项目专用目录；不同时在两台机器修改同一文件。
-
-## 文档入口
-
-- [完整方案](人体跟随感知方案.md) · [两方案对比 PNG](docs/diagrams/人体跟随两方案对比.png)
-- [架构与包边界](docs/architecture.md) · [消息接口](docs/interfaces.md)
-- [分阶段开发计划](docs/roadmap.md) · [Mac / Jetson 工作流](docs/development.md)
-- [串口代码与协议](ros2_ws/src/chassis_vendor/README.md)
-- [原厂代码索引](docs/vendor_inventory.md) · [工作记录](WORKLOG.md)
-
-仓库尚未配置代码远端。项目新增文件暂未授予开源许可证；ROS 包许可证占位为 Proprietary，不改变任何第三方代码或模型的原许可证。实际发布前由项目所有者确定许可。
-
-## 原骨架方案 A 历史联调（2026-09-14）
-
-以下为历史骨架路线记录，不属于当前启动链路。ASTRA S 深度流、真实人体骨架、叉腰锁定、质心测距、掩码和 Foxglove 展示均已实机跑通。`route:=astra` 现启动已验证的 `/bodylist` 适配器；厂商 bodyreader 仍由安全组合脚本单独启动，不包含底盘节点。SDK 授权提示没有阻止本次输出，但仍待厂商解释。详细入口与限制见 [方案 A 联调记录](docs/方案A联调记录.md)。
-
-B 方案的输入契约、依赖、锁定服务与验证范围见 [方案 B 实现与验收](docs/方案B实现与验收.md)。
-
-## 项目总启动（Jetson）
+**B 路线 / 整机（Jetson）**
 
 ```bash
 bash scripts/start_project.sh
 ```
 
-当前总入口启动 Astra、B 人体检测/ByteTrack、N10P、Foxglove 与语音；`start_project.sh` 默认不接底盘，`start_robot.sh` 还启动底盘串口收发。两者均不启动跟随，拒绝 `MOTION_ENABLED=true`。现行 `start_robot.sh` 按用户要求使用临时内参与驱动注册深度发布 B 三维坐标，精度待重新标定；运动仍关闭。布局见 [B + 雷达 Foxglove](foxglove/README.md)，日志在 `artifacts/project/`；查看选项：`bash scripts/start_project.sh --help`。
+这条命令启动相机、B、Foxglove 和语音。默认不接底盘、不启动跟随、运动关闭；`WITH_FOLLOWER=true` 时必须同时显式设置 `MOTION_ENABLED=true`。查看选项用 `--help`。
 
-总入口在小车本机运行，依赖已构建的项目与厂商相机包；不自动部署。若现有 A systemd 服务运行，先停止该服务以释放相机。默认相机原始彩色流可用于检测可视化；控制测距仍要求实际校正/配准输入，通过 COLOR_TOPIC、DEPTH_TOPIC、CAMERA_INFO_TOPIC 指定，不能把启动驱动当作配准验证。
+> **注意：`scripts/start_robot.sh` 会让车动。** 它是板上安装的整车配置：开启底盘、语音和**受保护自动跟随**（`WITH_FOLLOWER=true`、`MOTION_ENABLED=true`、`auto_arm:=true`，三项跟随确认按用户临时授权置 true，跟随距离 1 m），使用驱动注册深度和临时内参，不启动 N10P（无雷达避障）。只在清空场地、可人工急停时运行；只做感知验证时用 `start_project.sh` 或 `start_c.sh`。
 
-### N10P 雷达
+**对外 ROS 2 接口**：`ros2 launch roscar_api api.launch.py` 默认 IDLE、运动关闭、不启动硬件。外部速度只发 `/chassis/cmd_vel`，由唯一的 motion_guard 输出 `/cmd_vel`。不要与已包含 motion_guard 的入口叠加启动。详见 [ROS 接口使用文档](docs/ROS接口使用文档.md)。
 
-已接入雷神 N10Plus 驱动的独立构建和启动入口：`bash scripts/build_radar.sh`、`bash scripts/run_radar.sh`。与感知组合使用 `with_radar:=true`（默认关闭），输出 `/scan`、`/radar/points` 和 `/radar/status`；不启动底盘。端口、标定与本机测试见 [N10P 雷达接入](docs/N10P雷达接入.md)。
+## 构建与测试
 
-### 受保护跟随
+Jetson 或 Ubuntu（Humble）：
 
-跟随节点现仅发 `/control/cmd_vel_request`，最终速度由 `motion_guard` 审查后发布。`ros2 launch motion_guard follow.launch.py` 默认仅感知模式，不启动底盘/传感器或自动授权；尺寸、安装 TF、停车模型未确认时禁止运动。启动、服务和故障边界见 [motion_guard](ros2_ws/src/motion_guard/README.md)。记录与隔离回放分别使用 `scripts/record_follow.sh`、`scripts/replay_follow.sh`。
+```bash
+source /opt/ros/humble/setup.bash
+rosdep install --from-paths ros2_ws/src --ignore-src -r -y
+bash scripts/build_ros.sh
+source ros2_ws/install/setup.bash
+```
 
-导航与自动绕障代码入口：`scripts/run_navigation.sh`，支持 SLAM 建图、AMCL 地图定位、Nav2 人体目标跟随及 Foxglove 地图/路径布局。默认不启用运动。详见 [导航与自动绕障](docs/导航与自动绕障.md)。
-# C 方案入口
+Mac：
 
-新增 Gemini Pro + YOLO26s-pose 人体骨架/跌倒显示路线，显式运行 `bash scripts/start_c.sh`；默认总入口仍为 B。设备、参数、启动与本机验证边界见 [方案 C 实现与验收](docs/方案C实现与验收.md)，Foxglove 布局为 `foxglove/c-layout.json`。真人验收待下次进行，本轮未部署小车。
+```bash
+PYTHON=.venv/bin/python scripts/ci_unit_tests.sh
+```
 
-C另有可选的独立[ReID身份观察层](docs/方案C身份ReID接入与验收.md)，通过 `REID_ENABLED=true` 和本地 `REID_MODEL_PATH` 显式启用；默认关闭，不自动接管锁定或转移身高先验。
+这与 GitHub Actions `unit-tests` 同口径：纯 Python 单测，不含 ROS、硬件、权重和录像。`python3 scripts/check_project.py` 做结构检查，`bash scripts/test_container.sh` 在 Linux ARM64 Humble 容器里编译并运行 ROS 测试。三者都不能代替 Jetson 验证。
 
-C可选身份锁定恢复：在ReID启用的基础上设置 `REID_LOCK_ENABLED=true`；默认关闭，缺失/歧义保持LOST，确认后使用新轨迹自身测距。详见 [ReID接口与验收](docs/方案C身份ReID接入与验收.md)。
+同步到 Jetson 默认只预览差异，核对后追加 `--apply`；不传厂商包、权重、录像和构建产物，也不做远端删除。正式目录 `/home/wheeltec/ROSCAR-current` 上有在运行的语音服务，验证时优先同步到隔离目录，例如：
 
-C现已增加 [近远统一接地点与三维姿态增强](docs/方案C统一定位与三维姿态.md)，C入口自动加载，安装/重力/地面确认仍默认关闭；原光学目标保留，统一位置使用独立话题。
+```bash
+python3 scripts/sync_to_jetson.py --host wheeltec@192.168.1.240 --dest /home/wheeltec/ROSCAR-c
+```
+
+## 目录
+
+```text
+ros2_ws/src/
+  person_interfaces/     TargetState、PersonState 等公共消息
+  yolo_person_tracker/   B 检测跟踪与 C 骨架/跌倒、地面与统一定位、ReID
+  perception_bringup/    路线选择（yolo_pose / yolo / astra / red / demo）与 pose.yaml
+  roscar_interfaces/     SetControlMode 服务
+  roscar_api/            对外统一入口与示例
+  motion_guard/          速度保护，唯一 /cmd_vel 出口
+  navigation_bringup/    SLAM Toolbox、AMCL、Nav2
+  gimbal_interfaces/     云台消息
+  gimbal_bridge/         云台串口桥接（仅仿真验证）
+  offline_voice/         本地 ASR/TTS 语音入口
+  xfyun_speech/          讯飞流式 ASR/TTS（回退）
+  deepseek_ros2/         DeepSeek 文本桥（历史，可回退）
+  voice_command_router/  语音控制路由
+  astra_body_adapter/    A 骨架适配与 person_follower（历史路线）
+  bodyreader_msg/        厂商骨架消息（历史路线）
+  red_object_tracker/    红色目标跟踪（历史路线）
+  chassis_vendor/ radar_vendor/ wheeltec_mic*/ tts_make_ros2/
+                         迁入的厂商包，COLCON_IGNORE，独立脚本构建
+scripts/   启动、构建、同步、录制/标注/评估
+tests/     本机测试
+foxglove/  布局与连接说明
+models/    权重来源与哈希（权重不入库）
+data/      录像与外部数据集（不入库）
+docs/      方案、接口、计划；docs/archive/ 为历史文档
+```
+
+厂商原包 `JP6.2_wheeltec_ros2_src_20260903/` 和 `淘宝信息/` 只在本地保留，不进 Git，也不参与构建。
+
+## 文档索引
+
+**C 路线（主线）**
+- [方案 C 实现与验收](docs/方案C实现与验收.md)：入口、模型、参数、骨架与跌倒首版
+- [跌倒检测整体逻辑](docs/跌倒检测整体逻辑.md) · [跌倒检测评估记录](docs/跌倒检测评估记录.md)
+- [统一定位与三维姿态](docs/方案C统一定位与三维姿态.md) · [单目地面定位独立验收](docs/方案C单目地面定位独立验收.md) · [身份 ReID](docs/方案C身份ReID接入与验收.md)
+- [多源融合设计](docs/方案C多源人体感知融合设计.md) · [文献与开源项目评估](docs/方案C文献与开源项目评估.md)
+- 数据：[重拍视频要求](docs/重拍视频要求20261010.md) · [Gemini 彩色偏蓝排查](docs/Gemini彩色偏蓝排查20261010.md) · [现场实测要求](docs/现场实测要求20261008.md)
+- [云台跟随设计与串口协议](docs/云台跟随设计与串口协议.md)（草案）
+
+**公共与其他模块**
+- [完整方案](人体跟随感知方案.md) · [架构](docs/architecture.md) · [分阶段计划](docs/roadmap.md) · [开发工作流](docs/development.md)
+- 接口：[TargetState](docs/interfaces.md) · [ROS 接口使用文档](docs/ROS接口使用文档.md)
+- [方案 B 实现与验收](docs/方案B实现与验收.md) · [语音入口与回退](docs/语音入口与回退.md) · [端侧 ASR 候选实测](docs/端侧ASR候选实测.md)
+- [motion_guard](ros2_ws/src/motion_guard/README.md) · [导航与自动绕障](docs/导航与自动绕障.md) · [N10P 雷达接入](docs/N10P雷达接入.md) · [底盘物理串口协议](docs/物理串口协议说明.md)
+- [构建与部署](deploy/README.md) · [Foxglove](foxglove/README.md) · [原厂代码索引](docs/vendor_inventory.md) · [工作记录](WORKLOG.md) · [归档](docs/archive/README.md)
+
+## 许可
+
+代码托管在 GitHub `Shimmersss/ROS-CAR`。项目新增文件暂未授予开源许可证，ROS 包许可证暂写为 Proprietary；第三方代码和模型保留各自原许可。正式发布前由项目所有者确定许可证。

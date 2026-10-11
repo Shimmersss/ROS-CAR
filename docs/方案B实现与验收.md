@@ -227,7 +227,7 @@ ROS_DOMAIN_ID=182 .venv-yolo/bin/python scripts/test_yolo_live_readonly.py \
 
 ## 2026-10-08：三维位置时间门控（B/C 共用）
 
-起因见 [已有录像补充验证](已有录像补充验证20261008.md)：旧滤波对超过 0.8 m 的新息直接重初始化，单帧坏测量会原样输出。
+起因见 [已有录像补充验证](archive/已有录像补充验证20261008.md)：旧滤波对超过 0.8 m 的新息直接重初始化，单帧坏测量会原样输出。
 
 - `depth_gate_enabled=true`（默认）：新息超过 `depth_gate_base_m + depth_gate_speed_mps × 距上次接受测量的时间`（默认 0.35 m + 2 m/s）即拒绝；被拒测量不刷新测量时间，按真实测量年龄在 `position_hold_s` 内保持预测，超时失效。
 - 重定位需被拒证据彼此一致并跨越 `depth_gate_confirm_s=0.3` 秒，之后干净重初始化（速度清零），不以大增益混入；拒绝持续期间超过基础噪声的点一律走确认。

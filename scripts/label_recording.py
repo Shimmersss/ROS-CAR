@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Frame-accurate event labelling for a Gemini recording (docs/补录视频要求20261008.md §9).
+"""Frame-accurate event labelling for a Gemini recording (docs/重拍视频要求20261010.md §9.1).
 
 Keys
   space  play/pause          a / d  previous / next frame     z / c  -/+ 10 frames

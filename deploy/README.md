@@ -1,7 +1,7 @@
 # 构建与部署
 
 humble-test.Dockerfile 仅用于 Mac 上的 Linux/Humble 构建和消息链路测试，不是 Jetson GPU 部署镜像。
-Jetson 的实际 CUDA、TensorRT、相机依赖应根据 JetPack 版本安装。已配置 SSH 并安装远程调试工具，尚未向设备部署本项目的 ROS 感知代码。
+Jetson 的实际 CUDA、TensorRT、相机依赖应根据 JetPack 版本安装。已配置 SSH 并安装远程调试工具；项目部署记录见下文各节和 WORKLOG，正式运行目录为 `/home/wheeltec/ROSCAR-current`。
 测试镜像基础可通过 ROSCAR_ROS_IMAGE 指定官方 ROS 镜像的可访问镜像源；不将镜像标签视为永久可复现版本，成功测试时记录实际摘要。
 
 ## 小车调试工具（2026-09-14）
@@ -31,7 +31,7 @@ Jetson 的实际 CUDA、TensorRT、相机依赖应根据 JetPack 版本安装。
 
 默认 A runner 与仓库 systemd 模板改为 `run_red_foxglove.sh`，不再启动 bodyreader，串口、运动、深度配准确认默认 false。原骨架组合脚本保留。新配置不会自行改变小车已安装的服务；现场切换前先核对旧服务及串口占用。
 
-可选串口使用 `scripts/build_chassis.sh` 构建到 `ros2_ws/chassis_install`；不要移除原始包的 COLCON_IGNORE。Ubuntu Humble 构建所需额外依赖由 `deploy/humble-test.Dockerfile` 列出；本机测试容器已安装。完整配置及实机待验收项见 [红色方案 A](../docs/方案A红色物体跟随.md)。
+可选串口使用 `scripts/build_chassis.sh` 构建到 `ros2_ws/chassis_install`；不要移除原始包的 COLCON_IGNORE。Ubuntu Humble 构建所需额外依赖由 `deploy/humble-test.Dockerfile` 列出；本机测试容器已安装。完整配置及实机待验收项见 [红色方案 A](../docs/archive/方案A红色物体跟随.md)。
 
 N10P 本机验证运行 `bash scripts/test_radar_container.sh`；Linux/Jetson 独立构建 `bash scripts/build_radar.sh`，启动 `bash scripts/run_radar.sh serial_port:=/dev/wheeltec_lidar`。先按 `docs/N10P雷达接入.md` 核对实物串口。默认感知不启雷达，未安装自启；本轮没有部署远端。
 
@@ -47,4 +47,4 @@ N10P 本机验证运行 `bash scripts/test_radar_container.sh`；Linux/Jetson �
 
 ## 对外 API 构建清单
 
-主动工作区新增 `roscar_interfaces`（SetControlMode）和 `roscar_api`（统一入口与示例），总计 13 个主动包。`build_ros.sh` 使用 colcon 自动扫描；Humble 系统依赖新增 `ros-humble-vision-msgs`。`sync_to_jetson.py` 的 `ros2_ws/src`、`scripts`、`tests`、`docs` 白名单已覆盖新增包与手册，不新增权重/录像或代理配置同步。本轮仅本机验证，没有执行同步或部署。使用方法见 [ROS 接口使用文档](../docs/ROS接口使用文档.md)。
+主动工作区新增 `roscar_interfaces`（SetControlMode）和 `roscar_api`（统一入口与示例），当时总计 13 个主动包（2026-10-11 为 16 个，另有 5 个默认 COLCON_IGNORE 的厂商包）。`build_ros.sh` 使用 colcon 自动扫描；Humble 系统依赖新增 `ros-humble-vision-msgs`。`sync_to_jetson.py` 的 `ros2_ws/src`、`scripts`、`tests`、`docs` 白名单已覆盖新增包与手册，不新增权重/录像或代理配置同步。本轮仅本机验证，没有执行同步或部署。使用方法见 [ROS 接口使用文档](../docs/ROS接口使用文档.md)。

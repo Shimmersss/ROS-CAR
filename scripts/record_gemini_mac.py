@@ -116,7 +116,6 @@ def depth_preview(out, frame):
     return cv2.resize(image, (320, 200))
 
 
-# docs/补录视频要求20261008.md: code -> (directory name, default seconds).
 # docs/重拍视频要求20261010.md: code -> (directory name, default seconds). A1 holds 5 falls of
 # ~26 s each (stand 4 s, fall, lie 4 s, get up, stand 4 s, walk back).
 PLAN = {
