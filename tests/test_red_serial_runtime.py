@@ -1,5 +1,6 @@
 """Synthetic images + real ROS follower + real C++ driver on a PTY. No hardware."""
 import copy
+import json
 import math
 import os
 import pty
@@ -16,7 +17,7 @@ from rclpy.parameter import Parameter
 from geometry_msgs.msg import Twist, TwistStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import CameraInfo, Image, Imu
-from std_msgs.msg import Float32
+from std_msgs.msg import Float32, String
 from visualization_msgs.msg import Marker
 from person_interfaces.msg import TargetState, RuntimeMetrics
 from red_object_tracker.node import RedTrackerNode
@@ -126,6 +127,11 @@ def main():
         relay_pub=probe.create_publisher(Twist,'/cmd_vel',1)
         relay_sub=probe.create_subscription(TwistStamped,'/control/cmd_vel_request',
                                             lambda m: relay_pub.publish(m.twist),1)
+        # The follower only sends nonzero requests under a fresh ARMED_FOLLOW guard state; this bridge
+        # stands in for the guard here (its authority model is covered by the guard runtime tests).
+        authority_pub=probe.create_publisher(String,'/control/state',10)
+        authority=String(data=json.dumps(dict(authority_state='ARMED_FOLLOW',command_mode='FOLLOW')))
+        probe.create_timer(.05,lambda: authority_pub.publish(authority))
         red=RedTrackerNode(namespace='perception',parameter_overrides=[Parameter('depth_registered',value=True)])
         executor.add_node(red)
         follower=PersonFollowerNode(parameter_overrides=[Parameter('enabled',value=True),

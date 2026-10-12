@@ -1,0 +1,748 @@
+{
+  "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "sherpa_onnx_version": "1.13.8",
+  "evidence_scope": "Local CPU prerecorded/synthetic WAV replay; no real microphone, TTS overlap or car",
+  "sample_count": 10,
+  "configurations": 12,
+  "summaries": {
+    "hotwords=False,endpoint=0.3": {
+      "cer": 0.4166666666666667,
+      "critical_keyword_accuracy": 0.25,
+      "critical_keywords": 4,
+      "cer_characters": 36,
+      "command_intent_accuracy": 0.4,
+      "command_samples": 10,
+      "physical_command_success_rate": null,
+      "vad_truncation_rate": null,
+      "vad_boundary_samples": 0,
+      "offline_text_ready_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "normal_ros_command_start_latency": null,
+      "dangerous_false_intent_rate": 0.0,
+      "negative_samples": 3,
+      "kws_stop_recall": null,
+      "kws_annotated_stops": 0,
+      "kws_latency_from_word_end": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "vad_endpoint_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "decode_wall_latency": {
+        "n": 10,
+        "p50_ms": 356.51011549998657,
+        "p95_ms": 443.83087039714155
+      },
+      "kws_false_stop_samples": 0,
+      "note": "Intent accuracy is a text-layer metric. No chassis or actuator was used. Missing labels/measurements remain null."
+    },
+    "hotwords=False,endpoint=0.4": {
+      "cer": 0.4166666666666667,
+      "critical_keyword_accuracy": 0.25,
+      "critical_keywords": 4,
+      "cer_characters": 36,
+      "command_intent_accuracy": 0.4,
+      "command_samples": 10,
+      "physical_command_success_rate": null,
+      "vad_truncation_rate": null,
+      "vad_boundary_samples": 0,
+      "offline_text_ready_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "normal_ros_command_start_latency": null,
+      "dangerous_false_intent_rate": 0.0,
+      "negative_samples": 3,
+      "kws_stop_recall": null,
+      "kws_annotated_stops": 0,
+      "kws_latency_from_word_end": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "vad_endpoint_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "decode_wall_latency": {
+        "n": 10,
+        "p50_ms": 315.3153144994576,
+        "p95_ms": 466.4931158531544
+      },
+      "kws_false_stop_samples": 0,
+      "note": "Intent accuracy is a text-layer metric. No chassis or actuator was used. Missing labels/measurements remain null."
+    },
+    "hotwords=False,endpoint=0.5": {
+      "cer": 0.3611111111111111,
+      "critical_keyword_accuracy": 0.25,
+      "critical_keywords": 4,
+      "cer_characters": 36,
+      "command_intent_accuracy": 0.4,
+      "command_samples": 10,
+      "physical_command_success_rate": null,
+      "vad_truncation_rate": null,
+      "vad_boundary_samples": 0,
+      "offline_text_ready_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "normal_ros_command_start_latency": null,
+      "dangerous_false_intent_rate": 0.0,
+      "negative_samples": 3,
+      "kws_stop_recall": null,
+      "kws_annotated_stops": 0,
+      "kws_latency_from_word_end": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "vad_endpoint_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "decode_wall_latency": {
+        "n": 10,
+        "p50_ms": 317.3279399998137,
+        "p95_ms": 439.39509505253227
+      },
+      "kws_false_stop_samples": 0,
+      "note": "Intent accuracy is a text-layer metric. No chassis or actuator was used. Missing labels/measurements remain null."
+    },
+    "hotwords=False,endpoint=0.6": {
+      "cer": 0.3333333333333333,
+      "critical_keyword_accuracy": 0.25,
+      "critical_keywords": 4,
+      "cer_characters": 36,
+      "command_intent_accuracy": 0.4,
+      "command_samples": 10,
+      "physical_command_success_rate": null,
+      "vad_truncation_rate": null,
+      "vad_boundary_samples": 0,
+      "offline_text_ready_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "normal_ros_command_start_latency": null,
+      "dangerous_false_intent_rate": 0.0,
+      "negative_samples": 3,
+      "kws_stop_recall": null,
+      "kws_annotated_stops": 0,
+      "kws_latency_from_word_end": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "vad_endpoint_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "decode_wall_latency": {
+        "n": 10,
+        "p50_ms": 343.63227849826217,
+        "p95_ms": 452.5765592483367
+      },
+      "kws_false_stop_samples": 0,
+      "note": "Intent accuracy is a text-layer metric. No chassis or actuator was used. Missing labels/measurements remain null."
+    },
+    "hotwords=False,endpoint=0.7": {
+      "cer": 0.3611111111111111,
+      "critical_keyword_accuracy": 0.25,
+      "critical_keywords": 4,
+      "cer_characters": 36,
+      "command_intent_accuracy": 0.4,
+      "command_samples": 10,
+      "physical_command_success_rate": null,
+      "vad_truncation_rate": null,
+      "vad_boundary_samples": 0,
+      "offline_text_ready_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "normal_ros_command_start_latency": null,
+      "dangerous_false_intent_rate": 0.0,
+      "negative_samples": 3,
+      "kws_stop_recall": null,
+      "kws_annotated_stops": 0,
+      "kws_latency_from_word_end": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "vad_endpoint_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "decode_wall_latency": {
+        "n": 10,
+        "p50_ms": 307.95281549944775,
+        "p95_ms": 450.56291935252375
+      },
+      "kws_false_stop_samples": 0,
+      "note": "Intent accuracy is a text-layer metric. No chassis or actuator was used. Missing labels/measurements remain null."
+    },
+    "hotwords=False,endpoint=0.8": {
+      "cer": 0.3611111111111111,
+      "critical_keyword_accuracy": 0.25,
+      "critical_keywords": 4,
+      "cer_characters": 36,
+      "command_intent_accuracy": 0.4,
+      "command_samples": 10,
+      "physical_command_success_rate": null,
+      "vad_truncation_rate": null,
+      "vad_boundary_samples": 0,
+      "offline_text_ready_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "normal_ros_command_start_latency": null,
+      "dangerous_false_intent_rate": 0.0,
+      "negative_samples": 3,
+      "kws_stop_recall": null,
+      "kws_annotated_stops": 0,
+      "kws_latency_from_word_end": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "vad_endpoint_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "decode_wall_latency": {
+        "n": 10,
+        "p50_ms": 326.0225134981738,
+        "p95_ms": 461.727001797044
+      },
+      "kws_false_stop_samples": 0,
+      "note": "Intent accuracy is a text-layer metric. No chassis or actuator was used. Missing labels/measurements remain null."
+    },
+    "hotwords=True,endpoint=0.3": {
+      "cer": 1.8055555555555556,
+      "critical_keyword_accuracy": 0.75,
+      "critical_keywords": 4,
+      "cer_characters": 36,
+      "command_intent_accuracy": 0.5,
+      "command_samples": 10,
+      "physical_command_success_rate": null,
+      "vad_truncation_rate": null,
+      "vad_boundary_samples": 0,
+      "offline_text_ready_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "normal_ros_command_start_latency": null,
+      "dangerous_false_intent_rate": 0.0,
+      "negative_samples": 3,
+      "kws_stop_recall": null,
+      "kws_annotated_stops": 0,
+      "kws_latency_from_word_end": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "vad_endpoint_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "decode_wall_latency": {
+        "n": 10,
+        "p50_ms": 589.4605315006629,
+        "p95_ms": 1835.5045496500675
+      },
+      "kws_false_stop_samples": 0,
+      "note": "Intent accuracy is a text-layer metric. No chassis or actuator was used. Missing labels/measurements remain null."
+    },
+    "hotwords=True,endpoint=0.4": {
+      "cer": 1.8055555555555556,
+      "critical_keyword_accuracy": 0.75,
+      "critical_keywords": 4,
+      "cer_characters": 36,
+      "command_intent_accuracy": 0.5,
+      "command_samples": 10,
+      "physical_command_success_rate": null,
+      "vad_truncation_rate": null,
+      "vad_boundary_samples": 0,
+      "offline_text_ready_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "normal_ros_command_start_latency": null,
+      "dangerous_false_intent_rate": 0.0,
+      "negative_samples": 3,
+      "kws_stop_recall": null,
+      "kws_annotated_stops": 0,
+      "kws_latency_from_word_end": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "vad_endpoint_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "decode_wall_latency": {
+        "n": 10,
+        "p50_ms": 546.8428570020478,
+        "p95_ms": 1592.902618694643
+      },
+      "kws_false_stop_samples": 0,
+      "note": "Intent accuracy is a text-layer metric. No chassis or actuator was used. Missing labels/measurements remain null."
+    },
+    "hotwords=True,endpoint=0.5": {
+      "cer": 1.3055555555555556,
+      "critical_keyword_accuracy": 0.75,
+      "critical_keywords": 4,
+      "cer_characters": 36,
+      "command_intent_accuracy": 0.5,
+      "command_samples": 10,
+      "physical_command_success_rate": null,
+      "vad_truncation_rate": null,
+      "vad_boundary_samples": 0,
+      "offline_text_ready_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "normal_ros_command_start_latency": null,
+      "dangerous_false_intent_rate": 0.0,
+      "negative_samples": 3,
+      "kws_stop_recall": null,
+      "kws_annotated_stops": 0,
+      "kws_latency_from_word_end": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "vad_endpoint_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "decode_wall_latency": {
+        "n": 10,
+        "p50_ms": 513.4006830012368,
+        "p95_ms": 1579.383001498718
+      },
+      "kws_false_stop_samples": 0,
+      "note": "Intent accuracy is a text-layer metric. No chassis or actuator was used. Missing labels/measurements remain null."
+    },
+    "hotwords=True,endpoint=0.6": {
+      "cer": 0.8055555555555556,
+      "critical_keyword_accuracy": 0.25,
+      "critical_keywords": 4,
+      "cer_characters": 36,
+      "command_intent_accuracy": 0.4,
+      "command_samples": 10,
+      "physical_command_success_rate": null,
+      "vad_truncation_rate": null,
+      "vad_boundary_samples": 0,
+      "offline_text_ready_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "normal_ros_command_start_latency": null,
+      "dangerous_false_intent_rate": 0.0,
+      "negative_samples": 3,
+      "kws_stop_recall": null,
+      "kws_annotated_stops": 0,
+      "kws_latency_from_word_end": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "vad_endpoint_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "decode_wall_latency": {
+        "n": 10,
+        "p50_ms": 465.35339200272574,
+        "p95_ms": 1211.0615576479165
+      },
+      "kws_false_stop_samples": 0,
+      "note": "Intent accuracy is a text-layer metric. No chassis or actuator was used. Missing labels/measurements remain null."
+    },
+    "hotwords=True,endpoint=0.7": {
+      "cer": 0.7777777777777778,
+      "critical_keyword_accuracy": 0.5,
+      "critical_keywords": 4,
+      "cer_characters": 36,
+      "command_intent_accuracy": 0.5,
+      "command_samples": 10,
+      "physical_command_success_rate": null,
+      "vad_truncation_rate": null,
+      "vad_boundary_samples": 0,
+      "offline_text_ready_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "normal_ros_command_start_latency": null,
+      "dangerous_false_intent_rate": 0.0,
+      "negative_samples": 3,
+      "kws_stop_recall": null,
+      "kws_annotated_stops": 0,
+      "kws_latency_from_word_end": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "vad_endpoint_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "decode_wall_latency": {
+        "n": 10,
+        "p50_ms": 498.0465739972715,
+        "p95_ms": 1143.397957900378
+      },
+      "kws_false_stop_samples": 0,
+      "note": "Intent accuracy is a text-layer metric. No chassis or actuator was used. Missing labels/measurements remain null."
+    },
+    "hotwords=True,endpoint=0.8": {
+      "cer": 1.4444444444444444,
+      "critical_keyword_accuracy": 0.5,
+      "critical_keywords": 4,
+      "cer_characters": 36,
+      "command_intent_accuracy": 0.5,
+      "command_samples": 10,
+      "physical_command_success_rate": null,
+      "vad_truncation_rate": null,
+      "vad_boundary_samples": 0,
+      "offline_text_ready_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "normal_ros_command_start_latency": null,
+      "dangerous_false_intent_rate": 0.0,
+      "negative_samples": 3,
+      "kws_stop_recall": null,
+      "kws_annotated_stops": 0,
+      "kws_latency_from_word_end": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "vad_endpoint_latency": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null
+      },
+      "decode_wall_latency": {
+        "n": 10,
+        "p50_ms": 473.27934349596035,
+        "p95_ms": 1601.5812425455806
+      },
+      "kws_false_stop_samples": 0,
+      "note": "Intent accuracy is a text-layer metric. No chassis or actuator was used. Missing labels/measurements remain null."
+    }
+  },
+  "examples": [
+    {
+      "id": "stop",
+      "wav": "/mnt/e/works/newcar/ROS-CAR/artifacts/voice-lab/synthetic/stop.wav",
+      "reference_text": "停止",
+      "expected_intent": "STOP",
+      "reference_keywords": [
+        "停止"
+      ],
+      "sample_type": "synthetic_tts",
+      "condition": "MeloTTS_digital_resampled_no_acoustic_path",
+      "speech_start_s": null,
+      "speech_end_s": null,
+      "stop_word_end_s": null,
+      "annotation_status": "Synthetic input text known; acoustic word boundaries not annotated",
+      "sha256": "709084175c74de61ef08edf82aacc97c13a293780643db7be0ba88333d9b3b19",
+      "endpoint_silence_s": 0.6,
+      "hotwords": false,
+      "endpoint_audio_s": 1.88,
+      "endpoint_sample_count": 17024,
+      "kws_events": [
+        {
+          "keyword": "停止",
+          "audio_time_s": 1.28
+        }
+      ],
+      "kws_compute_latency": {
+        "n": 77,
+        "p50_ms": 0.05092700303066522,
+        "p95_ms": 3.074802004266531
+      },
+      "asr_text": "停止。",
+      "intent": "STOP",
+      "decode_wall_s": 0.2885546109973802
+    },
+    {
+      "id": "estop",
+      "wav": "/mnt/e/works/newcar/ROS-CAR/artifacts/voice-lab/synthetic/estop.wav",
+      "reference_text": "急停",
+      "expected_intent": "ESTOP",
+      "reference_keywords": [
+        "急停"
+      ],
+      "sample_type": "synthetic_tts",
+      "condition": "MeloTTS_digital_resampled_no_acoustic_path",
+      "speech_start_s": null,
+      "speech_end_s": null,
+      "stop_word_end_s": null,
+      "annotation_status": "Synthetic input text known; acoustic word boundaries not annotated",
+      "sha256": "ccb1c8bc0bd773098dc00700d445910cbdbfe63bcea4e7be8d8f5769ea4206c0",
+      "endpoint_silence_s": 0.6,
+      "hotwords": false,
+      "endpoint_audio_s": 1.76,
+      "endpoint_sample_count": 16512,
+      "kws_events": [],
+      "kws_compute_latency": {
+        "n": 72,
+        "p50_ms": 0.05158299973118119,
+        "p95_ms": 3.6461387990129888
+      },
+      "asr_text": "一听。",
+      "intent": "NONE",
+      "decode_wall_s": 0.33980270699976245
+    },
+    {
+      "id": "stay",
+      "wav": "/mnt/e/works/newcar/ROS-CAR/artifacts/voice-lab/synthetic/stay.wav",
+      "reference_text": "别动",
+      "expected_intent": "STOP",
+      "reference_keywords": [
+        "别动"
+      ],
+      "sample_type": "synthetic_tts",
+      "condition": "MeloTTS_digital_resampled_no_acoustic_path",
+      "speech_start_s": null,
+      "speech_end_s": null,
+      "stop_word_end_s": null,
+      "annotation_status": "Synthetic input text known; acoustic word boundaries not annotated",
+      "sha256": "bc2e4e6f2d77510bb4785580375cb7b80a2571afd384f99441cf6ac970b7cdb4",
+      "endpoint_silence_s": 0.6,
+      "hotwords": false,
+      "endpoint_audio_s": 1.68,
+      "endpoint_sample_count": 14464,
+      "kws_events": [],
+      "kws_compute_latency": {
+        "n": 73,
+        "p50_ms": 0.054233001719694585,
+        "p95_ms": 3.807865000271703
+      },
+      "asr_text": "移动。",
+      "intent": "NONE",
+      "decode_wall_s": 0.26884375900408486
+    },
+    {
+      "id": "forward",
+      "wav": "/mnt/e/works/newcar/ROS-CAR/artifacts/voice-lab/synthetic/forward.wav",
+      "reference_text": "前进",
+      "expected_intent": "MOVE:FORWARD",
+      "reference_keywords": [],
+      "sample_type": "synthetic_tts",
+      "condition": "MeloTTS_digital_resampled_no_acoustic_path",
+      "speech_start_s": null,
+      "speech_end_s": null,
+      "stop_word_end_s": null,
+      "annotation_status": "Synthetic input text known; acoustic word boundaries not annotated",
+      "sha256": "9eafe6d02e48f6e17d0c07f238a6790847adc27f18fa94a40934b68525b6e7af",
+      "endpoint_silence_s": 0.6,
+      "hotwords": false,
+      "endpoint_audio_s": 1.8,
+      "endpoint_sample_count": 16000,
+      "kws_events": [],
+      "kws_compute_latency": {
+        "n": 74,
+        "p50_ms": 0.050620998081285506,
+        "p95_ms": 3.2702201977372165
+      },
+      "asr_text": "你。",
+      "intent": "NONE",
+      "decode_wall_s": 0.27592430900403997
+    },
+    {
+      "id": "stop",
+      "wav": "/mnt/e/works/newcar/ROS-CAR/artifacts/voice-lab/synthetic/stop.wav",
+      "reference_text": "停止",
+      "expected_intent": "STOP",
+      "reference_keywords": [
+        "停止"
+      ],
+      "sample_type": "synthetic_tts",
+      "condition": "MeloTTS_digital_resampled_no_acoustic_path",
+      "speech_start_s": null,
+      "speech_end_s": null,
+      "stop_word_end_s": null,
+      "annotation_status": "Synthetic input text known; acoustic word boundaries not annotated",
+      "sha256": "709084175c74de61ef08edf82aacc97c13a293780643db7be0ba88333d9b3b19",
+      "endpoint_silence_s": 0.6,
+      "hotwords": true,
+      "endpoint_audio_s": 1.88,
+      "endpoint_sample_count": 17024,
+      "kws_events": [
+        {
+          "keyword": "停止",
+          "audio_time_s": 1.28
+        }
+      ],
+      "kws_compute_latency": {
+        "n": 77,
+        "p50_ms": 0.05848100408911705,
+        "p95_ms": 4.039892600849271
+      },
+      "asr_text": "停止。",
+      "intent": "STOP",
+      "decode_wall_s": 0.436694541000179
+    },
+    {
+      "id": "estop",
+      "wav": "/mnt/e/works/newcar/ROS-CAR/artifacts/voice-lab/synthetic/estop.wav",
+      "reference_text": "急停",
+      "expected_intent": "ESTOP",
+      "reference_keywords": [
+        "急停"
+      ],
+      "sample_type": "synthetic_tts",
+      "condition": "MeloTTS_digital_resampled_no_acoustic_path",
+      "speech_start_s": null,
+      "speech_end_s": null,
+      "stop_word_end_s": null,
+      "annotation_status": "Synthetic input text known; acoustic word boundaries not annotated",
+      "sha256": "ccb1c8bc0bd773098dc00700d445910cbdbfe63bcea4e7be8d8f5769ea4206c0",
+      "endpoint_silence_s": 0.6,
+      "hotwords": true,
+      "endpoint_audio_s": 1.76,
+      "endpoint_sample_count": 16512,
+      "kws_events": [],
+      "kws_compute_latency": {
+        "n": 72,
+        "p50_ms": 0.05530050111701712,
+        "p95_ms": 3.061361001891783
+      },
+      "asr_text": "一停。",
+      "intent": "NONE",
+      "decode_wall_s": 0.4524905540019972
+    },
+    {
+      "id": "stay",
+      "wav": "/mnt/e/works/newcar/ROS-CAR/artifacts/voice-lab/synthetic/stay.wav",
+      "reference_text": "别动",
+      "expected_intent": "STOP",
+      "reference_keywords": [
+        "别动"
+      ],
+      "sample_type": "synthetic_tts",
+      "condition": "MeloTTS_digital_resampled_no_acoustic_path",
+      "speech_start_s": null,
+      "speech_end_s": null,
+      "stop_word_end_s": null,
+      "annotation_status": "Synthetic input text known; acoustic word boundaries not annotated",
+      "sha256": "bc2e4e6f2d77510bb4785580375cb7b80a2571afd384f99441cf6ac970b7cdb4",
+      "endpoint_silence_s": 0.6,
+      "hotwords": true,
+      "endpoint_audio_s": 1.68,
+      "endpoint_sample_count": 14464,
+      "kws_events": [],
+      "kws_compute_latency": {
+        "n": 73,
+        "p50_ms": 0.057789999118540436,
+        "p95_ms": 3.605746400717177
+      },
+      "asr_text": "移动。",
+      "intent": "NONE",
+      "decode_wall_s": 0.37633436900068773
+    },
+    {
+      "id": "forward",
+      "wav": "/mnt/e/works/newcar/ROS-CAR/artifacts/voice-lab/synthetic/forward.wav",
+      "reference_text": "前进",
+      "expected_intent": "MOVE:FORWARD",
+      "reference_keywords": [],
+      "sample_type": "synthetic_tts",
+      "condition": "MeloTTS_digital_resampled_no_acoustic_path",
+      "speech_start_s": null,
+      "speech_end_s": null,
+      "stop_word_end_s": null,
+      "annotation_status": "Synthetic input text known; acoustic word boundaries not annotated",
+      "sha256": "9eafe6d02e48f6e17d0c07f238a6790847adc27f18fa94a40934b68525b6e7af",
+      "endpoint_silence_s": 0.6,
+      "hotwords": true,
+      "endpoint_audio_s": 1.8,
+      "endpoint_sample_count": 16000,
+      "kws_events": [],
+      "kws_compute_latency": {
+        "n": 74,
+        "p50_ms": 0.05415800114860758,
+        "p95_ms": 3.7844367976504136
+      },
+      "asr_text": "前进 后退 左转 右转 停止 停下 急停 别动 跟随 一下 稍微。",
+      "intent": "NONE",
+      "decode_wall_s": 1.674879582998983
+    }
+  ],
+  "models": {
+    "assets": [
+      {
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
+        "path": "/home/ubuntu/.cache/roscar-voice-lab/models/silero_vad.onnx",
+        "downloaded": true,
+        "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6"
+      },
+      {
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2",
+        "path": "/home/ubuntu/.cache/roscar-voice-lab/models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2",
+        "downloaded": true,
+        "sha256": "68447f4fbc67e70eee3a93961f36e81e98f47aef73ce7e7ca00885c6cd3616a6"
+      },
+      {
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25.tar.bz2",
+        "path": "/home/ubuntu/.cache/roscar-voice-lab/models/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25.tar.bz2",
+        "downloaded": true,
+        "sha256": "393f8a14e2f5fb96746aaab342997a40641001fbd5bf9592a080a8329178ee96"
+      },
+      {
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-melo-tts-zh_en.tar.bz2",
+        "path": "/home/ubuntu/.cache/roscar-voice-lab/models/vits-melo-tts-zh_en.tar.bz2",
+        "downloaded": true,
+        "sha256": "e58351ed7149f290a54534538badd4077cdbe6fddc964b24d0bee870415d1514"
+      }
+    ],
+    "files": {
+      "silero_vad.onnx": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+      "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/tokens.txt": "2d3f32311f9b692b964da3c90e830258d3e78e013cb0c992dbfb15cd5a1a71b0",
+      "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/decoder-epoch-13-avg-2-chunk-16-left-64.onnx": "63a22dd60f40fff082ac3e09afa507f6787da36df76ded2fbe145fa233e22c21",
+      "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/decoder-epoch-13-avg-2-chunk-8-left-64.onnx": "63a22dd60f40fff082ac3e09afa507f6787da36df76ded2fbe145fa233e22c21",
+      "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/encoder-epoch-13-avg-2-chunk-16-left-64.int8.onnx": "408bbd740838c42d5bf6d1c5b80b3c88b616c7860b92d980328b5b068c76ae48",
+      "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/encoder-epoch-13-avg-2-chunk-16-left-64.onnx": "540ff509ed89bd22afe04bf7049a54bb1c95c6d8a18742ea9691910cdb5f859e",
+      "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/encoder-epoch-13-avg-2-chunk-8-left-64.int8.onnx": "2ca84d6bfe73e1ea3c9c49f600f7cad1c9ddd423c53c906b8bfe802444dd78d5",
+      "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/encoder-epoch-13-avg-2-chunk-8-left-64.onnx": "307e2f5e87e9d6df4fd058239f4437b6236db7699b9c61decb490f89fb4226d0",
+      "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/joiner-epoch-13-avg-2-chunk-16-left-64.int8.onnx": "190d4067b4cc20b72a42a1916e69d92052000fb7051a427ebb1bc72a69207dc1",
+      "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/joiner-epoch-13-avg-2-chunk-16-left-64.onnx": "76f7a24ed0c08633af14b2ee377f747af880d3b65eeba2cd3f31f3380fb73e8d",
+      "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/joiner-epoch-13-avg-2-chunk-8-left-64.int8.onnx": "190d4067b4cc20b72a42a1916e69d92052000fb7051a427ebb1bc72a69207dc1",
+      "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/joiner-epoch-13-avg-2-chunk-8-left-64.onnx": "76f7a24ed0c08633af14b2ee377f747af880d3b65eeba2cd3f31f3380fb73e8d"
+    }
+  },
+  "full_report": "artifacts/voice-lab/synthetic-ab.json"
+}

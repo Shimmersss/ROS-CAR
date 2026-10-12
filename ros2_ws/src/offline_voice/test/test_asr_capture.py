@@ -4,7 +4,7 @@ from collections import deque
 import numpy as np
 from types import SimpleNamespace as NS
 source=(Path(__file__).resolve().parents[1] / 'offline_voice/asr_node.py').read_text()
-method=next(n for n in ast.walk(ast.parse(source)) if isinstance(n,ast.FunctionDef) and n.name=='_listen_once')
+method=next(n for n in ast.walk(ast.parse(source)) if isinstance(n,ast.FunctionDef) and n.name=='_listen_rms')
 class Tests(unittest.TestCase):
  def run_case(self, frames, speaking_at=None):
   clock=[0]; published=[]; captured=[]; closed=[]
@@ -18,10 +18,10 @@ class Tests(unittest.TestCase):
    def close(self):closed.append(True)
   stream=NS(accept_waveform=lambda sr,x:captured.extend(x),result=NS(text='前进'))
   cfg=dict(sample_rate=16000,frame_ms=40,energy_threshold=2800,speech_onset_ms=80,silence_ms=120,speech_timeout_sec=.2,max_utterance_sec=2,capture_device='test')
-  node=NS(get_parameter=lambda k:NS(value=cfg[k]),_recognizer=NS(create_stream=lambda:stream,decode_stream=lambda s:None),_backend='sensevoice',_stop=NS(is_set=lambda:False),_speaking=False,_publish_state=lambda s:None,get_logger=lambda:NS(info=lambda s:None),_text_pub=NS(publish=lambda m:published.append(m.data)))
+  node=NS(get_parameter=lambda k:NS(value=cfg[k]),_recognizer=NS(create_stream=lambda:stream,decode_stream=lambda s:None),_backend='sensevoice',_stop=NS(is_set=lambda:False),_speaking=False,_cancel=NS(is_set=lambda:False),_capture=lambda *a:Capture(),_publish_state=lambda s:None,get_logger=lambda:NS(info=lambda s:None),_text_pub=NS(publish=lambda m:published.append(m.data)))
   env=dict(deque=deque,np=np,time=NS(monotonic=lambda:clock[0]),ArecordCapture=Capture,pcm_rms_s16le=lambda p:abs(float(np.frombuffer(p,dtype='<i2')[0])),String=lambda **kw:NS(**kw))
   exec(compile(ast.Module(body=[method],type_ignores=[]),'actual_asr','exec'),env)
-  env['_listen_once'](node,'manual');self.assertTrue(closed)
+  env['_listen_rms'](node,'manual');self.assertTrue(closed)
   return published,captured
  def test_onset_crosses_deadline(self):
   result,audio=self.run_case(iter([0,0,0,0,4000,4000,4000,0,0,0]));self.assertEqual(result,['前进']);self.assertEqual(sum(x!=0 for x in audio),1920)

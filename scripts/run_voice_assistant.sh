@@ -6,12 +6,11 @@ project_dir="$(cd "${workspace_dir}/.." && pwd)"
 voice_env_file="${ROSCAR_VOICE_ENV:-${XDG_CONFIG_HOME:-${HOME}/.config}/roscar/voice.env}"
 voice_backend="${VOICE_BACKEND:-offline}"
 asr_backend="${ASR_BACKEND:-offline}"
-continuous_asr="${CONTINUOUS_ASR:-true}"
+if [[ "${voice_backend}" != offline ]]; then
+  echo "统一安全链路要求 VOICE_BACKEND=offline；讯飞识别请设 ASR_BACKEND=xfyun。" >&2; exit 2
+fi
 if [[ "${asr_backend}" != xfyun && "${asr_backend}" != offline ]]; then
   echo "ASR_BACKEND 必须为 xfyun 或 offline。" >&2; exit 2
-fi
-if [[ "${continuous_asr}" != true && "${continuous_asr}" != false ]]; then
-  echo 'CONTINUOUS_ASR 必须为 true 或 false。' >&2; exit 2
 fi
 offline_root="${ROSCAR_OFFLINE_ROOT:-/home/wheeltec/ROSCAR-offline}"
 
@@ -38,13 +37,18 @@ fi
 
 if [[ "${voice_backend}" == offline ]]; then
   export ROSCAR_OFFLINE_MODEL_ROOT="${ROSCAR_OFFLINE_MODEL_ROOT:-${offline_root}/models}"
-  model_files=("${ROSCAR_OFFLINE_MODEL_ROOT}/vits-melo-tts-zh_en/model.onnx")
+  kws_model="${ROSCAR_OFFLINE_MODEL_ROOT}/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20"
+  model_files=("${ROSCAR_OFFLINE_MODEL_ROOT}/vits-melo-tts-zh_en/model.onnx"
+    "${ROSCAR_OFFLINE_MODEL_ROOT}/silero_vad.onnx"
+    "${kws_model}/encoder-epoch-13-avg-2-chunk-8-left-64.int8.onnx"
+    "${kws_model}/decoder-epoch-13-avg-2-chunk-8-left-64.onnx"
+    "${kws_model}/joiner-epoch-13-avg-2-chunk-8-left-64.int8.onnx"
+    "${kws_model}/tokens.txt")
   if [[ "${asr_backend}" == offline ]]; then
     qwen_model="${ROSCAR_OFFLINE_MODEL_ROOT}/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25"
     model_files+=("${qwen_model}/conv_frontend.onnx" "${qwen_model}/encoder.int8.onnx" \
       "${qwen_model}/decoder.int8.onnx" "${qwen_model}/tokenizer/vocab.json" \
       "${qwen_model}/tokenizer/merges.txt")
-    [[ "${continuous_asr}" == true ]] && model_files+=("${ROSCAR_OFFLINE_MODEL_ROOT}/silero_vad.onnx")
   fi
   for model_file in "${model_files[@]}"; do
     [[ -f "${model_file}" ]] || { echo "缺少离线模型: ${model_file}" >&2; exit 1; }
@@ -102,14 +106,8 @@ cleanup_offline() {
 trap cleanup_offline EXIT INT TERM
 use_xfyun_asr=false
 [[ "${asr_backend}" == xfyun ]] && use_xfyun_asr=true
-legacy_listen_polling=false
-[[ "${use_xfyun_asr}" == true || "${continuous_asr}" == false ]] && legacy_listen_polling=true
 echo "语音后端: ASR=${asr_backend}, 控制=固定规则, TTS=本地"
 setsid ros2 launch offline_voice offline_voice.launch.py \
-  use_xfyun_asr:="${use_xfyun_asr}" continuous_asr:="${continuous_asr}" \
-  legacy_listen_polling:="${legacy_listen_polling}" \
-  enable_wake_driver:=true enable_tts:="${voice_tts_enabled}" "$@" &
+  use_xfyun_asr:="${use_xfyun_asr}" enable_wake_driver:=true enable_tts:="${voice_tts_enabled}" "$@" &
 launch_pid=$!
 wait "${launch_pid}"
-exec ros2 launch xfyun_speech voice_assistant.launch.py \
-  enable_wake_driver:=true enable_tts:="${voice_tts_enabled}" "$@"

@@ -35,5 +35,20 @@ class Entrypoints(unittest.TestCase):
         self.assertIn("'yolo_pose': ('yolo_person_tracker', 'pose_tracker')",launch)
         self.assertIn("default_value='yolo'",launch)
 
+    def test_tongue_entry_rejects_missing_guard_or_unsafe_profile(self):
+        env=dict(GEMINI_SERIAL='test', GEMINI_CALIBRATION='not-used.json', WITH_TONGUE_MODE='true')
+        r=self.run_script('start_c.sh', **env, WITH_FOLLOWER='false')
+        self.assertNotEqual(r.returncode,0);self.assertIn('唯一 guard',r.stderr)
+        r=self.run_script('start_c.sh', **env, WITH_FOLLOWER='true', WITH_CHASSIS='false', TONGUE_SAFETY_PROFILE='robot')
+        self.assertNotEqual(r.returncode,0);self.assertIn('底盘速度回传',r.stderr)
+        r=self.run_script('start_c.sh', **env, WITH_FOLLOWER='true', TONGUE_SAFETY_PROFILE='bench', MOTION_ENABLED='true')
+        self.assertNotEqual(r.returncode,0);self.assertIn('MOTION_ENABLED=false',r.stderr)
+
+    def test_trial_requires_explicit_gemini_identity_before_starting_nodes(self):
+        r=self.run_script('run_voice_tongue_trial.sh', TRIAL_CAMERA_BACKEND='gemini')
+        self.assertNotEqual(r.returncode,0);self.assertIn('GEMINI_SERIAL',r.stderr)
+        r=self.run_script('run_voice_tongue_trial.sh', TRIAL_CAMERA_BACKEND='gemini', GEMINI_SERIAL='test', GEMINI_CALIBRATION='missing.json')
+        self.assertNotEqual(r.returncode,0);self.assertIn('标定文件不存在',r.stderr)
+
 
 if __name__=='__main__':unittest.main()

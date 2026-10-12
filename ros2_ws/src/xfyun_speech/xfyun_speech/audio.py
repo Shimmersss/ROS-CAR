@@ -59,15 +59,24 @@ class AplaySink:
             '-r', str(sample_rate), '-c', str(channels),
         ]
         self._process = None
+        self._aborted = False
 
     def start(self):
+        if self._aborted:
+            raise RuntimeError('Playback cancelled')
         self._process = subprocess.Popen(
             self._command,
             stdin=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
+        if self._aborted:
+            self.abort()
+            self.close()
+            raise RuntimeError('Playback cancelled')
 
     def write(self, data):
+        if self._aborted:
+            raise RuntimeError('Playback cancelled')
         if not data:
             return
         if self._process is None or self._process.stdin is None:
@@ -75,17 +84,30 @@ class AplaySink:
         self._process.stdin.write(data)
         self._process.stdin.flush()
 
+    def abort(self):
+        self._aborted = True
+        process = self._process
+        if process is not None and process.poll() is None:
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                pass
+
     def close(self):
         if self._process is None:
             return
         if self._process.stdin is not None and not self._process.stdin.closed:
-            self._process.stdin.close()
+            try:
+                self._process.stdin.close()
+            except BrokenPipeError:
+                if not self._aborted:
+                    raise
         try:
             return_code = self._process.wait(timeout=10)
         except subprocess.TimeoutExpired:
             self._process.kill()
             return_code = self._process.wait(timeout=2)
-        if return_code != 0:
+        if return_code != 0 and not self._aborted:
             detail = ''
             if self._process.stderr is not None:
                 detail = self._process.stderr.read().decode('utf-8', errors='replace').strip()

@@ -56,15 +56,19 @@ def main():
         result = future.result()
         node.get_logger().info(f'{client.srv_name}: success={result.success}, {result.message}')
         if not result.success: raise RuntimeError(result.message)
+        return result
     try:
-        request = SetControlMode.Request(); request.mode = 'EXTERNAL'; call(mode, request)
-        node.get_logger().info('Sending zeros. Operator: ros2 service call /control/arm std_srvs/srv/Trigger "{}"')
+        request = SetControlMode.Request(); request.mode = 'EXTERNAL'; response = call(mode, request)
+        node.get_logger().info('Sending zeros. Operator: ros2 service call /control/authorize roscar_interfaces/srv/AuthorizeMotion '
+            + '"{authority_epoch: ' + str(response.authority_epoch) + ', mode: EXTERNAL}"')
         started = None
+        selected = False  # a state published before set_mode may still arrive afterwards
         deadline = time.monotonic()+60
         while rclpy.ok():
             rclpy.spin_once(node, timeout_sec=.02)
             now = time.monotonic()
             fresh = now-seen_at[0] < .3
+            selected = selected or (fresh and state.get('command_mode') == 'EXTERNAL')
             armed = fresh and state.get('command_mode') == 'EXTERNAL' and state.get('mode') == 'ARMED'
             if armed:
                 if started is None: started = now
@@ -74,7 +78,7 @@ def main():
                 velocity[:] = [0.,0.]
                 if started is not None: raise RuntimeError('Authorization lost; explicit restart required')
                 if now > deadline: raise RuntimeError('Timed out waiting for explicit arm')
-                if fresh and (state.get('mode') == 'FAULT' or state.get('command_mode') != 'EXTERNAL'):
+                if fresh and selected and (state.get('mode') == 'FAULT' or state.get('command_mode') != 'EXTERNAL'):
                     raise RuntimeError('Guard fault or mode changed')
     except KeyboardInterrupt:
         pass

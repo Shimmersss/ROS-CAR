@@ -1,6 +1,7 @@
 """Isolated node regressions: no motor publisher or real GPIO output is used."""
 import copy
 import math
+import time
 from types import SimpleNamespace
 import rclpy
 from rclpy.parameter import Parameter
@@ -16,6 +17,15 @@ n.set_parameters([Parameter('enabled', value=True)])
 n.count_publishers = lambda topic: 1
 commands = []
 n._publish = lambda v, w: commands.append((v, w))
+# Nonzero requests need a fresh ARMED_FOLLOW guard state; grant it on every tick unless revoked.
+AUTH = dict(authority_state='ARMED_FOLLOW', command_mode='FOLLOW')
+granted = [True]
+untimed_tick = n._control_tick
+def authorized_tick():
+    if granted[0]:
+        n._authority, n._authority_at = dict(AUTH), time.monotonic()
+    untimed_tick()
+n._control_tick = authorized_tick
 def target(source='yolo'):
     m = TargetState()
     m.source = source
@@ -33,6 +43,11 @@ def check(m, moving):
     n._control_tick()
     assert (commands[-1] != (0., 0.)) == moving, commands[-1]
 check(target(), True)
+granted[0] = False; n._authority_at = -math.inf
+check(target(), False)  # valid target but no guard authority: zero request only
+n._authority, n._authority_at = dict(AUTH, authority_state='FAULT'), time.monotonic()
+n._target_callback(target()); untimed_tick(); assert commands[-1] == (0., 0.)
+granted[0] = True
 check(target('red_object'), True)
 for source in ('astra', 'yolo', 'red_object'):
     check(target(source), True)
