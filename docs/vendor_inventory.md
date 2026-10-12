@@ -12,7 +12,7 @@
 | wheeltec_bodyreader/bodyreader/scripts/display.py | 骨架绘图 + 平均 RGB 恢复目标 ID |
 | wheeltec_bodyreader/bodyreader_msg | 原厂人体消息，Bodyposture 无 header |
 | ultralytics_ros2 | 仅 predict 检测；默认交通标志模型，待改人体输入和跟踪 |
-| ultralytics_ros2/model/yolo11n.pt | 推荐评估的附带权重，哈希见 models/manifest.json |
+| ultralytics_ros2/model/yolo11n.pt | 早期评估的附带权重（B/C 现用官方 YOLO26s / YOLO26s-pose），哈希见 models/manifest.json |
 | simple_follower_ros2 | visualTracker 是 HSV 颜色目标测距，不是人体识别 |
 
 厂商许可证不统一，保留原许可与出处；本项目的目录组织不代表重新授权。当前文档仍保留旧绝对路径链接，避免移动原包导致失效。
@@ -21,4 +21,8 @@
 
 ## 已迁入的串口代码（2026-09-14）
 
-`ros2_ws/src/chassis_vendor/` 保存 turn_on_wheeltec_robot、wheeltec_robot_msg 和 depend/serial_ros2（目标目录 serial）的副本，原包不变。42 个文件逐一核对内容并记录 SHA-256，保留原许可声明，排除嵌套 .git 和缓存。默认 COLCON_IGNORE，未启动、未编译；这份小型副本纳入普通 Git 和日常源码同步范围。协议与启用待办见 [串口说明](../ros2_ws/src/chassis_vendor/README.md)。
+`ros2_ws/src/chassis_vendor/` 保存 turn_on_wheeltec_robot、wheeltec_robot_msg 和 depend/serial_ros2（目标目录 serial）的副本，原包不变。42 个文件逐一核对内容并记录 SHA-256，保留原许可声明，排除嵌套 .git 和缓存。默认 COLCON_IGNORE，由 `scripts/build_chassis.sh` 独立构建；此后已加固（记录在 local_modifications），并于 2026-09-16 在 Jetson 构建、按 `mini_akm` 收发里程计；这份小型副本纳入普通 Git 和日常源码同步范围。协议与启用待办见 [串口说明](../ros2_ws/src/chassis_vendor/README.md)。
+
+## 其他迁入的厂商包
+
+`ros2_ws/src/radar_vendor/`（N10P 等雷达驱动，见 [N10P 雷达接入](N10P雷达接入.md)）、`wheeltec_mic/`、`wheeltec_mic_aiui/`、`tts_make_ros2/`（语音）同样默认 COLCON_IGNORE，按需独立构建。

@@ -24,7 +24,7 @@ def main():
     # ros2_ws/src includes roscar_interfaces/roscar_api; docs includes the public API manual.
     paths = ['README.md', 'AGENTS.md', 'WORKLOG.md', '人体跟随感知方案.md',
              'ros2_ws/src', 'scripts', 'tests', 'docs', 'foxglove',
-             'deploy/README.md', 'deploy/humble-test.Dockerfile', 'deploy/radar-test.Dockerfile', 'deploy/navigation-test.Dockerfile', 'deploy/chassis-test.Dockerfile', 'deploy/systemd', 'deploy/patches',
+             'deploy/README.md', 'deploy/humble-test.Dockerfile', 'deploy/radar-test.Dockerfile', 'deploy/navigation-test.Dockerfile', 'deploy/chassis-test.Dockerfile', 'deploy/systemd', 'deploy/patches', 'deploy/udev',
              'models/manifest.json', 'models/weights/README.md',
              'data/catalog', 'data/recordings/README.md']
     cmd = ['rsync', '-azR', '--itemize-changes',

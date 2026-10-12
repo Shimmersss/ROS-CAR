@@ -40,6 +40,20 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(backend.infer('image'), [])
         backend.tracker.update.assert_called_once()
 
+    def test_pose_keeps_original_indices_with_untracked_boxes(self):
+        backend=self.backend();backend.task='pose'
+        boxes=Mock();boxes.xyxy.cpu.return_value.tolist.return_value=[[1,2,30,90],[50,4,80,100]]
+        boxes.conf.cpu.return_value.tolist.return_value=[.12,.8]
+        points=Mock();points.data.shape=(2,17,3)
+        points.data.cpu.return_value.tolist.return_value=[[[10.,20.,.3]]*17,[[60.,40.,.9]]*17]
+        backend.model.predict.return_value=[Mock(boxes=boxes,keypoints=points)]
+        backend.tracker.update.return_value=[[51,5,81,101,4,.8,0,1]]
+        result=backend.infer('image')
+        self.assertIsNone(result[0].track_id);self.assertEqual(result[0].keypoints[0],(10.,20.,.3))
+        self.assertEqual(result[1].track_id,4);self.assertEqual(result[1].keypoints[0],(60.,40.,.9))
+        points.data.shape=(2,16,3)
+        with self.assertRaisesRegex(RuntimeError,'COCO17'):backend.infer('image')
+
     def test_engine_requires_cuda_device(self):
         with tempfile.NamedTemporaryFile(suffix='.engine') as file:
             with self.assertRaisesRegex(ValueError, 'requires device=0'):

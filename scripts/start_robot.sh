@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installed Jetson profile: Route B + voice + chassis + guarded automatic follower.
+# Installed Jetson profile: Route B + voice + chassis + guarded follower (explicit authorization required).
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export WITH_CHASSIS=true WITH_VOICE=true WITH_FOLLOWER=true

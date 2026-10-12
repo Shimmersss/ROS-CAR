@@ -8,7 +8,7 @@
 | wheeltec_robot_msg | 驱动依赖的厂商消息 |
 | serial | 原包 depend/serial_ros2，ROS 包名 serial，底层串口库 |
 
-各包的 COLCON_IGNORE 保留，默认主动工作区不构建。执行 `bash scripts/build_chassis.sh` 在独立副本中构建三个包；新 A 仅在 `with_chassis:=true` 时启动驱动，运动仍需另行使能。本轮未向 Jetson 同步。详见 [红色方案 A](../../../docs/方案A红色物体跟随.md)。
+各包的 COLCON_IGNORE 保留，默认主动工作区不构建。执行 `bash scripts/build_chassis.sh` 在独立副本中构建三个包；新 A 仅在 `with_chassis:=true` 时启动驱动，运动仍需另行使能。本轮未向 Jetson 同步。详见 [红色方案 A（已归档）](../../../docs/archive/方案A红色物体跟随.md)。
 
 ## 已有协议
 

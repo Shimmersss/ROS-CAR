@@ -1,0 +1,15 @@
+# Gimbal mount geometry (metres, radians; REP-103). PLACEHOLDERS from the 3D sketch, NOT measured.
+# Keep confirmed: false until measured/calibrated; the launch then refuses to publish this TF.
+# camera_link -> camera_color_optical_frame stays with the camera driver.
+gimbal_mount:
+  confirmed: false
+  parent_frame: base_footprint     # vendor mini_akm origin: chassis centre on the floor
+  camera_frame: camera_link
+  imu_frame: imu_link
+  base_to_pan: {xyz: [0.03, 0.0, 0.17], rpy: [0.0, 0.0, 0.0]}      # pan axis on the turntable top
+  pan_to_tilt: {xyz: [0.0, 0.0, 0.045], rpy: [0.0, 0.0, 0.0]}      # tilt axis centre
+  tilt_to_camera: {xyz: [0.025, 0.0, 0.03], rpy: [0.0, 0.0, 0.0]}
+  tilt_to_imu: {xyz: [-0.012, 0.03, 0.05], rpy: [0.0, 0.0, 0.0]}
+  pan_limit_rad: 2.967             # +-170 deg software limit, also enforced by the MCU
+  tilt_lower_rad: -0.524           # looking up 30 deg (placeholder until the bracket is measured)
+  tilt_upper_rad: 0.785            # looking down 45 deg

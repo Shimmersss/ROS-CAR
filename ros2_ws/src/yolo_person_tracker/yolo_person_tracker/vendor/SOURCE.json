@@ -1,0 +1,9 @@
+{
+  "project": "KaiyangZhou/deep-person-reid",
+  "commit": "f8cd150fdf77e8d9e1ed143b7f308c2c609ded50",
+  "license": "MIT",
+  "files": {
+    "osnet.py": "c7c1c29187d6330f859c91da229271531920464c7011aec13842a086b2263cae",
+    "TORCHREID_LICENSE": "3ac8ce2a83d170cb1c7c84152e0c1faca1f187794303514383960d2441716247"
+  }
+}

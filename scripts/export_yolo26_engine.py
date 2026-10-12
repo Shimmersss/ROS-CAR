@@ -19,6 +19,7 @@ EXPORT_ARGS = dict(format='engine', imgsz=640, batch=1, dynamic=False,
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--task', choices=['detect', 'pose'], default='detect')
     parser.add_argument('--execute', action='store_true', help='Actually build on target Jetson; otherwise print plan')
     parser.add_argument('--workspace-gib', type=float, default=1.0,
                         help='TensorRT workspace cap in GiB; reduce on shared-memory Jetson')
@@ -26,8 +27,9 @@ def main():
     if not math.isfinite(args.workspace_gib) or args.workspace_gib <= 0:
         parser.error('--workspace-gib must be finite and positive')
     export_args = dict(EXPORT_ARGS, workspace=args.workspace_gib)
-    source = ROOT/'models/weights/yolo26s.pt'
-    target = ROOT/'models/weights/yolo26s-fp16.engine'
+    name = 'yolo26s-pose' if args.task == 'pose' else 'yolo26s'
+    source = ROOT/f'models/weights/{name}.pt'
+    target = ROOT/f'models/weights/{name}-fp16.engine'
     report_path = target.with_suffix('.engine.json')
     if not args.execute:
         print(json.dumps(dict(source=str(source), target=str(target), export_args=export_args,
@@ -47,7 +49,7 @@ def main():
     if target.exists() or report_path.exists():
         raise SystemExit('Existing engine/report found; preserve or move it before rebuilding.')
     entry = next(item for item in json.loads((ROOT/'models/manifest.json').read_text())['models']
-                 if item['name'] == 'yolo26s.pt')
+                 if item['name'] == f'{name}.pt')
     if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest() != entry['sha256']:
         raise SystemExit('Run scripts/prepare_model.py first; the official checkpoint must match its manifest.')
     # Do not let Ultralytics install or replace the target CUDA/TensorRT environment.
@@ -64,17 +66,19 @@ def main():
     import numpy as np
     # Stage in an isolated directory; publish the engine only after a load/inference smoke test.
     with tempfile.TemporaryDirectory(prefix='yolo26-export-', dir=target.parent) as folder:
-        staged = Path(folder)/'yolo26s-fp16.pt'
+        staged = Path(folder)/f'{name}-fp16.pt'
         shutil.copyfile(source, staged)
-        built = Path(YOLO(str(staged), task='detect').export(**export_args))
-        engine = YOLO(str(built), task='detect')
+        built = Path(YOLO(str(staged), task=args.task).export(**export_args))
+        engine = YOLO(str(built), task=args.task)
         engine.track(np.zeros((640,640,3), dtype=np.uint8), device=0, imgsz=640,
                      tracker='bytetrack.yaml', persist=True, classes=[0], conf=.1,
                      nms=False, rect=False, verbose=False)
         if (not engine.predictor.model.end2end
                 or engine.predictor.model.metadata.get('args', {}).get('quantize') != 16):
             raise RuntimeError('Engine lacks FP16 export metadata or end-to-end output')
-        report = dict(created_utc=datetime.now(timezone.utc).isoformat(),
+        if args.task == 'pose' and engine.predictor.model.metadata.get('task') != 'pose':
+            raise RuntimeError('Engine is missing pose task metadata')
+        report = dict(task=args.task, created_utc=datetime.now(timezone.utc).isoformat(),
                       source_sha256=entry['sha256'], engine_sha256=hashlib.sha256(built.read_bytes()).hexdigest(),
                       export_args=export_args, input_binding_fp16=bool(engine.predictor.model.fp16),
                       precision_note='FP16 builder enabled; input binding and some layers may remain FP32',

@@ -1,0 +1,85 @@
+/**:
+  ros__parameters:
+    pose_confidence: 0.5
+    # Explicit launch switch also requires reid_enabled. No identity lock by default.
+    reid_lock_confirm_frames: 3
+    reid_lock_max_age_s: 0.5
+    # Confirm physical upright mounting before permitting FALL_CONFIRMED.
+    pose_upright_confirmed: false
+    pose_horizontal_deg: 60.0
+    pose_standing_deg: 35.0
+    pose_drop_fraction: 0.25
+    pose_transition_s: 1.0
+    pose_lying_confirm_s: 1.0
+    pose_recovery_s: 2.0
+    pose_stable_s: 0.3
+    pose_max_gap_s: 0.5
+    pose_lying_aspect: 1.2
+    pose_knee_height_fraction: 0.2
+    pose_joint_jump_m: 0.5
+    # Allowance grows with time since that joint's last accepted sample.
+    pose_joint_jump_speed_mps: 2.0
+    # C-only real-depth fusion. False restores the original C/B sampling path.
+    fusion_enabled: true
+    fusion_min_anchor_joints: 2
+    fusion_cluster_abs_m: 0.15
+    fusion_cluster_rel: 0.12
+    fusion_torso_scale: 0.65
+
+    # 3D enhancement falls back to 2D until gravity is physically confirmed.
+    pose3d_enabled: true
+    pose3d_gravity_confirmed: false
+    pose3d_ground_confirmed: false
+    # Unit up vector expressed in the rectified optical frame; placeholders only.
+    pose3d_up_x: 0.0
+    pose3d_up_y: -1.0
+    pose3d_up_z: 0.0
+    pose3d_camera_height_m: 1.0
+    pose3d_depth_max_m: 3.0
+    pose3d_metric_drop_m: 0.30
+    pose3d_low_center_m: 0.65
+
+    # Keep pixel history continuous; pause metric evidence briefly on depth loss.
+    pose3d_depth_gap_s: 0.35
+
+    # Dynamic gravity for a gimbal camera. 'static' keeps pose3d_up_* (default, unchanged);
+    # 'floor' uses this frame's stable RANSAC floor; 'tf' uses gravity_frame at the image stamp.
+    # Missing per-frame gravity -> that frame is 2D, and the 2D drop reference is reset.
+    # The *_confirmed flags above still gate 3D/ground/2D-confirmation use.
+    pose3d_up_source: static
+    pose3d_upright_roll_deg: 3.0
+    pose3d_camera_motion_deg: 2.0
+    gravity_frame: base_footprint
+    gravity_ground_z_m: 0.0
+
+    # RANSAC floor plane from registered depth (publishes floor_plane). Evidence only.
+    floor_fit_enabled: false
+    floor_roi_top_fraction: 0.35
+    floor_inlier_m: 0.02
+    floor_max_rms_m: 0.015
+    floor_min_extent_m: 0.2
+    floor_max_tilt_deg: 35.0
+    floor_confirm_frames: 3
+
+    # Fall-rule robustness switches from the 2026-10-09 recordings (docs/跌倒检测评估记录.md).
+    # All off: behaviour is unchanged until labelled evaluation supports turning them on.
+    pose_gap_pause: false            # missing shoulders/hips pause timers instead of clearing
+    pose_handover_s: 0.0             # lost track -> one new track near/below it (falls break IDs)
+    pose_confirm_lying_only: false   # after a drop, staying horizontal confirms (no re-check)
+    pose3d_knee_fallback: false      # upright 3D torso without knees uses the 2D label as baseline
+
+    # Skeleton-free fall cue: body top height from depth; skeleton standing/crouching vetoes it
+    # only in a box at least height_veto_min_aspect times taller than wide (lying boxes are wide).
+    # Confirmation also needs pose3d_gravity_confirmed and pose3d_ground_confirmed.
+    height_fall_enabled: false
+    height_upright_min_m: 0.8
+    height_low_max_m: 0.55
+    height_drop_min_m: 0.4
+    height_transition_s: 2.0
+    height_recovery_s: 1.0
+    height_veto_min_aspect: 1.5
+    height_hint_upright_min_m: 0.65   # a STANDING skeleton counts as upright from this top (far people)
+    height_lost_hold_s: 0.0           # >0: a suspected/confirmed person unseen this long may still hand over (needs pose_handover_s)
+    height_sit_hold_s: 0.0            # >0: after a rapid drop, sitting up keeps the fall suspected this long
+    height_side_edge_px: 0.0          # >0: a box this close to a side edge cannot start a suspected fall (walk-outs)
+    height_top_edge_px: 15.0          # box at the image top: top is a lower bound, never a drop

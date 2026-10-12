@@ -1,33 +1,40 @@
 # Mac / Jetson 开发与 Git 工作流
 
+更新：2026-10-11。
+
 ## 分工
 
-Mac 保存主动开发源码、配置、文档、Foxglove 布局和 Git 历史；Jetson 保存运行副本、权重、生成的 TensorRT engine 以及原始录像。代表性的录像回传 Mac 做回归数据集。
+- Mac 存放主动开发源码、配置、文档、Foxglove 布局和 Git 历史，同时负责 Gemini 录像的采集、标注与离线评估。录像保存在 `data/recordings/`，不进 Git。
+- Jetson 存放运行副本、权重、本机导出的 TensorRT engine，并执行硬件测试。正式目录 `/home/wheeltec/ROSCAR-current` 上有在运行的语音服务，验证时使用隔离目录和独立 ROS 域。
 
-A/B 在同一仓库不同 ROS 包中共存。main 保存经过检查的基线；按阶段使用 codex/astra-body、codex/yolo-follow 等短期分支，完成后合回，而非永久维护两套公共代码。当前创建的是公共框架，不自动建立远端、推送或批量提交原厂资源。
+## Git
+
+- 代码托管在 GitHub `Shimmersss/ROS-CAR`，`main` 为基线。功能在短期分支上开发（例如 `claude/*`），通过 PR 合入。
+- GitHub Actions `unit-tests` 在 PR 和推送 main 时运行 `scripts/ci_unit_tests.sh`。
+- 厂商原包、权重、录像、构建产物和代理配置不进 Git。
 
 ## 同步
 
 ```bash
-python3 scripts/sync_to_jetson.py --host user@192.168.1.10 --dest /home/user/ROSCAR
-python3 scripts/sync_to_jetson.py --host user@192.168.1.10 --dest /home/user/ROSCAR --apply
+python3 scripts/sync_to_jetson.py --host wheeltec@192.168.1.240 --dest /home/wheeltec/ROSCAR-c
 ```
 
-第一条为 dry-run（需要 SSH 可连接才能列出差异），第二条实际传输。父目录应已存在。脚本只同步代码、文档、清单和脚本，不传构建、Git、厂商包、录像和模型。不使用 --delete，删除文件需要后续明确清理或换新的部署目录，避免旧文件长期残留。
+不加参数时只预览差异（需要 SSH 可连接），核对后追加 `--apply` 才实际传输，父目录须已存在。同步按白名单进行，不传厂商包、权重、录像和构建产物，也不使用 `--delete`；删除文件需要另外明确清理或换新目录。
 
-权重用独立复制/同步处理，通过 models/manifest.json 校验；不要将权重混入普通 Git。prepare_model.py 只读取字节计算哈希，不执行 pickle 或加载模型。
+权重单独复制，用 `models/manifest.json` 校验。`prepare_model.py` 只读取字节计算哈希，不执行 pickle，也不加载模型。
 
 ## 编译与启动
 
-在 Jetson 的 Bash 中 source /opt/ros/humble/setup.bash，执行 scripts/build_ros.sh，再 source ros2_ws/install/setup.bash。
-构建扫描限定 ros2_ws/src；不自动启动厂商程序或修改系统设置。
+在 Jetson 的 Bash 中依次执行 `source /opt/ros/humble/setup.bash`、`bash scripts/build_ros.sh`、`source ros2_ws/install/setup.bash`。构建只扫描 `ros2_ws/src`；迁入的厂商包分别用 `build_chassis.sh`、`build_radar.sh` 等独立构建。C 的启动入口为 `scripts/start_c.sh`，B 和整机为 `scripts/start_project.sh`。
 
 ## 测试层级
 
-1. check_project.py：Mac 可运行，检查 Python/XML/JSON、包边界与文件结构。
-2. test_container.sh：真实 Linux ARM64 Humble 编译 + ROS 运行测试，不依赖相机。
-3. Jetson：CUDA/TensorRT、SDK、USB、RGB-D 配准与延迟；当前尚未验证。
+1. `scripts/ci_unit_tests.sh`：纯 Python 单测（Mac 与 CI 同口径），不含 ROS 运行时。
+2. `scripts/check_project.py`：结构检查，覆盖 Python/XML/JSON、包边界和文件布局。
+3. `scripts/test_container.sh` 等：在 Linux ARM64 Humble 容器中编译并运行 ROS 测试，不依赖相机。
+4. 离线录像回放：`scripts/replay_falls.py`、`scripts/evaluate_falls.py`。只证明规则在已录数据上的表现。
+5. Jetson：CUDA/TensorRT、相机、配准、延迟与真人验收，项目见 [现场实测要求](现场实测要求20261008.md)。
 
 ## 数据
 
-录 ROS bag 时保存所用提交、参数、模型哈希、硬件与场景信息；元数据提交到 data/catalog，录像保存 data/recordings 并单独备份。调试时不用一直录像，只保存具有代表性的片段。
+每段录像目录自带 `notes.md`（相机架设、场地、衣着、异常）、`device.json` 和 `labels.csv`，格式见 [重拍视频要求](重拍视频要求20261010.md) §9。只保存有代表性的片段。外部数据集放 `data/external/`。

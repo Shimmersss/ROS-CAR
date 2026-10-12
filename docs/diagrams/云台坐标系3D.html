@@ -1,0 +1,523 @@
+<title>ROSCAR 云台坐标系</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: instrument-style TF viewer — 3D stage left, readout/control rail right; stacks on phones. */
+:root {
+  --bg: #eef0f2;
+  --panel: #ffffff;
+  --fg: #1a1e23;
+  --muted: #5b6470;
+  --line: #d6dbe1;
+  --accent: #0e7c86;
+  --stage: #e6e9ed;
+  --grid-major: #b9c0c9;
+  --grid-minor: #d5dae0;
+  --edge: #1a1e23;
+  --label-bg: rgba(255, 255, 255, 0.88);
+  --warn: #b4540a;
+  --font-sans: "IBM Plex Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1216; --panel: #161a20; --fg: #e4e8ed; --muted: #98a1ac; --line: #29303a;
+    --accent: #4fc3cd; --stage: #0b0e12; --grid-major: #333b46; --grid-minor: #1d232b;
+    --edge: #a9b2bd; --label-bg: rgba(22, 26, 32, 0.88); --warn: #f0a050; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1216; --panel: #161a20; --fg: #e4e8ed; --muted: #98a1ac; --line: #29303a;
+  --accent: #4fc3cd; --stage: #0b0e12; --grid-major: #333b46; --grid-minor: #1d232b;
+  --edge: #a9b2bd; --label-bg: rgba(22, 26, 32, 0.88); --warn: #f0a050; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--font-sans); line-height: 1.5; }
+.wrap { padding-inline: 16px; padding-block: 20px 28px; max-width: 1440px; margin: 0 auto; display: grid; gap: 16px; }
+header { display: grid; gap: 4px; }
+h1 { margin: 0; font-size: 1.25rem; font-weight: 600; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); max-width: 72ch; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.stage { position: relative; background: var(--stage); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; height: min(74vh, 720px); min-height: 380px; }
+#view { position: absolute; inset: 0; }
+#view canvas { display: block; }
+.labels { position: absolute; inset: 0; pointer-events: none; }
+.frame-label { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--fg); background: var(--label-bg); border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; white-space: nowrap; transform: translate(-50%, -150%); }
+.pos-left .frame-label { transform: translate(calc(-100% - 10px), -50%); }
+.pos-right .frame-label { transform: translate(10px, -50%); }
+.pos-up-left .frame-label { transform: translate(calc(-100% - 6px), -140%); }
+.pos-up-right .frame-label { transform: translate(6px, -140%); }
+.pos-down-left .frame-label { transform: translate(calc(-100% - 6px), 40%); }
+.pos-down-right .frame-label { transform: translate(6px, 40%); }
+.pos-down .frame-label { transform: translate(-50%, 60%); }
+.frame-label.dynamic { border-color: var(--accent); color: var(--accent); }
+.frame-label.minor { font-size: 10px; color: var(--muted); }
+.overlay { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; pointer-events: none; font-size: 12px; color: var(--muted); }
+.axes-key { display: flex; gap: 10px; font-family: var(--font-mono); }
+.axes-key span::before { content: ""; display: inline-block; width: 14px; height: 3px; margin-right: 5px; vertical-align: middle; background: currentColor; }
+.kx { color: #e5484d; } .ky { color: #2f9e62; } .kz { color: #3e63dd; }
+.view-buttons { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; }
+aside { display: grid; gap: 12px; min-width: 0; }
+.group { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; display: grid; gap: 10px; min-width: 0; }
+.group h2 { margin: 0; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: 64px minmax(0, 1fr) 64px; gap: 8px; align-items: center; font-size: 13px; }
+.row output, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12px; text-align: right; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+input[type="range"]:disabled { opacity: 0.45; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.seg label { flex: 1; text-align: center; font-size: 13px; padding: 5px 0; cursor: pointer; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg input:checked + span { color: var(--accent); font-weight: 600; }
+.seg label:has(input:checked) { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+button { font: inherit; font-size: 13px; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 4px 10px; cursor: pointer; pointer-events: auto; }
+button:hover { border-color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.primary { border-color: var(--accent); color: var(--accent); }
+.buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+dl { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; font-size: 12px; }
+dt { color: var(--muted); }
+dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
+.state { font-family: var(--font-sans); font-weight: 600; color: var(--accent); }
+.state.warn { color: var(--warn); }
+.frames { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.frames li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 2px 8px; padding: 5px 0; border-top: 1px solid var(--line); font-size: 12px; }
+.frames li:first-child { border-top: 0; }
+.frames input { margin: 2px 0 0; accent-color: var(--accent); }
+.fname { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.fmeta { grid-column: 2; color: var(--muted); }
+.chip { display: inline-block; font-size: 11px; padding: 0 5px; border-radius: 3px; border: 1px solid var(--line); margin-right: 4px; }
+.chip.dyn { border-color: var(--accent); color: var(--accent); }
+.note { margin: 0; font-size: 12px; color: var(--muted); max-width: 90ch; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>ROSCAR 云台坐标系</h1>
+    <p>mini_akm 底盘加两轴云台的 TF 链：odom → base_footprint → pan_link → tilt_link → camera_link / imu_link → 彩色光学系。人的位置估计在 odom 中，云台和底盘各自从这份估计取数。</p>
+  </header>
+
+  <div class="layout">
+    <section class="stage" aria-label="三维坐标系视图">
+      <div id="view"></div>
+      <div class="view-buttons">
+        <button type="button" id="view-close">车体特写</button>
+        <button type="button" id="view-wide">全景</button>
+      </div>
+      <div class="overlay">
+        <div class="axes-key"><span class="kx">X</span><span class="ky">Y</span><span class="kz">Z</span></div>
+        <div>拖动旋转 · 滚轮缩放 · 右键平移</div>
+      </div>
+    </section>
+
+    <aside>
+      <div class="group">
+        <h2>云台</h2>
+        <div class="seg" role="radiogroup" aria-label="云台控制方式">
+          <label><input type="radio" name="aim" id="aim-auto" value="auto" checked><span>自动对准人</span></label>
+          <label><input type="radio" name="aim" id="aim-manual" value="manual"><span>手动</span></label>
+        </div>
+        <div class="row"><label for="pan">pan</label><input type="range" id="pan" min="-170" max="170" step="1" value="0"><output id="pan-out">0°</output></div>
+        <div class="row"><label for="tilt">tilt</label><input type="range" id="tilt" min="-30" max="45" step="1" value="0"><output id="tilt-out">0°</output></div>
+        <dl>
+          <dt>状态</dt><dd id="gimbal-state" class="state">对准</dd>
+        </dl>
+      </div>
+
+      <div class="group">
+        <h2>场景</h2>
+        <div class="row"><label for="px">人 x</label><input type="range" id="px" min="-2" max="4" step="0.05" value="1.8"><output id="px-out">1.80 m</output></div>
+        <div class="row"><label for="py">人 y</label><input type="range" id="py" min="-2.5" max="2.5" step="0.05" value="0.6"><output id="py-out">0.60 m</output></div>
+        <div class="buttons">
+          <button type="button" id="play" class="primary">播放跟随演示</button>
+          <button type="button" id="reset">重置</button>
+        </div>
+        <dl>
+          <dt>演示</dt><dd>人沿 4.8 × 3.2 m 椭圆绕行，3 倍速；底盘纯追踪，云台几何指向</dd>
+        </dl>
+      </div>
+
+      <div class="group">
+        <h2>实时变换</h2>
+        <dl>
+          <dt>base_footprint → 光学系 xyz</dt><dd id="t-xyz">—</dd>
+          <dt>四元数 xyzw</dt><dd id="t-q">—</dd>
+          <dt>人在 base_footprint</dt><dd id="p-base">—</dd>
+          <dt>后轴距离 d / 方位 α</dt><dd id="p-da">—</dd>
+          <dt>底盘指令 v / ω</dt><dd id="cmd">—</dd>
+          <dt>底盘状态</dt><dd id="chassis-state" class="state">—</dd>
+          <dt>整个人入画</dt><dd id="framing" class="state">—</dd>
+        </dl>
+      </div>
+
+      <div class="group">
+        <h2>坐标系</h2>
+        <ul class="frames" id="frames"></ul>
+      </div>
+    </aside>
+  </div>
+
+  <p class="note">轮距、轴距和 base_footprint 原点取自厂商 mini_akm URDF；云台、相机和 IMU 的位置是示意值，等卷尺实测和标定后替换。跟随距离 d* = 1.9 m（从后轴算起，暂定，使整个人入画），速度上限 0.15 m/s，最小转弯半径按 0.45 m 示意。云台 pan 限速 45°/s、tilt 30°/s，视场按 Gemini 出厂内参（水平 70.5°、竖直 55.9°）计算。图中只演示几何关系，不代表实车结果。</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+<script>
+(() => {
+  const DEG = Math.PI / 180;
+  // Geometry in metres, ROS axes (x forward, y left, z up). Car values from the vendor URDF.
+  const REAR_AXLE_X = -0.0697, FRONT_AXLE_X = 0.0736, TRACK = 0.16, WHEEL_R = 0.034;
+  const PAN_ORIGIN = new THREE.Vector3(0.03, 0, 0.17);   // illustrative
+  const TILT_OFFSET = 0.045, CAM_OFFSET = new THREE.Vector3(0.025, 0, 0.03), OPTICAL_OFFSET = new THREE.Vector3(0.016, -0.01, 0);
+  const TORSO_Z = 1.0, PERSON_H = 1.7, FOLLOW_D = 1.9, K_V = 0.6, V_MAX = 0.15, R_MIN = 0.45;
+  // Gemini factory color intrinsics (fx = fy = 452.4 at 640x480) give these half fields of view.
+  const H_HALF = Math.atan(320 / 452.447) / (Math.PI / 180), V_HALF = Math.atan(240 / 452.447) / (Math.PI / 180);
+  const PAN_LIMIT = 170, PAN_HOLD = H_HALF - 5, PAN_RATE = 45, TILT_RATE = 30, TILT_MIN = -30, TILT_MAX = 45;
+  const wrapDist = (a, b) => Math.abs(((a - b) % 360 + 540) % 360 - 180);
+
+  const stage = document.getElementById('view');
+  const css = () => getComputedStyle(document.documentElement);
+  const token = name => css().getPropertyValue(name).trim();
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  stage.appendChild(renderer.domElement);
+  const labelRenderer = new THREE.CSS2DRenderer();
+  labelRenderer.domElement.className = 'labels';
+  stage.appendChild(labelRenderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 50);
+  camera.up.set(0, 0, 1);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x666a70, 0.85));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.75);
+  sun.position.set(2, -3, 4);
+  scene.add(sun);
+
+  // ---------- helpers ----------
+  const edgeLines = [];
+  function mesh(geo, color, parent, pos, rot) {
+    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 0.75, metalness: 0.1 }));
+    if (pos) m.position.copy(pos);
+    if (rot) m.rotation.set(rot[0], rot[1], rot[2]);
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 25), new THREE.LineBasicMaterial({ transparent: true, opacity: 0.35 }));
+    m.add(e); edgeLines.push(e);
+    parent.add(m);
+    return m;
+  }
+  const v3 = (x, y, z) => new THREE.Vector3(x, y, z);
+  const box = (x, y, z) => new THREE.BoxGeometry(x, y, z);
+
+  // CSS2DRenderer owns the wrapper's transform, so the visible chip is an inner span.
+  function makeLabel(text, cls, pos = 'up') {
+    const wrap = document.createElement('div');
+    wrap.className = 'pos-' + pos;
+    const span = document.createElement('span');
+    span.className = cls; span.textContent = text;
+    wrap.appendChild(span);
+    return new THREE.CSS2DObject(wrap);
+  }
+  const frames = {};
+  function frame(id, parent, len, opts = {}) {
+    const g = opts.group || new THREE.Group();
+    if (!opts.group) parent.add(g);
+    const axes = new THREE.Group();
+    const head = len * 0.2;
+    [[v3(1, 0, 0), 0xe5484d], [v3(0, 1, 0), 0x2f9e62], [v3(0, 0, 1), 0x3e63dd]].forEach(([d, c]) =>
+      axes.add(new THREE.ArrowHelper(d, v3(0, 0, 0), len, c, head, head * 0.55)));
+    g.add(axes);
+    const label = makeLabel(id, 'frame-label' + (opts.dynamic ? ' dynamic' : '') + (opts.minor ? ' minor' : ''), opts.pos);
+    g.add(label);
+    frames[id] = { group: g, axes, label };
+    return g;
+  }
+
+  // ---------- frames and car ----------
+  const odom = new THREE.Group(); scene.add(odom);
+  frame('odom', null, 0.3, { group: odom, pos: 'down-left' });
+
+  const base = frame('base_footprint', odom, 0.2, { dynamic: true, pos: 'down-right' });
+  const baseLink = frame('base_link', base, 0.1, { minor: true, pos: 'right' });
+  baseLink.position.z = 0.019;
+
+  const ALU = 0xb8bdc4, DARK = 0x33373d, RUBBER = 0x24272b;
+  mesh(box(0.27, 0.11, 0.012), DARK, base, v3(0.01, 0, 0.045));
+  [0.085, 0.125].forEach(z => mesh(box(0.2, 0.12, 0.004), ALU, base, v3(0.0, 0, z)));
+  [[-0.08, 0.05], [-0.08, -0.05], [0.08, 0.05], [0.08, -0.05]].forEach(([x, y]) =>
+    mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.11, 8), ALU, base, v3(x, y, 0.105), [Math.PI / 2, 0, 0]));
+  mesh(box(0.1, 0.08, 0.03), 0x2b4f7a, base, v3(-0.03, 0, 0.065));          // battery
+  mesh(box(0.06, 0.08, 0.025), 0x1f6f4a, base, v3(0.05, 0, 0.1));            // Jetson/board
+  const wheelGeo = new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, 0.026, 28);
+  [[REAR_AXLE_X, TRACK / 2], [REAR_AXLE_X, -TRACK / 2], [FRONT_AXLE_X, TRACK / 2], [FRONT_AXLE_X, -TRACK / 2]].forEach(([x, y]) =>
+    mesh(wheelGeo, RUBBER, base, v3(x, y, WHEEL_R)));
+  mesh(new THREE.CylinderGeometry(0.004, 0.004, TRACK, 8), ALU, base, v3(REAR_AXLE_X, 0, WHEEL_R));
+
+  const rear = new THREE.Group(); rear.position.set(REAR_AXLE_X, 0, 0.002); base.add(rear);
+  mesh(new THREE.TorusGeometry(0.014, 0.003, 8, 24), 0xd9822b, rear);
+  rear.add(makeLabel('后轴中点', 'frame-label minor', 'down'));
+
+  // Gimbal: fixed base on the top deck, rotating pan stage, tilt bracket, camera.
+  mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.03, 40), DARK, base, v3(PAN_ORIGIN.x, 0, PAN_ORIGIN.z - 0.018), [Math.PI / 2, 0, 0]);
+  const pan = frame('pan_link', base, 0.11, { dynamic: true, pos: 'down-left' });
+  pan.position.copy(PAN_ORIGIN);
+  mesh(new THREE.CylinderGeometry(0.046, 0.046, 0.006, 40), 0x464b52, pan, v3(0, 0, 0.003), [Math.PI / 2, 0, 0]);
+  [-0.045, 0.045].forEach(y => mesh(box(0.024, 0.006, 0.05), DARK, pan, v3(0, y, 0.028)));
+  mesh(box(0.03, 0.03, 0.02), 0x202326, pan, v3(0, 0.06, 0.04));              // tilt servo body
+
+  const tilt = frame('tilt_link', pan, 0.09, { dynamic: true, pos: 'left' });
+  tilt.position.set(0, 0, TILT_OFFSET);
+  mesh(box(0.03, 0.084, 0.006), DARK, tilt, v3(0.01, 0, 0.012));
+  mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.1, 10), ALU, tilt, v3(0, 0, 0));
+
+  const camLink = frame('camera_link', tilt, 0.08, { pos: 'up-left' });
+  camLink.position.copy(CAM_OFFSET);
+  mesh(box(0.03, 0.165, 0.035), 0x25282d, camLink, v3(0, 0, 0));
+  [-0.055, -0.01, 0.045].forEach(y => mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.003, 20), 0x0d0f12, camLink, v3(0.016, y, 0), [0, 0, Math.PI / 2]));
+
+  const optical = frame('camera_color_optical_frame', camLink, 0.07, { pos: 'right' });
+  optical.position.copy(OPTICAL_OFFSET);
+  optical.setRotationFromMatrix(new THREE.Matrix4().makeBasis(v3(0, -1, 0), v3(0, 0, -1), v3(1, 0, 0)));
+
+  const imu = frame('imu_link', tilt, 0.05, { pos: 'up-right' });
+  imu.position.set(-0.012, 0.03, 0.05);
+  mesh(box(0.016, 0.021, 0.002), 0x3b4fc2, imu, v3(0, 0, -0.002));
+
+  // Person standing on the odom floor.
+  const person = new THREE.Group(); odom.add(person);
+  const SKIN = 0xd9822b;
+  mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.85, 16), 0x4b5563, person, v3(0, 0.07, 0.425), [Math.PI / 2, 0, 0]);
+  mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.85, 16), 0x4b5563, person, v3(0, -0.07, 0.425), [Math.PI / 2, 0, 0]);
+  mesh(new THREE.CylinderGeometry(0.15, 0.13, 0.62, 20), SKIN, person, v3(0, 0, 1.16), [Math.PI / 2, 0, 0]);
+  mesh(new THREE.SphereGeometry(0.11, 24, 16), 0xe8b48a, person, v3(0, 0, 1.6));
+  const torsoMark = mesh(new THREE.SphereGeometry(0.025, 16, 12), 0xd9822b, person, v3(0, 0, TORSO_Z));
+  torsoMark.material.emissive = new THREE.Color(0x6a3500);
+  const pLabel = makeLabel('人（躯干代表点）', 'frame-label', 'right'); pLabel.position.set(0.03, 0, TORSO_Z); person.add(pLabel);
+
+  // Rays: optical axis and camera-to-person line.
+  const axisLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([v3(), v3()]), new THREE.LineBasicMaterial({ color: 0x3e63dd }));
+  const aimLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([v3(), v3()]), new THREE.LineDashedMaterial({ color: 0xd9822b, dashSize: 0.05, gapSize: 0.035 }));
+  scene.add(axisLine, aimLine);
+
+  // Ground grid and car trail.
+  let grid;
+  const trailPts = [];
+  const trail = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ transparent: true, opacity: 0.6 }));
+  scene.add(trail);
+
+  function applyTheme() {
+    scene.background = new THREE.Color(token('--stage'));
+    if (grid) { scene.remove(grid); grid.geometry.dispose(); }
+    grid = new THREE.GridHelper(10, 40, new THREE.Color(token('--grid-major')), new THREE.Color(token('--grid-minor')));
+    grid.rotation.x = Math.PI / 2; grid.position.set(2, 1, 0);
+    scene.add(grid);
+    const edge = new THREE.Color(token('--edge'));
+    edgeLines.forEach(e => e.material.color.copy(edge));
+    trail.material.color.set(token('--accent'));
+  }
+  applyTheme();
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+  new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // ---------- frame list ----------
+  const FRAME_INFO = [
+    ['odom', '—', '世界参考', '底盘 /odom；原点是驱动启动时车的位置'],
+    ['base_footprint', 'odom', '动态', 'odom_tf；厂商车体中心的地面投影'],
+    ['base_link', 'base_footprint', '静态', '厂商静态 TF，z +0.019 m'],
+    ['pan_link', 'base_footprint', '动态 · 绕 z', 'MCU 回传 pan 角（编码器或陀螺+零位）'],
+    ['tilt_link', 'pan_link', '动态 · 绕 y', 'IMU 俯仰换算'],
+    ['imu_link', 'tilt_link', '静态', 'MPU6050；安装角标定'],
+    ['camera_link', 'tilt_link', '静态', '多姿态地面板标定'],
+    ['camera_color_optical_frame', 'camera_link', '静态', '相机驱动；z 前 x 右 y 下'],
+  ];
+  const list = document.getElementById('frames');
+  FRAME_INFO.forEach(([id, parent, kind, src]) => {
+    const li = document.createElement('li');
+    const visible = id !== 'base_link';
+    li.innerHTML = `<input type="checkbox" id="show-${id}" ${visible ? 'checked' : ''} aria-label="显示 ${id}">
+      <label class="fname" for="show-${id}">${id}</label>
+      <div class="fmeta"><span class="chip ${kind.startsWith('动态') ? 'dyn' : ''}">${kind}</span>父：${parent}<br>${src}</div>`;
+    list.appendChild(li);
+    const f = frames[id];
+    const set = on => { f.axes.visible = on; f.label.visible = on; f.label.element.hidden = !on; };
+    set(visible);
+    li.querySelector('input').addEventListener('change', e => set(e.target.checked));
+  });
+
+  // ---------- controls ----------
+  const $ = id => document.getElementById(id);
+  const ui = { pan: $('pan'), tilt: $('tilt'), px: $('px'), py: $('py') };
+  const state = { auto: true, panDeg: 0, tiltDeg: 0, car: { x: 0, y: 0, yaw: 0 }, playing: false, t: 0, view: 'close' };
+  const personPos = v3(1.8, 0.6, 0);
+
+  function setAim(auto) { state.auto = auto; ui.pan.disabled = auto; ui.tilt.disabled = auto; }
+  $('aim-auto').addEventListener('change', () => setAim(true));
+  $('aim-manual').addEventListener('change', () => setAim(false));
+  setAim(true);
+  ui.pan.addEventListener('input', () => { state.panDeg = +ui.pan.value; });
+  ui.tilt.addEventListener('input', () => { state.tiltDeg = +ui.tilt.value; });
+  ui.px.addEventListener('input', () => { personPos.x = +ui.px.value; });
+  ui.py.addEventListener('input', () => { personPos.y = +ui.py.value; });
+
+  const ELLIPSE = { cx: 2.0, cy: 1.0, a: 2.4, b: 1.6, speed: 0.12, start: -Math.PI / 2 };
+  function personAt(t) {
+    const perim = Math.PI * (3 * (ELLIPSE.a + ELLIPSE.b) - Math.sqrt((3 * ELLIPSE.a + ELLIPSE.b) * (ELLIPSE.a + 3 * ELLIPSE.b)));
+    const th = ELLIPSE.start + (t * ELLIPSE.speed / perim) * 2 * Math.PI;
+    return v3(ELLIPSE.cx + ELLIPSE.a * Math.cos(th), ELLIPSE.cy + ELLIPSE.b * Math.sin(th), 0);
+  }
+  function reset() {
+    state.playing = false; state.t = 0;
+    state.car = { x: 0, y: 0, yaw: 0 };
+    personPos.set(+ui.px.value, +ui.py.value, 0);
+    trailPts.length = 0; trail.geometry.setFromPoints([]);
+    $('play').textContent = '播放跟随演示';
+    setView('close');
+  }
+  $('play').addEventListener('click', () => {
+    state.playing = !state.playing;
+    if (state.playing && state.t === 0) { personPos.copy(personAt(0)); setView('wide'); }
+    $('play').textContent = state.playing ? '暂停' : '继续演示';
+  });
+  $('reset').addEventListener('click', reset);
+
+  // Close view rides along with the car; wide view stays fixed over the demo area.
+  function setView(kind) {
+    state.view = kind;
+    const c = v3(state.car.x, state.car.y, 0);
+    if (kind === 'close') { camera.position.set(c.x + 0.55, c.y - 0.62, 0.48); controls.target.set(c.x + 0.04, c.y, 0.16); }
+    else { camera.position.set(ELLIPSE.cx - 2.4, ELLIPSE.cy - 5.6, 4.6); controls.target.set(ELLIPSE.cx, ELLIPSE.cy, 0.3); }
+    controls.update();
+  }
+  $('view-close').addEventListener('click', () => setView('close'));
+  $('view-wide').addEventListener('click', () => setView('wide'));
+  setView('close');
+
+  // ---------- control laws (same as docs/云台跟随设计与串口协议.md §5–6) ----------
+  function pursuit(p) {
+    const xr = p.x - REAR_AXLE_X, y = p.y;
+    const d = Math.hypot(xr, y), a = Math.atan2(y, xr);
+    let kappa = 2 * Math.sin(a) / Math.max(d, 1e-3);
+    kappa = Math.max(-1 / R_MIN, Math.min(1 / R_MIN, kappa));
+    let v = Math.max(0, Math.min(V_MAX, K_V * (d - FOLLOW_D))) * Math.max(0, Math.cos(a));
+    let why = '前进跟随', warn = false;
+    if (Math.abs(a) > Math.PI / 2) { v = 0; why = '目标在后方，停车'; warn = true; }
+    else if (Math.abs(a) > 60 * DEG && d < FOLLOW_D + 0.5) { v = 0; why = '侧方近距，等待'; warn = true; }
+    else if (d <= FOLLOW_D) { v = 0; why = '已到跟随距离'; }
+    return { d, a, v, w: v * kappa, why, warn };
+  }
+
+  const tmpM = new THREE.Matrix4(), invBase = new THREE.Matrix4();
+  const fmt = (n, k = 3) => (n >= 0 ? '+' : '−') + Math.abs(n).toFixed(k);
+
+  let last = performance.now();
+  function tick(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+
+    if (state.playing) {
+      const sdt = dt * 3;
+      state.t += sdt;
+      personPos.copy(personAt(state.t));
+    }
+    base.position.set(state.car.x, state.car.y, 0);
+    base.rotation.set(0, 0, state.car.yaw);
+    person.position.copy(personPos);
+    scene.updateMatrixWorld(true);
+
+    invBase.copy(base.matrixWorld).invert();
+    const pBase = v3(personPos.x, personPos.y, TORSO_Z).applyMatrix4(invBase);
+    const cmd = pursuit(pBase);
+
+    if (state.playing) {
+      const sdt = dt * 3, c = state.car;
+      // Integrate the rear-axle point (kinematic bicycle), then place base_footprint ahead of it.
+      let rx = c.x + Math.cos(c.yaw) * REAR_AXLE_X, ry = c.y + Math.sin(c.yaw) * REAR_AXLE_X;
+      rx += cmd.v * Math.cos(c.yaw) * sdt; ry += cmd.v * Math.sin(c.yaw) * sdt; c.yaw += cmd.w * sdt;
+      const nx = rx - Math.cos(c.yaw) * REAR_AXLE_X, ny = ry - Math.sin(c.yaw) * REAR_AXLE_X;
+      if (state.view === 'close') {
+        camera.position.x += nx - c.x; camera.position.y += ny - c.y;
+        controls.target.x += nx - c.x; controls.target.y += ny - c.y;
+      }
+      c.x = nx; c.y = ny;
+      if (!trailPts.length || trailPts[trailPts.length - 1].distanceTo(v3(c.x, c.y, 0.003)) > 0.02) {
+        trailPts.push(v3(c.x, c.y, 0.003)); if (trailPts.length > 2000) trailPts.shift();
+        trail.geometry.setFromPoints(trailPts);
+      }
+    }
+
+    // Gimbal (design doc §5): pan points at the person, tilt frames head-to-feet, both rate limited.
+    // At a pan limit the gimbal holds while the person stays in view, then unwinds the long way.
+    let gState = '手动', gWarn = false;
+    const dx = pBase.x - PAN_ORIGIN.x, dy = pBase.y - PAN_ORIGIN.y, dh = Math.hypot(dx, dy);
+    const hCam = PAN_ORIGIN.z + TILT_OFFSET;
+    const headUp = Math.atan2(PERSON_H - hCam, dh) / DEG, feetDown = Math.atan2(hCam, dh) / DEG;
+    const panT = Math.atan2(dy, dx) / DEG;
+    if (state.auto) {
+      const tiltT = -(headUp - feetDown) / 2;
+      // The short way to the person crosses directly behind: stay on this side at the limit while still in view.
+      const sideLimit = Math.sign(state.panDeg || 1) * PAN_LIMIT;
+      const holding = Math.abs(panT - state.panDeg) > 180 && wrapDist(sideLimit, panT) <= PAN_HOLD;
+      const goal = holding ? sideLimit : Math.max(-PAN_LIMIT, Math.min(PAN_LIMIT, panT));
+      const sdt = state.playing ? dt * 3 : dt;
+      state.panDeg += Math.max(-PAN_RATE * sdt, Math.min(PAN_RATE * sdt, goal - state.panDeg));
+      const tiltGoal = Math.max(TILT_MIN, Math.min(TILT_MAX, tiltT));
+      state.tiltDeg += Math.max(-TILT_RATE * sdt, Math.min(TILT_RATE * sdt, tiltGoal - state.tiltDeg));
+      gState = '对准';
+      if (Math.abs(goal - state.panDeg) > 60) { gState = 'pan 回卷中，暂时丢失目标'; gWarn = true; }
+      else if (holding || Math.abs(panT) > PAN_LIMIT) { gState = 'pan 限位保持，画面内跟踪'; gWarn = true; }
+      else if (tiltT < TILT_MIN || tiltT > TILT_MAX) { gState = 'tilt 到达限位'; gWarn = true; }
+      ui.pan.value = state.panDeg; ui.tilt.value = state.tiltDeg;
+    }
+    const offAxis = wrapDist(state.panDeg, panT);
+    const lookUp = -state.tiltDeg;
+    const inView = offAxis <= H_HALF;
+    const wholeBody = inView && headUp <= lookUp + V_HALF && -feetDown >= lookUp - V_HALF;
+    const fr = $('framing');
+    fr.textContent = !inView ? '人在画面外' : wholeBody ? '是（头和脚都在画面内）' : (headUp > lookUp + V_HALF ? '否，头出画面' : '否，脚出画面');
+    fr.classList.toggle('warn', !wholeBody);
+    pan.rotation.set(0, 0, state.panDeg * DEG);
+    tilt.rotation.set(0, state.tiltDeg * DEG, 0);
+    scene.updateMatrixWorld(true);
+
+    const oPos = v3().setFromMatrixPosition(optical.matrixWorld);
+    const oDir = v3(0, 0, 1).transformDirection(optical.matrixWorld);
+    axisLine.geometry.setFromPoints([oPos, oPos.clone().addScaledVector(oDir, 3.2)]);
+    aimLine.geometry.setFromPoints([oPos, v3(personPos.x, personPos.y, TORSO_Z)]);
+    aimLine.computeLineDistances();
+
+    // Readouts.
+    $('pan-out').textContent = `${state.panDeg.toFixed(0)}°`;
+    $('tilt-out').textContent = `${state.tiltDeg.toFixed(0)}°`;
+    $('px-out').textContent = `${personPos.x.toFixed(2)} m`;
+    $('py-out').textContent = `${personPos.y.toFixed(2)} m`;
+    const gs = $('gimbal-state'); gs.textContent = gState; gs.classList.toggle('warn', gWarn);
+    tmpM.multiplyMatrices(invBase, optical.matrixWorld);
+    const tp = v3(), tq = new THREE.Quaternion(), ts = v3();
+    tmpM.decompose(tp, tq, ts);
+    $('t-xyz').textContent = `${fmt(tp.x)} ${fmt(tp.y)} ${fmt(tp.z)}`;
+    $('t-q').textContent = `${fmt(tq.x)} ${fmt(tq.y)} ${fmt(tq.z)} ${fmt(tq.w)}`;
+    $('p-base').textContent = `x ${fmt(pBase.x, 2)}  y ${fmt(pBase.y, 2)}`;
+    $('p-da').textContent = `${cmd.d.toFixed(2)} m / ${(cmd.a / DEG).toFixed(0)}°`;
+    $('cmd').textContent = `${cmd.v.toFixed(3)} m/s / ${cmd.w.toFixed(3)} rad/s`;
+    const cs = $('chassis-state'); cs.textContent = cmd.why; cs.classList.toggle('warn', cmd.warn);
+
+    controls.update();
+    renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
+    requestAnimationFrame(tick);
+  }
+
+  function resize() {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    renderer.setSize(w, h); labelRenderer.setSize(w, h);
+    camera.aspect = w / Math.max(h, 1); camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(stage);
+  resize();
+  requestAnimationFrame(tick);
+})();
+</script>

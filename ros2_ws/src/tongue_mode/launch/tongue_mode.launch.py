@@ -17,10 +17,12 @@ def start(context):
         raise RuntimeError('with_voice already starts the single voice router')
     if with_guard and profile != 'bench':
         raise RuntimeError('This launch only creates a motion-disabled bench guard; use the existing robot guard')
+    overrides = {'safety_profile': profile, 'server_url': get('server_url')}
+    overrides.update({key: get(key) for key in ('camera_topic', 'camera_profile') if get(key)})
     nodes = [Node(package='execution_mode_manager', executable='manager_node', output='screen',
                   parameters=[{'catalog': catalog}]),
              Node(package='tongue_mode', executable='mode_node', output='screen',
-                  parameters=[get('config'), {'safety_profile': profile, 'server_url': get('server_url')}])]
+                  parameters=[get('config'), overrides])]
     if with_guard:
         nodes.append(Node(package='motion_guard', executable='guard', output='screen',
                           parameters=[{'motion_enabled': False, 'command_mode': 'IDLE', 'auto_arm': False}]))
@@ -41,6 +43,8 @@ def generate_launch_description():
         DeclareLaunchArgument('config', default_value=str(tongue/'config/tongue.yaml')),
         DeclareLaunchArgument('catalog', default_value=str(manager/'config/modes.yaml')),
         DeclareLaunchArgument('server_url', default_value='http://172.19.128.171:8096'),
+        DeclareLaunchArgument('camera_topic', default_value=''),
+        DeclareLaunchArgument('camera_profile', default_value=''),
         DeclareLaunchArgument('safety_profile', default_value='robot', choices=['robot', 'bench']),
         DeclareLaunchArgument('with_guard', default_value='false', choices=['true', 'false']),
         DeclareLaunchArgument('with_voice', default_value='false', choices=['true', 'false']),

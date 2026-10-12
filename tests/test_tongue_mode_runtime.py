@@ -35,6 +35,8 @@ from xfyun_speech.tts_node import XfyunTtsNode
 
 PIPELINE = 'cloud_r50_384_cvAC10_passthrough_debug'
 DIGEST = 'c5b9b1e31f73515b44044569b66e64d49861880441273a1fb86cd84774d6a494'
+CAMERA_TOPIC = os.environ.get('TONGUE_TEST_CAMERA_TOPIC', '/camera/color/image_raw')
+CAMERA_PROFILE = os.environ.get('TONGUE_TEST_CAMERA_PROFILE', 'astra_rgb_tongue_v1')
 
 
 def wait(predicate, detail, timeout=5.):
@@ -59,6 +61,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         raw = self.rfile.read(int(self.headers['Content-Length']))
         assert raw[:2] == b'\xff\xd8' and self.headers['Content-Type'] == 'image/jpeg'
+        assert self.headers['X-Camera-Profile'] == CAMERA_PROFILE
         self.server.uploads.append(dict(request_id=self.headers['X-Request-Id'], capture_id=self.headers['X-Capture-Id']))
         status, delay = self.server.status, self.server.delay
         time.sleep(delay)
@@ -91,7 +94,7 @@ class IO(Node):
         self.emergency_enabled = True
         self.states, self.results, self.mode_states = [], [], []
         self.bridge = CvBridge()
-        self.images = self.create_publisher(Image, '/camera/color/image_raw', qos_profile_sensor_data)
+        self.images = self.create_publisher(Image, CAMERA_TOPIC, qos_profile_sensor_data)
         self.odometry = self.create_publisher(Odometry, '/odom', 2)
         self.asr = self.create_publisher(String, '/voice/asr_text', 10)
         self.wake = self.create_publisher(String, '/voice_words', 10)
@@ -155,6 +158,7 @@ def main():
         catalog.write_text(yaml.safe_dump(data, allow_unicode=True))
         rclpy.init(args=['--ros-args', '-p', 'catalog:='+str(catalog), '-p', 'execution_modes_config:='+str(catalog),
                         '-p', 'server_url:=http://127.0.0.1:'+str(cloud.server_port),
+                        '-p', 'camera_topic:='+CAMERA_TOPIC, '-p', 'camera_profile:='+CAMERA_PROFILE,
                         '-p', 'storage_dir:='+temp+'/results', '-p', 'enable_speech_action:=true',
                         '-p', 'prepare_sec:=0.02', '-p', 'task_timeout_sec:=5.0',
                         '-p', 'frame_timeout_sec:=0.3', '-p', 'manager_timeout_sec:=1.5',

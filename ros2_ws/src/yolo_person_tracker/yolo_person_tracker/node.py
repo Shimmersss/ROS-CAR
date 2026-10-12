@@ -22,7 +22,7 @@ from person_interfaces.msg import TargetState
 from vision_msgs.msg import Detection2DArray
 from astra_body_adapter.detections import detection_array
 from .backend import YoloBackend
-from .depth import DepthTrackFilter, measure
+from .depth import DepthGate, DepthTrackFilter, measure
 from .state import Selection
 from .input_contract import stamp_seconds, validate_pair
 
@@ -41,6 +41,7 @@ class TrackerNode(Node):
         super().__init__('yolo_person_tracker', **kwargs)
         defaults = {
             'model_path': '', 'device': 'cpu', 'image_size': 640, 'nms_free': True,
+            'model_task': 'detect',
             'color_topic': '/camera/color/image_rect',
             'depth_topic': '/camera/aligned_depth_to_color/image_raw',
             'camera_info_topic': '/camera/color/camera_info',
@@ -53,6 +54,13 @@ class TrackerNode(Node):
             'kalman_measurement_std_m': .08,
             'kalman_acceleration_std_mps2': 2.0,
             'depth_jump_reset_m': .8,
+            # Gate replaces jump re-initialization; false restores the legacy filter.
+            'depth_gate_enabled': True,
+            'depth_gate_base_m': DepthGate.base_m,
+            'depth_gate_speed_mps': DepthGate.speed_mps,
+            'depth_gate_confirm_s': DepthGate.confirm_s,
+            'depth_fallback_gate_scale': DepthGate.fallback_scale,
+            'depth_fallback_noise_scale': DepthGate.fallback_noise_scale,
             'depth_min_fraction': .08,
             'position_hold_s': .25,
         }
@@ -76,6 +84,12 @@ class TrackerNode(Node):
         if (not math.isfinite(self.cfg['depth_jump_reset_m'])
                 or self.cfg['depth_jump_reset_m'] <= 0):
             raise ValueError('depth_jump_reset_m must be finite and positive')
+        self.depth_gate = DepthGate(
+            base_m=self.cfg['depth_gate_base_m'], speed_mps=self.cfg['depth_gate_speed_mps'],
+            confirm_s=self.cfg['depth_gate_confirm_s'],
+            fallback_scale=self.cfg['depth_fallback_gate_scale'],
+            fallback_noise_scale=self.cfg['depth_fallback_noise_scale'],
+        ) if self.cfg['depth_gate_enabled'] else None
         if (not math.isfinite(self.cfg['depth_min_fraction'])
                 or not 0 < self.cfg['depth_min_fraction'] <= 1):
             raise ValueError('depth_min_fraction must be finite and in (0, 1]')
@@ -137,7 +151,7 @@ class TrackerNode(Node):
             else:
                 self.loading = self.pool.submit(YoloBackend, self.cfg['model_path'],
                                                 self.cfg['device'], self.cfg['image_size'],
-                                                self.cfg['nms_free'])
+                                                self.cfg['nms_free'], self.cfg['model_task'])
         self.timer = self.create_timer(.05, self.tick, callback_group=self.state_group)
 
     @serialized
@@ -199,6 +213,20 @@ class TrackerNode(Node):
             self.snapshot = None
             self.selection.candidates = []
 
+    def measure_frame(self, metres, detections, intrinsics):
+        """Worker-owned measurements and optional per-frame subclass evidence."""
+        return ({d.track_id: measure(metres, d.box, intrinsics,
+                                    min_fraction=self.cfg['depth_min_fraction'])
+                 for d in detections if d.track_id is not None}, {})
+
+    def measurement_is_fallback(self, track_id, evidence):
+        """Whether a measurement lacks torso corroboration; plain region depth never does."""
+        return False
+
+    def mark_rejected(self, evidence, rejected):
+        """Subclass hook: gated depth must not be republished as current evidence."""
+        return evidence
+
     def process_pair(self, color, depth, received_at, intrinsics, reset):
         # One worker owns all backend calls; no callback can reset/update ByteTrack concurrently.
         bridge = CvBridge()
@@ -210,14 +238,18 @@ class TrackerNode(Node):
             self.backend.reset()
         detections = self.backend.infer(image)
         observation_stamp = stamp_seconds(color.header.stamp)
+        # Keep tracks with recent accepted or still-pending (unconfirmed) evidence.
         self.depth_filters = {key: filt for key, filt in self.depth_filters.items()
-                              if filt.stamp is not None
-                              and 0 <= observation_stamp-filt.stamp <= self.cfg['max_age_s']}
+                              if filt.evidence_stamp is not None
+                              and 0 <= observation_stamp-filt.evidence_stamp <= self.cfg['max_age_s']}
         positions = {}
         position_ages = {}
         position_stamps = {}
         held_position_ids = set()
+        evidence = {}
+        rejected = set()
         if self.cfg['depth_registered']:
+            measurements, evidence = self.measure_frame(metres, detections, intrinsics)
             for d in detections:
                 if d.track_id is None:
                     continue
@@ -227,21 +259,25 @@ class TrackerNode(Node):
                         measurement_std_m=self.cfg['kalman_measurement_std_m'],
                         acceleration_std_mps2=self.cfg['kalman_acceleration_std_mps2'],
                         jump_reset_m=self.cfg['depth_jump_reset_m'],
-                        reset_gap_s=self.cfg['max_age_s']))
-                measured = measure(metres, d.box, intrinsics,
-                                   min_fraction=self.cfg['depth_min_fraction'])
-                xyz = filt.update(measured, observation_stamp)
+                        reset_gap_s=self.cfg['max_age_s'], gate=self.depth_gate))
+                measured = measurements.get(d.track_id)
+                xyz = filt.update(measured, observation_stamp,
+                                  self.measurement_is_fallback(d.track_id, evidence))
+                if filt.last_rejected:
+                    rejected.add(d.track_id)
                 if xyz is not None:
                     positions[d.track_id] = xyz
                     position_ages[d.track_id] = 0.0
                     position_stamps[d.track_id] = observation_stamp
-                elif measured is None:
+                elif measured is None or filt.last_rejected:
+                    # Rejected depth keeps the last real measurement age, like a gap.
                     held = filt.hold(observation_stamp, self.cfg['position_hold_s'])
                     if held is not None:
                         positions[d.track_id], position_ages[d.track_id] = held
                         position_stamps[d.track_id] = observation_stamp-position_ages[d.track_id]
                         held_position_ids.add(d.track_id)
-        return ((color, metres, received_at, intrinsics, image, depth), detections,
+            evidence = self.mark_rejected(evidence, rejected)
+        return ((color, metres, received_at, intrinsics, image, depth, evidence), detections,
                 positions, position_ages, position_stamps, held_position_ids)
 
     @serialized
@@ -298,7 +334,7 @@ class TrackerNode(Node):
         elif self.snapshot is None or not self.fresh_snapshot():
             msg.status, msg.detail = TargetState.STALE, 'Waiting for fresh synchronized RGB-D inference'
         else:
-            color, depth, _, intrinsics, _, _ = self.snapshot
+            color, depth, _, intrinsics, _, _, _ = self.snapshot
             msg.header.frame_id = color.header.frame_id
             msg.observation_stamp = copy.deepcopy(color.header.stamp)
             chosen = self.selection.selected()
@@ -309,12 +345,17 @@ class TrackerNode(Node):
                               else 'Call lock_target to select central track')
             elif chosen is None:
                 msg.status, msg.detail = TargetState.LOST, 'Selected track absent; explicit relock required after stream reset'
+                if getattr(self, 'reid_lock_enabled', False):
+                    msg.detail = ('Waiting for fresh confirmed identity: '
+                                  + (self.selection.person_id or 'initial association'))
             else:
                 msg.status = TargetState.TRACKING
                 msg.confidence = chosen.confidence
                 xyz = self.positions.get(chosen.track_id)
                 held = chosen.track_id in self.held_position_ids
-                measurement_age = msg.measurement_age_s + self.position_ages.get(chosen.track_id, 0.0)
+                measurement_age = (self.get_clock().now().nanoseconds*1e-9
+                                   - stamp_seconds(color.header.stamp)
+                                   + self.position_ages.get(chosen.track_id, 0.0))
                 if held and not 0 <= measurement_age <= self.cfg['position_hold_s']:
                     xyz = None
                 if xyz is None:
@@ -326,7 +367,9 @@ class TrackerNode(Node):
                                   if held else 'Tracked; registered body-part depth')
                 if xyz is not None:
                     observation_stamp = self.position_stamps.get(chosen.track_id)
-                    if observation_stamp is not None and math.isfinite(observation_stamp):
+                    # Fresh measurements retain the exact ROS sensor stamp above;
+                    # a float round-trip loses nanoseconds at Unix epoch scale.
+                    if held and observation_stamp is not None and math.isfinite(observation_stamp):
                         sec = int(observation_stamp)
                         nanosec = int(round((observation_stamp-sec)*1e9))
                         if nanosec >= 1000000000:
@@ -353,13 +396,13 @@ class TrackerNode(Node):
             marker.lifetime.nanosec = 200000000
         self.marker_pub.publish(marker)
 
-    def publish_image(self, color, image, detections):
+    def publish_image(self, color, image, detections, overlay_image=None):
         now = time.monotonic()
         fps = self.cfg['visualization_fps']
         if fps == 0 or now-self.last_visualization_at < 1.0/fps:
             return
         self.last_visualization_at = now
-        annotated = image.copy()
+        annotated = (image if overlay_image is None else overlay_image).copy()
         for detection in detections:
             x1, y1, x2, y2 = map(int, detection.box)
             cv2.rectangle(annotated, (x1,y1), (x2,y2), (0,255,0), 2)

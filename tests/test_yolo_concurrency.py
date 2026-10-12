@@ -42,6 +42,12 @@ def main():
     thread.start()
     try:
         assert client.wait_for_service(timeout_sec=2)
+        # Service discovery does not imply the independent topic subscription is matched.
+        deadline=time.monotonic()+2
+        while not states and time.monotonic()<deadline:
+            time.sleep(.01)
+        assert states, 'State subscription not discovered before concurrency check'
+        states.clear()
         info = CameraInfo(); info.width = info.height = 100
         info.header.frame_id = 'camera_optical'
         info.p = [100.,0.,50.,0.,0.,100.,50.,0.,0.,0.,1.,0.]

@@ -3,6 +3,8 @@ Description=ROS car voice and tongue trial (motion disabled)
 
 [Service]
 Type=simple
+# Gemini serial/calibration and optional camera/cloud overrides; never store credentials here.
+EnvironmentFile=-%h/.config/roscar/voice-tongue-trial.env
 # Installer sets this to the isolated deployment's absolute script path.
 ExecStart=/bin/bash /home/wheeltec/ROSCAR-voice-tongue-20261012-066c2ad/scripts/run_voice_tongue_trial.sh
 KillMode=control-group

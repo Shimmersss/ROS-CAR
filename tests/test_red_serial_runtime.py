@@ -53,7 +53,8 @@ def main():
     wire=bytearray(); last_tx=0
     output=tempfile.TemporaryFile(mode='w+')
     args=['ros2','run','turn_on_wheeltec_robot','wheeltec_robot_node','--ros-args',
-          '-p',f'usart_port_name:={path}','-p','car_mode:=mini_mec']  # PTY fixture, NOT actual car model.
+          '-p',f'usart_port_name:={path}','-p','car_mode:=mini_mec',
+          '-p','max_linear_mps:=0.15']  # Fixed fixture limit; NOT actual car model/default configuration.
     driver=subprocess.Popen(args,stdout=output,stderr=subprocess.STDOUT,start_new_session=True)
     red=follower=None
 

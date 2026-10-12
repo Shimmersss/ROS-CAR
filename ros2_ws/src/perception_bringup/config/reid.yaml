@@ -1,0 +1,21 @@
+/perception/reid_observer:
+  ros__parameters:
+    # Explicit opt-in observer; never reassigns the control target.
+    enabled: false
+    model_path: ''
+    expected_frame: camera_color_optical_frame
+    max_age_s: 0.5
+    sample_hz: 5.0
+    max_people: 8
+    min_crop_height: 80
+    min_crop_width: 32
+    blur_min: 20.0
+    confirm_frames: 3
+    match_distance: 0.25
+    new_identity_distance: 0.45
+    margin: 0.08
+    update_distance: 0.15
+    retention_s: 30.0
+    max_gap_s: 1.0
+    max_identities: 64
+    gallery_size: 8

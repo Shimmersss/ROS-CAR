@@ -2,7 +2,7 @@
 
 完整对外接口、字段、QoS、失败语义与 Python 示例见 [ROS接口使用文档](ROS接口使用文档.md)。新增 `roscar_interfaces/srv/SetControlMode`、`/chassis/cmd_vel` 和 `/perception/detections`；本页 TargetState 结构不变。`/control/state` 新增 `command_mode`，切换来源总是停车并解除授权。
 
-> 方案 A 在分支 `a` 改为红色目标 + 配准深度；原 `route:=astra` 保留，B 不变。最新入口、串口与本机/实机边界见 [红色方案 A](方案A红色物体跟随.md)。本轮未部署小车。
+> 历史路线：A 骨架（`route:=astra`）与红色目标（`route:=red`）已退役，资料见 [归档](archive/README.md)。C（`route:=yolo_pose`）沿用本页 TargetState，`source=yolo`；人体状态、地面与统一定位的附加话题见 [方案 C 实现与验收](方案C实现与验收.md) 与 [统一定位与三维姿态](方案C统一定位与三维姿态.md)。
 
 
 话题：/perception/target_state；消息：person_interfaces/msg/TargetState。
@@ -89,3 +89,21 @@ Foxglove 导入 `foxglove/red-layout.json`（仓库根目录下）后，上方�
 base 话题的 `header.frame_id=base_link`（可配置），position 为 X 前、Y 左、Z 上，距离 `hypot(X,Y)`、偏角 `atan2(Y,X)`（左正）；header.stamp 为发布时刻，observation_stamp 沿用来源观测时间，TF 在观测时刻查询。位置只有源数据、标定确认和 TF 都有效时才有效；无效位置/距离/偏角为 NaN，Marker DELETE。消息结构不变，仅补充字段注释。
 
 未标定时默认不发布安装 TF，占位单位矩阵仅存于 camera_mount.yaml；原光学话题、检测图、锁定服务与 Marker 继续可用。**旧 person_follower 使用光学坐标语义，不能直接接 base 话题。** TF 节点仅接受真实 yolo 来源，不将 demo 当实际校准观测。整个 TF 节点退出时，新话题消费者仍需自行检测断流。
+## C 路线新增接口
+
+显式 `route:=yolo_pose` 使用 Pose 模型；继承原 `TargetState`（source 仍为 yolo）、检测框及锁定服务。新增 `/perception/person_states`（person_interfaces/PersonStateArray），采集时间和逐人轨迹、COCO17 2D/3D 关键点及有效位、姿态/跌倒阶段/原因；无效坐标 NaN。姿态枚举 0未知/1站立/2坐蹲/3躺卧/4跌倒，跌倒阶段 0无/1疑似/2确认。失效时 valid=false，人体列表为空。
+
+C 另提供独立单目地面定位（需确认安装外参和地面，默认未确认）：`/perception/person_ground_states`（PersonGroundArray，base 坐标接地点、`std_m`、`method`、真实测量龄，偏角左正）和锁定目标的 `/perception/target_state_ground`（TargetState，`source=yolo_ground`，不与 `yolo` 的相机光学目标混用）。
+
+新增 `/perception/skeleton_markers`（visualization_msgs/MarkerArray）与 `/perception/performance`（RuntimeMetrics）。C 仅检测和显示，不消费跌倒消息到语音或控制。详细输入契约及参数见 [方案 C 实现与验收](方案C实现与验收.md)。
+
+### C 可选身份观察接口
+
+`/perception/person_identities`（PersonIdentityArray）携带原RGB观测header及PersonIdentity列表。`track_id`是ByteTrack epoch:ID，`person_id`是会话内外观身份；只有verified=true才有当前确认映射。LOST身份没有当前轨迹或位置。余弦距离不是概率；无效心跳为空列表/零观测时间。默认独立于TargetState和锁定服务；显式reid_lock_enabled可让C在连续确认后恢复到当前轨迹，TargetState.target_id仍为epoch:track_id，不自动转移身高先验。启用、状态和限制见 [ReID接入](方案C身份ReID接入与验收.md)。
+
+
+### C 统一接地点与三维状态
+
+新增 `/perception/person_positions`（PersonGroundArray）、`/perception/target_state_unified`（TargetState，source=yolo_unified）和 `/perception/position_markers`。位置为base系双踝中点的地面投影，区别于原光学框中心；method为depth_ankles/depth_body_projection/mono_ankles/body_contact/fused_contact；detail列参与来源和短时躯体映射年龄。原深度先换算为共同脚下参考点后作保守融合，冲突/确认中/过期无效，不沿用旧位置。可选ReID锁定门控同步生效，不连接控制。
+
+PersonState新增body_depth_valid/body_depth_m/body_depth_source，传递当前躯体深度观测，无效NaN，不填补关节；消息包及消费者需重建。posture/fall_stage保持原枚举，detail标注basis=3d/2d/invalid3d。完整标定、参数、兼容性和验收边界见 [统一定位与三维姿态](方案C统一定位与三维姿态.md)。
