@@ -1392,3 +1392,8 @@
 
 - 从 main@62a7c59 创建 codex/cloud-capture-tasks；原样登记用户提供的执行方案。只做本地提交，不 push、不 SSH、不改车端服务。
 - 本机为 x86_64 / Ubuntu 22.04 / ROS 2 Humble；colcon、usb_cam、image_publisher、v4l-utils 已安装，无 /dev/video*。软件联调使用隔离域 187/190 + ROS_LOCALHOST_ONLY=1；真实 Gemini 相机与扬声器验收待设备到位。
+
+### 云端拍照 P1：接口、目录、协议与 mock
+
+- 新增两个独立包骨架、CaptureTask action、严格指令/回执与目录校验、播报禁用词、0600 凭据加载、可取消标准库 HTTP、10 分钟有界去重及 mock 云端/CLI。JPEG 路径不依赖 Pillow。结构检查登记 21 个包；未改原语音/舌苔/guard 包。
+- 本阶段检查为纯 Python 单测、原有 CI、结构与 diff 检查；ROS 执行器和编译在 P2 后验收。
