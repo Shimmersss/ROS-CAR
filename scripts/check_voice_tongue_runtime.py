@@ -22,10 +22,22 @@ def main():
     rclpy.init()
     node = Node('voice_tongue_readonly_probe')
     counts, latest, peaks = Counter(), {}, Counter()
+    events, phases = [], {}
     def receive(key, transform):
         def callback(message):
             counts[key] += 1
             latest[key] = transform(message)
+            if key == 'health' and not message.data:
+                counts['health_false'] += 1
+            if key in ('wake', 'asr', 'assistant', 'response'):
+                events.append(dict(at=round(time.monotonic()-start, 2), topic=key, value=latest[key]))
+            elif key in ('mode', 'tongue'):
+                phase = latest[key].get('phase')
+                if phases.get(key) != phase:
+                    phases[key] = phase
+                    events.append(dict(at=round(time.monotonic()-start, 2), topic=key, phase=phase,
+                                       detail=latest[key].get('detail', '')))
+            del events[:-30]
         return callback
     def velocity(message, key):
         value = max(abs(message.linear.x), abs(message.linear.y), abs(message.angular.z))
@@ -41,6 +53,9 @@ def main():
         ('mode', String, '/execution_mode/state', lambda m: json.loads(m.data)),
         ('tongue', String, '/tongue/state', lambda m: json.loads(m.data)),
         ('asr', String, '/voice/asr_text', lambda m: m.data),
+        ('asr_state', String, '/voice/asr_state', lambda m: m.data),
+        ('tts_state', String, '/voice/tts_state', lambda m: m.data),
+        ('assistant', String, '/voice/assistant_text', lambda m: m.data),
         ('wake', String, '/voice_words', lambda m: m.data),
         ('response', VoiceCommandResult, '/voice/command_result', lambda m: dict(success=m.success, message=m.message)),
     ]
@@ -49,7 +64,7 @@ def main():
     start = time.monotonic()
     while time.monotonic()-start < args.seconds:
         rclpy.spin_once(node, timeout_sec=.1)
-    report = dict(seconds=round(time.monotonic()-start, 2), counts=dict(counts), latest=latest,
+    report = dict(seconds=round(time.monotonic()-start, 2), counts=dict(counts), latest=latest, events=events,
                   peak_velocity=dict(peaks), cmd_vel_publishers=node.count_publishers('/cmd_vel'),
                   nodes=sorted(node.get_node_names()))
     print(json.dumps(report, ensure_ascii=False, indent=2))
