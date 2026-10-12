@@ -159,6 +159,7 @@ class MotionGuard(Node):
         self._emergency_at = time.monotonic()
         if not self._emergency_ok and self.authority.armed:
             self.authority.fault('emergency_channel_unhealthy')
+            self.last_fault = 'emergency_channel_unhealthy'
             self.publish(0., 0.)
 
     def on_estop(self, message):
@@ -358,8 +359,9 @@ class MotionGuard(Node):
             self.authority.arm(True, True)
             self.reason, self.last_ok_at, self.last_cmd = 'auto_armed', -math.inf, (0., 0.)
         if (follow and ready and self.cfg['target_auto_recover'] and self.authority.state == 'FAULT'
-                and self.last_fault in TARGET_REASONS):
-            # Only a target loss recovers by itself; the fresh target passed every check this tick.
+                and self.authority.reason in TARGET_REASONS):
+            # Only a target loss recovers by itself; gate on the authority's current fault, not a past one.
+            # The fresh target passed every check this tick.
             self.authority.recover_follow()
             self.last_ok_at, self.last_cmd = -math.inf, (0., 0.)
             self.get_logger().info('Target valid again after '+self.last_fault+'; re-armed')

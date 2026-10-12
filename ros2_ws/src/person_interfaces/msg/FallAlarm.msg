@@ -10,7 +10,8 @@ uint8 stage                 # highest fall stage this frame
 string track_id             # epoch:track_id of that person, '' when stage is NONE
 bool continued              # the person has no detection this frame (person_states_continued)
 float32[4] box              # that person's box (last detected box when continued), NaN when NONE
-bool geometry_confirmed     # pose3d gravity and ground confirmed; otherwise stage stays <= SUSPECTED
+bool geometry_confirmed     # 3D/height geometry status: pose3d gravity and ground both confirmed. Not a cap on
+                            # stage: the 2D path can still reach CONFIRMED with pose_upright_confirmed=true.
 uint32 suspected_count      # people at SUSPECTED this frame (detected + continued)
 uint32 confirmed_count      # people at CONFIRMED this frame
 string detail

@@ -11,7 +11,7 @@ from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.executors import SingleThreadedExecutor
 from geometry_msgs.msg import Twist, TwistStamped
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 from person_interfaces.msg import TargetState
 from motion_guard.node import MotionGuard
@@ -23,10 +23,11 @@ BASE = dict(motion_enabled=True, geometry_confirmed=True, stopping_model_confirm
             estop_latch_path=LATCH, command_mode='FOLLOW', auto_arm=True)
 req = probe.create_publisher(TwistStamped, '/control/cmd_vel_request', 1)
 targets = probe.create_publisher(TargetState, '/perception/target_state', 1)
+health = probe.create_publisher(Bool, '/voice/emergency_healthy', 10)
 vel = []; states = []
 probe.create_subscription(Twist, '/cmd_vel', vel.append, 1)
 probe.create_subscription(String, '/control/state', lambda m: states.append(json.loads(m.data)), 10)
-flags = dict(lost=False, request=True)
+flags = dict(lost=False, request=True, healthy=True)
 
 
 def pump(duration):
@@ -42,6 +43,7 @@ def pump(duration):
             m.source = 'astra'; m.status = m.LOST if flags['lost'] else m.TRACKING
             m.position_valid = not flags['lost']; m.position.z = 3.; m.horizontal_distance_m = 3.; m.bearing_rad = 0.
             m.measurement_age_s = math.nan; targets.publish(m)
+            health.publish(Bool(data=flags['healthy']))
         ex.spin_once(timeout_sec=.005)
 
 
@@ -53,10 +55,10 @@ def call(name):
     return f.result()
 
 
-def run(grace, recover=False):
-    params = dict(BASE, target_grace_s=grace, target_auto_recover=recover)
+def run(grace, recover=False, **extra):
+    params = dict(BASE, target_grace_s=grace, target_auto_recover=recover, **extra)
     guard = MotionGuard(parameter_overrides=[Parameter(k, value=v) for k, v in params.items()])
-    ex.add_node(guard); flags.update(lost=False, request=True)
+    ex.add_node(guard); flags.update(lost=False, request=True, healthy=True)
     pump(.5)  # auto_arm: no explicit authorization call
     assert states[-1]['mode'] == 'ARMED' and states[-1]['authority_state'] == 'ARMED_FOLLOW', states[-1]
     assert vel[-1].linear.x > 0
@@ -117,13 +119,24 @@ try:
     assert call('/control/estop').success; pump(.3)
     assert states[-1]['authority_state'] == 'ESTOP' and all(v.linear.x == 0 for v in vel[-3:]), states[-1]
     done(g)
+    # A recovered target fault must not let a later emergency-channel fault recover by itself.
+    Path(LATCH).unlink(missing_ok=True)  # clear the ESTOP latched above
+    g = run(.6, recover=True, emergency_kws_required=True); flags['lost'] = True; pump(.9)
+    assert states[-1]['mode'] == 'FAULT' and states[-1]['last_fault'] == 'target_invalid', states[-1]
+    flags['lost'] = False; pump(.3)
+    assert states[-1]['authority_state'] == 'ARMED_FOLLOW', states[-1]
+    flags['healthy'] = False; pump(.15)
+    assert states[-1]['mode'] == 'FAULT' and states[-1]['last_fault'] == 'emergency_channel_unhealthy', states[-1]
+    flags['healthy'] = True; pump(.4)
+    assert states[-1]['mode'] == 'FAULT' and all(v.linear.x == 0 for v in vel[-3:]), states[-1]
+    done(g)
     Path(LATCH).unlink(missing_ok=True)
     assert rejected(target_grace_s=1.5), 'grace above 1 s must be rejected'
     assert rejected(command_mode='IDLE'), 'auto_arm requires a FOLLOW startup'
     assert rejected(motion_enabled=False), 'auto_arm requires motion_enabled'
     assert rejected(command_mode='EXTERNAL', auto_arm=False), 'startup EXTERNAL is not allowed'
     print('PASS motion_guard follow options on MotionAuthority: auto_arm from FOLLOW, grace decays/resumes, '
-          'long gap faults, request failure no grace, auto-recover only target faults, STOP/ESTOP not undone, '
+          'long gap faults, request failure no grace, auto-recover only target faults (not a later emergency-channel fault), STOP/ESTOP not undone, '
           'invalid configurations rejected (synthetic)')
 finally:
     probe.destroy_node(); rclpy.shutdown()

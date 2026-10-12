@@ -1,5 +1,11 @@
 # 工作记录
 
+## 2026-10-12：修复 FOLLOW 自动恢复误解除急停通道故障（PR #19 评审）
+
+- Copilot 评审指出并经核实：`motion_guard` 自动恢复按历史 `last_fault` 判断；目标故障恢复后 `last_fault` 仍为 `target_invalid`，之后 `/voice/emergency_healthy=false` 异步置 FAULT 不改写它，心跳恢复即被自动重新授权，违反急停健康失效锁存约定。改为按 authority 当前故障原因判断，急停心跳失效同时写入 `last_fault`。
+- `tests/test_motion_guard_grace_runtime.py` 新增场景：目标故障自动恢复后急停心跳失效，心跳恢复仍保持 FAULT、速度为零。云端容器 ROS 2 Humble（x86_64）构建 motion_guard 后合成测试通过；换回原 node.py 同一测试失败。仅合成运行时测试，非 Jetson 或实车验证。
+- 按同一评审修正 `FallAlarm.geometry_confirmed` 在消息注释与 `docs/interfaces.md` 中的描述：仅表示三维/高度几何的重力与地面确认，不是 stage 上限；二维路径在 `pose_upright_confirmed=true` 时仍可确认。
+
 ## 2026-10-12：合并远端 Gemini/C 更新，保留本地语音实现
 
 - 从 `origin/main` 拉取至 `563ed5e`；本地主线基线 `513b240` 先保存为 `backup/local-main-before-remote-20261012`，在 `codex/merge-remote-camera-voice` 进行有双亲历史的合并。原 `ROS-CAR` 工作树的既有未提交文件未改动，本轮不 push、不 SSH、不部署或重启小车。
