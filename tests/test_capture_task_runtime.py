@@ -3,6 +3,9 @@
 import hashlib
 import json
 import os
+import signal
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import threading
@@ -41,7 +44,7 @@ class CaptureRuntime(unittest.TestCase):
         rclpy.init();cls.temp=tempfile.TemporaryDirectory();cls.root=Path(cls.temp.name)
         data=yaml.safe_load((Path(__file__).parents[1]/'ros2_ws/src/capture_task/config/tasks.yaml').read_text())
         for task in data['tasks'].values(): task['prepare_sec']=0.
-        data['defaults']['speech_timeout_sec']=.5
+        data['defaults']['speech_timeout_sec']=1.5
         cls.catalog=cls.root/'tasks.yaml';cls.catalog.write_text(yaml.safe_dump(data,allow_unicode=True))
         cls.cloud=MockCloud(('127.0.0.1',0),cls.root/'cloud')
         cls.http_thread=threading.Thread(target=cls.cloud.serve_forever,daemon=True);cls.http_thread.start()
@@ -67,6 +70,15 @@ class CaptureRuntime(unittest.TestCase):
         cls.executor.shutdown(timeout_sec=5.);cls.thread.join(5.)
         for node in reversed(cls.nodes): node.destroy_node()
         cls.cloud.stop();cls.http_thread.join(3.);rclpy.shutdown();cls.temp.cleanup()
+
+    def pause_ros(self):
+        self.executor.shutdown(timeout_sec=5.);self.thread.join(5.)
+
+    def resume_ros(self):
+        type(self).executor=MultiThreadedExecutor(num_threads=12)
+        for node in self.nodes:
+            if node is not None: self.executor.add_node(node)
+        type(self).thread=threading.Thread(target=self.executor.spin,daemon=True);self.thread.start()
 
     def setUp(self):
         self.extra=[];self.cloud.fail_upload=0;self.cloud.slow_upload=0.
@@ -115,7 +127,9 @@ class CaptureRuntime(unittest.TestCase):
     def test_02_busy_cancel_matching(self):
         handle,_=self.goal(prepare_sec=2.)
         other,_=self.goal();self.assertFalse(other.accepted)
+        before=self.speaker.received.count(self.capture.catalog.defaults['fail_announce'])
         self.future(handle.cancel_goal_async());self.assertEqual(self.result(handle).status,'cancelled')
+        self.assertEqual(self.speaker.received.count(self.capture.catalog.defaults['fail_announce']),before)
 
     def test_03_bench_velocity_gate(self):
         pub=self.client_node.create_publisher(Twist,'/cmd_vel',1);self.extra.append(pub)
@@ -124,7 +138,7 @@ class CaptureRuntime(unittest.TestCase):
         self.assertEqual(result.status,'failed');self.assertIn('bench_velocity',result.detail)
 
     def test_04_voice_mode_rejected(self):
-        self.capture.mode={'active':True}
+        self.capture.mode={'active':True};self.capture.mode_at=time.monotonic()
         handle,_=self.goal();self.assertFalse(handle.accepted)
 
     def test_05_camera_missing_and_duplicate(self):
@@ -144,8 +158,10 @@ class CaptureRuntime(unittest.TestCase):
         self.future(handle.cancel_goal_async());self.assertEqual(self.result(handle).status,'cancelled')
         self.wait(lambda:len(self.speaker.cancelled)>0)
         self.speaker.char_seconds=.0001
+        before=self.speaker.received.count(self.capture.catalog.defaults['fail_announce'])
         handle,_=self.goal(ttl=.1,prepare_sec=2.)
         self.assertEqual(self.result(handle).status,'failed')
+        self.assertEqual(self.speaker.received.count(self.capture.catalog.defaults['fail_announce']),before+1)
 
     def test_07_upload_cancel_and_409(self):
         self.cloud.fail_upload=409
@@ -180,6 +196,66 @@ class CaptureRuntime(unittest.TestCase):
             cancel_callback=lambda _:CancelResponse.ACCEPT,callback_group=ReentrantCallbackGroup())
         time.sleep(.3)
 
+    def test_08a_failure_upload_and_quality_announcements(self):
+        fail=self.capture.catalog.defaults['fail_announce']
+        for code in (500,401):
+            self.cloud.fail_upload=code;before=self.speaker.received.count(fail)
+            attempts=self.cloud.upload_attempts
+            handle,_=self.goal();result=self.result(handle)
+            self.assertEqual((result.status,result.detail),('failed','upload_http_'+str(code)))
+            self.assertEqual(self.speaker.received.count(fail),before+1)
+            self.assertEqual(self.cloud.upload_attempts-attempts,3 if code==500 else 1)
+        self.cloud.fail_upload=0
+        old_width=self.capture.catalog.tasks['helmet']['min_width']
+        old_policy=self.capture.catalog.defaults['quality_policy']
+        try:
+            self.capture.catalog.tasks['helmet']['min_width']=3000
+            self.capture.catalog.defaults['quality_policy']='fail'
+            before=self.speaker.received.count(fail)
+            handle,_=self.goal();result=self.result(handle)
+            self.assertEqual(result.status,'failed');self.assertTrue(result.detail.startswith('quality_failed:'))
+            self.assertEqual(self.speaker.received.count(fail),before+1)
+        finally:
+            self.capture.catalog.tasks['helmet']['min_width']=old_width
+            self.capture.catalog.defaults['quality_policy']=old_policy
+
+    def test_08b_tts_failure_does_not_add_another_announcement(self):
+        fail=self.capture.catalog.defaults['fail_announce'];before=self.speaker.received.count(fail)
+        self.speaker.char_seconds=.1
+        handle,_=self.goal();result=self.result(handle)
+        self.assertEqual((result.status,result.detail),('failed','tts_timeout'))
+        self.assertEqual(self.speaker.received.count(fail),before)
+
+    def test_08c_sigterm_suppresses_failure_announcement(self):
+        self.pause_ros();self.capture.destroy_node();self.nodes[0]=None;self.resume_ros()
+        state={};topic='/capture_task/state'
+        sub=self.client_node.create_subscription(String,topic,lambda msg:state.update(json.loads(msg.data)),10)
+        client=ActionClient(self.client_node,CaptureTask,'/capture_task/run')
+        log=(self.root/'sigterm.log').open('w')
+        process=subprocess.Popen([sys.executable,'-c','from capture_task.executor_node import main; main()',
+            '--ros-args','-r','__node:=capture_sigterm_executor',
+            '-p','catalog:='+str(self.catalog),'-p','cloud_url:='+self.url,
+            '-p','storage_dir:='+str(self.root/'sigterm-records')],stdout=log,stderr=subprocess.STDOUT)
+        try:
+            self.assertTrue(client.wait_for_server(timeout_sec=12.),(self.root/'sigterm.log').read_text())
+            goal=CaptureTask.Goal(task_id='sigterm-test',task_type='helmet',source='local_test',params_json='{"prepare_sec":10}',ttl_sec=30.)
+            handle=self.future(client.send_goal_async(goal));self.assertTrue(handle.accepted)
+            self.wait(lambda:state.get('phase')=='PREPARE')
+            before=self.speaker.received.count(self.capture.catalog.defaults['fail_announce'])
+            process.send_signal(signal.SIGTERM)
+            self.assertEqual(self.result(handle).status,'cancelled')
+            self.assertEqual(process.wait(timeout=6.),0)
+            self.assertEqual(self.speaker.received.count(self.capture.catalog.defaults['fail_announce']),before)
+        finally:
+            if process.poll() is None:
+                process.kill();process.wait()
+            self.pause_ros()
+            log.close();client.destroy();self.client_node.destroy_subscription(sub)
+            type(self).capture=CaptureExecutor(parameter_overrides=parameters(catalog=str(self.catalog),cloud_url=self.url,storage_dir=str(self.root/'records')))
+            self.nodes[0]=self.capture;self.resume_ros()
+            self.wait(lambda:self.action.server_is_ready())
+            time.sleep(.3)
+
     def test_09_bridge_e2e_dedup_cancel_auth_recovery_resources(self):
         type(self).bridge=CaptureBridge(parameter_overrides=parameters(catalog=str(self.catalog),cloud_url=self.url))
         self.nodes.append(self.bridge);self.executor.add_node(self.bridge)
@@ -205,8 +281,10 @@ class CaptureRuntime(unittest.TestCase):
         send(dict(command_id='wrong-cancel',type='cancel',task_id='wrong'))
         self.wait(lambda:'wrong-cancel' in self.cloud.acks)
         self.assertFalse(self.cloud.acks['wrong-cancel']['accepted'])
+        before_cancel=self.speaker.received.count(self.capture.catalog.defaults['fail_announce'])
         send(dict(command_id='right-cancel',type='cancel',task_id='long'))
         self.wait(lambda:any(e.get('result',{}).get('status')=='cancelled' for e in self.cloud.events.get('long',[])))
+        self.assertEqual(self.speaker.received.count(self.capture.catalog.defaults['fail_announce']),before_cancel)
         self.cloud.drop_poll=True;self.wait(lambda:self.bridge.state=='backoff');self.cloud.drop_poll=False
         self.wait(lambda:self.bridge.state=='online')
         self.cloud.token='test-token';self.wait(lambda:self.bridge.state=='auth_failed')
@@ -214,9 +292,11 @@ class CaptureRuntime(unittest.TestCase):
         self.cloud.token='';self.bridge.retry_at=time.monotonic() # accelerate only the test's 60s backoff.
         self.wait(lambda:self.bridge.state=='online')
         self.cloud.fail_upload=401
+        before_auth_failure=self.speaker.received.count(self.capture.catalog.defaults['fail_announce'])
         send({**cmd,'command_id':'upload-auth','task_id':'upload-auth','task_type':'helmet'})
         self.wait(lambda:self.bridge.state=='auth_failed')
         self.assertGreater(self.bridge.retry_at-time.monotonic(),55.)
+        self.assertEqual(self.speaker.received.count(self.capture.catalog.defaults['fail_announce']),before_auth_failure+1)
         self.cloud.fail_upload=0;self.bridge.retry_at=time.monotonic()
         self.wait(lambda:self.bridge.state=='online')
         self.wait(lambda:any(e.get('result',{}).get('detail')=='upload_http_401' for e in self.cloud.events.get('upload-auth',[])))
@@ -240,8 +320,9 @@ class CaptureRuntime(unittest.TestCase):
         self.executor.add_node(guard)
         odom_pub=self.client_node.create_publisher(Odometry,'/odom',qos_profile_sensor_data)
         kws_pub=self.client_node.create_publisher(Bool,'/voice/emergency_healthy',10)
+        velocity=[0.]
         def publish():
-            msg=Odometry();msg.header.stamp=self.client_node.get_clock().now().to_msg();odom_pub.publish(msg);kws_pub.publish(Bool(data=True))
+            msg=Odometry();msg.twist.twist.linear.x=velocity[0];msg.header.stamp=self.client_node.get_clock().now().to_msg();odom_pub.publish(msg);kws_pub.publish(Bool(data=True))
         timer=self.client_node.create_timer(.05,publish)
         type(self).capture=CaptureExecutor(parameter_overrides=parameters(catalog=str(self.catalog),cloud_url=self.url,
             storage_dir=str(self.root/'robot-records'),safety_profile='robot',hold_lease_sec=1.))
@@ -255,6 +336,19 @@ class CaptureRuntime(unittest.TestCase):
             result=self.result(handle);self.assertEqual(result.status,'uploaded',result.detail)
             self.assertFalse(guard.task_hold.active(time.monotonic()))
             self.assertEqual(guard.authority.state,'DISARMED');self.assertEqual(guard.command_mode,'IDLE')
+            # Failure speech must finish while the robot lease remains held.
+            handle,_=self.goal(prepare_sec=2.)
+            self.wait(lambda:self.capture.job and self.capture.job.phase=='PREPARE')
+            self.speaker.char_seconds=.015
+            fail=self.capture.catalog.defaults['fail_announce'];before=self.speaker.received.count(fail)
+            completed=len(self.speaker.completed);velocity[0]=.2
+            self.wait(lambda:self.speaker.received.count(fail)>before)
+            self.assertTrue(guard.task_hold.active(time.monotonic()))
+            result=self.result(handle)
+            self.assertEqual((result.status,result.detail),('failed','odom_not_stationary'))
+            self.assertGreater(len(self.speaker.completed),completed)
+            self.assertFalse(guard.task_hold.active(time.monotonic()))
+            velocity[0]=0.;self.speaker.char_seconds=.0001;time.sleep(.2)
             original_acquire=guard.task_hold.acquire
             def delayed_acquire(*args,**kwargs):
                 time.sleep(.4)
@@ -268,8 +362,10 @@ class CaptureRuntime(unittest.TestCase):
             # Cleanup keeps the executor spinning while its own task releases.
             handle,_=self.goal(prepare_sec=2.)
             self.wait(lambda:guard.task_hold.active(time.monotonic()))
+            before=self.speaker.received.count(self.capture.catalog.defaults['fail_announce'])
             self.capture.stop()
             self.assertEqual(self.result(handle).status,'cancelled')
+            self.assertEqual(self.speaker.received.count(self.capture.catalog.defaults['fail_announce']),before)
             self.assertFalse(guard.task_hold.active(time.monotonic()))
             self.capture.closing=False
             guard.authority.estop()

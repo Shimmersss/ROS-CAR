@@ -27,7 +27,7 @@ from execution_mode_interfaces.action import SpeakText
 from execution_mode_interfaces.srv import TaskHold
 from .catalog import Catalog, number
 from .cloud_client import CloudClient, CloudError, Cancelled, token_from_env
-from .flow import CaptureFlow
+from .flow import CaptureFlow, failure_result
 from .frames import FrameBuffer
 from .protocol import identifier, loads
 
@@ -39,6 +39,7 @@ class Job:
     received: float
     deadline: float
     cancel: threading.Event = field(default_factory=threading.Event)
+    upload_cancel: threading.Event = field(default_factory=threading.Event)
     finished: threading.Event = field(default_factory=threading.Event)
     goal: object = None
     speech: object = None
@@ -141,7 +142,7 @@ class CaptureExecutor(Node):
     def on_cancel(self,goal):
         with self.lock:
             if self.job and self.job.goal is goal:
-                self.job.cancel.set();self.cloud.cancel()
+                self.job.cancel.set();self.job.upload_cancel.set();self.cloud.cancel()
                 if self.job.speech:
                     self.job.speech.cancel_goal_async()
         return CancelResponse.ACCEPT
@@ -276,19 +277,53 @@ class CaptureExecutor(Node):
             raise ValueError('odom_not_stationary')
 
     def speak(self,text):
-        job=self.job;self.check()
+        deadline=min(self.job.deadline,time.monotonic()+self.catalog.defaults['speech_timeout_sec'])
+        self.speak_goal(text,self.check,deadline)
+
+    def failure_notice_skipped(self,reason):
+        self.write_event(dict(task_id=self.job.request.task_id,phase='FAILED',
+                              detail='fail_announce_skipped:'+reason))
+
+    def speak_failure(self,detail):
+        # Failure notification has its own budget; task deadline/safety errors
+        # must not suppress the safe configured message. Never call check here.
+        if detail.startswith('tts_'):
+            self.failure_notice_skipped(detail)
+            return
+        job=self.job
+        def external_cancel_only():
+            if self.closing or not rclpy.ok(context=self.context) or job.cancel.is_set() or job.goal and job.goal.is_cancel_requested:
+                raise Cancelled()
+        external_cancel_only()
+        deadline=time.monotonic()+min(self.catalog.defaults['speech_timeout_sec'],15.)
+        self.speak_goal(self.catalog.defaults['fail_announce'],external_cancel_only,deadline)
+
+    def speak_goal(self,text,check,deadline):
+        job=self.job;check()
+        if not self.speech.server_is_ready():
+            raise ValueError('tts_unavailable')
+        def await_speech(future,end):
+            while not future.done():
+                check()
+                if time.monotonic()>=end:
+                    raise ValueError('tts_timeout')
+                time.sleep(.01)
+            check()
+            if time.monotonic()>=end:
+                raise ValueError('tts_timeout')
+            return future.result()
         sent=self.speech.send_goal_async(SpeakText.Goal(utterance_id='capture-'+uuid.uuid4().hex,text=text))
         abandoned=threading.Event()
         def late(done):
             try:
                 handle=done.result()
-                if handle.accepted and (abandoned.is_set() or job.finished.is_set() or job.cancel.is_set()):
+                if handle.accepted and (abandoned.is_set() or job.finished.is_set() or job.cancel.is_set() or self.closing):
                     handle.cancel_goal_async()
             except Exception:
                 pass
         sent.add_done_callback(late)
         try:
-            handle=self.future(sent,2.)
+            handle=await_speech(sent,min(deadline,time.monotonic()+2.))
         except Exception:
             abandoned.set()
             if sent.done():
@@ -298,7 +333,7 @@ class CaptureExecutor(Node):
             raise ValueError('tts_rejected')
         job.speech=handle
         try:
-            response=self.future(handle.get_result_async(),self.catalog.defaults['speech_timeout_sec'])
+            response=await_speech(handle.get_result_async(),deadline)
             if response.result.status!='completed':
                 raise ValueError('tts_not_completed')
         finally:
@@ -326,11 +361,11 @@ class CaptureExecutor(Node):
                   'X-Frame-Index':str(record['frame_index']),'X-Capture-Time':record['capture_time'],
                   'X-Camera-Profile':self.cfg['camera_profile'],
                   'X-Quality':json.dumps(record['quality'],allow_nan=False)}
-        sent=self.pool.submit(self.cloud.upload,record['task_id'],record['capture_id'],image,metadata,self.job.cancel,self.job.deadline)
+        sent=self.pool.submit(self.cloud.upload,record['task_id'],record['capture_id'],image,metadata,self.job.upload_cancel,self.job.deadline)
         try:
             return self.future(sent,max(.1,self.job.deadline-time.monotonic()))
         except Exception:
-            self.job.cancel.set();self.cloud.cancel()
+            self.job.upload_cancel.set();self.cloud.cancel()
             # Bounded HTTP timeout ensures worker drains before another job can upload.
             try:
                 sent.result(timeout=3.5)
@@ -364,9 +399,10 @@ class CaptureExecutor(Node):
             # Only configured safe text may be spoken; arbitrary error strings never go to TTS.
             try:
                 self.stage('FAILED',detail)
-                self.speak(self.catalog.defaults['fail_announce'])
             except Exception:
                 pass
+            failed=failure_result(self,detail)
+            status,detail=failed['status'],failed['detail']
         finally:
             job.finished.set();self.cloud.cancel()
             if job.speech:
@@ -415,6 +451,7 @@ class CaptureExecutor(Node):
         self.closing=True
         if self.job:
             self.job.cancel.set()
+            self.job.upload_cancel.set()
         self.cloud.cancel()
 
     def destroy_node(self):

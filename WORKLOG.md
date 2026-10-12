@@ -1415,3 +1415,15 @@
 - 最终验收：新增37项纯Python测试通过，整仓CI通过（录像工具22项）；结构21包/355个Python文件、Shell语法、diff检查通过。复核版ROS运行时10场景通过，文字播报8项通过；真实采集任务PREPARE阶段SIGTERM返回CANCELLED并送达mock，入口进程已清理。迟到租约用短于原租约超时的断言确认主动释放。
 
 - 去重复核：bridge保留完整10分钟原ack，不因超过2048条提前淘汰；新增跨容量原结果回放测试，缓存仍随时间到期清理。
+
+
+## 2026-10-12：云端拍照验收修复
+
+### 编号1–3：入口、失败通知、本机保护
+
+- 原样登记用户的《云端拍照任务修复说明》及README索引。接底盘拍照须显式WITH_FOLLOWER=true，缺失退出2；保留robot和唯一guard，提示同时启动跟随器，更新入口帮助/AGENTS/实现文档。
+- 上传内部中止改用upload_cancel；失败通知独立于任务TTL/安全检查，只有关闭、外部取消和TTS自身失败抑制。失败通知异常只附加事件，原始结果不变；robot仍先通知后释放租约，迟到语音接受仍取消。
+- 本机脚本用grep完成时间戳和唯一TTS检查，ROS图查询失败明确退出；头文件/overlay可注入。增加CAPTURE_MOCK_FAIL_UPLOAD便于可重复的本机故障验收；mock请求计数按有效请求到达计，避免迟到的取消请求污染重试统计。
+- 本机43项纯Python通过；Humble x86_64子集18包编译通过。ROS新增500三次/401、TTL、质检失败通知，TTS失败、ROS/cloud取消和SIGTERM抑制，robot假odom异常期间持有租约至通知完成。多线程测试替换节点前停止executor，避免rclpy销毁竞争；播报测试时限1.5秒覆盖CI调度抖动。本组完整ROS运行时13/13通过，20任务线程/FD增量0/0；标准PATH无rg时，真实独占假TTS及注入坏头文件均被入口拒绝。
+- 真实Gemini本机入口（假TTS）500故障：三次请求后FAILED upload_http_500，日志收到安全失败原文。54帧1920×1080，13.67Hz，ROS帧龄0.086–0.114秒，1相机发布者/0速度发布者。没有扬声器听感、真人摆拍、Jetson或实车验收。日志 artifacts/capture-validation/repairs/，不提交图像或凭据。
+- 最小审查：bash语法、结构与diff检查通过；protected十包不改。scripts中WITH_FOLLOWER=true仅剩start_robot.sh的既有显式整机配置，没有新增自动赋值；shellcheck本机未安装。

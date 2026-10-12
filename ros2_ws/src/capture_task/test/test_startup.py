@@ -24,9 +24,11 @@ def test_reject_unsafe_startup(tmp_path,changes):
     assert run(tmp_path,**changes).returncode==2
 
 
-def test_robot_forces_guard_bench_disables_it(tmp_path):
-    robot=run(tmp_path,WITH_CHASSIS='true',WITH_TONGUE_MODE='true')
-    assert robot.returncode==1 and '+ WITH_FOLLOWER=true' in robot.stderr and '+ CAPTURE_SAFETY_PROFILE=robot' in robot.stderr
+def test_robot_requires_explicit_guard_bench_disables_it(tmp_path):
+    missing=run(tmp_path,WITH_CHASSIS='true')
+    assert missing.returncode==2 and '请显式设置 WITH_FOLLOWER=true' in missing.stderr
+    robot=run(tmp_path,WITH_CHASSIS='true',WITH_TONGUE_MODE='true',WITH_FOLLOWER='true')
+    assert robot.returncode==1 and '+ CAPTURE_SAFETY_PROFILE=robot' in robot.stderr
     bench=run(tmp_path)
     assert bench.returncode==1 and '+ CAPTURE_SAFETY_PROFILE=bench' in bench.stderr
     disabled=run(tmp_path,WITH_CAPTURE_TASKS='false',WITH_VOICE='false',WITH_FOLLOWER='true')

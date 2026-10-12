@@ -9,6 +9,18 @@ from .encode import encode_jpeg
 from .quality import measure, warnings
 
 
+def failure_result(ports, detail):
+    """A notification failure cannot replace the original task outcome."""
+    try:
+        ports.speak_failure(detail)
+    except Exception as exc:
+        try:
+            ports.failure_notice_skipped(type(exc).__name__)
+        except Exception:
+            pass  # Even failure-event storage is best effort.
+    return dict(status='failed', detail=detail)
+
+
 class CaptureFlow:
     def run(self, ports, job, task, defaults):
         ports.stage('CHECK'); ports.ready()

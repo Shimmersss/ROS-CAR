@@ -50,7 +50,8 @@ C 必须指定 GEMINI_SERIAL 和 GEMINI_CALIBRATION；相机/配准实测后才�
 WITH_VOICE=false 关闭语音；VOICE_BACKEND=offline，ASR_BACKEND=xfyun 可回退云端识别。
 WITH_CHASSIS=true 开启底盘串口收发。
 WITH_TONGUE_MODE=true 将舌苔流程接入现有语音，要求 WITH_VOICE/WITH_FOLLOWER=true。
-WITH_CAPTURE_TASKS=true 启用独立云端拍照；要求语音/TTS；接底盘强制 robot + WITH_FOLLOWER=true。
+WITH_CAPTURE_TASKS=true 启用独立云端拍照；要求语音/TTS；接底盘使用 robot，须显式 WITH_FOLLOWER=true。
+WITH_FOLLOWER=true 会同时启动跟随器；运动仍受 MOTION_ENABLED 与逐次授权约束。
 无底盘拍照为 bench，要求 WITH_FOLLOWER=false / MOTION_ENABLED=false；默认关闭。
 CAPTURE_CLOUD_URL / CAPTURE_ROBOT_ID / CAPTURE_TOKEN_FILE 配置云端；默认原始 RGB。
 TONGUE_SAFETY_PROFILE=robot 要求底盘回传；bench 仅允许运动关闭的台架。
@@ -73,7 +74,9 @@ if [[ "$WITH_CAPTURE_TASKS" == true ]]; then
     echo '云端拍照要求现有语音及带完成确认的 TTS。' >&2; exit 2;
   }
   if [[ "$WITH_CHASSIS" == true ]]; then
-    WITH_FOLLOWER=true
+    [[ "$WITH_FOLLOWER" == true ]] || {
+      echo '接底盘的云端拍照需要唯一 guard，请显式设置 WITH_FOLLOWER=true（会同时启动跟随器，运动仍受 MOTION_ENABLED 与授权约束）。' >&2; exit 2;
+    }
     CAPTURE_SAFETY_PROFILE=robot
   else
     CAPTURE_SAFETY_PROFILE=bench

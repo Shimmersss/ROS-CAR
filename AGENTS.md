@@ -96,6 +96,6 @@
 ## 独立云端拍照任务
 
 - `capture_task` / `capture_task_interfaces` 为独立拍照上传链路，见 `docs/云端拍照任务实现与验收.md` 与协议。不经过 ASR/router/manager，不依赖 tongue_mode，不推理、不发布速度、不授权或清急停；只共享原始 RGB、唯一 SpeakText、robot 下的 TaskHold。
-- `WITH_CAPTURE_TASKS=false` 默认关闭；接底盘强制 robot + 唯一 guard；bench 要求 /cmd_vel 零发布者。robot 始终停车租约+新鲜静止回传；当前guard拒绝ESTOP下申请，报hold_failed而不改guard。语音舌苔 active 时拒绝云端拍照，执行中也监测互斥。两个bench入口因guard要求不同不能并开。
+- `WITH_CAPTURE_TASKS=false` 默认关闭；接底盘强制 robot，须显式 WITH_FOLLOWER=true 复用唯一 guard（该入口同时启动跟随器，不自动打开跟随）；bench 要求 /cmd_vel 零发布者。robot 始终停车租约+新鲜静止回传；当前guard拒绝ESTOP下申请，报hold_failed而不改guard。语音舌苔 active 时拒绝云端拍照，执行中也监测互斥。两个bench入口因guard要求不同不能并开。
 - 播报须完成确认且禁含紧急/RESERVED_STOP词；采集须晚于播报及准备并校验帧龄。JPEG/凭据不提交Git，图像默认不在执行器落盘；mock调试图像位于忽略的artifacts。fake/synthetic仅显式隔离本机测试；Humble x86_64与相机采集不能描述为Jetson或小车验收。
 - 本机usb_cam0.8.1时间戳修正仅通过 scripts/build_capture_usb_cam.sh 的固定源码独立overlay，不改系统驱动或车端相机标定。车端部署和push须用户另行授权。

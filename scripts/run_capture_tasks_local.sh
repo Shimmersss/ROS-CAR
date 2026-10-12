@@ -14,20 +14,18 @@ esac
 source /opt/ros/humble/setup.bash
 [[ -f "$ROOT/install/setup.bash" ]] || { echo '请先按实现与验收文档构建。' >&2; exit 1; }
 source "$ROOT/install/setup.bash"
+source "$ROOT/scripts/capture_local_checks.sh"
 if [[ "$synthetic" == false ]]; then
-  overlay="$ROOT/artifacts/capture-usb-cam"
+  overlay="${CAPTURE_USB_CAM_OVERLAY:-$ROOT/artifacts/capture-usb-cam}"
+  header="${CAPTURE_USB_CAM_HEADER:-/opt/ros/humble/include/usb_cam/utils.hpp}"
+  capture_check_usb_cam_timestamp "$header" "$overlay"
   if [[ -f "$overlay/install/setup.bash" && -f "$overlay/timestamp-fix.txt" ]]; then
     source "$overlay/install/setup.bash"
-  elif rg -q 'epoch_time.tv_usec / 1000.0' /opt/ros/humble/include/usb_cam/utils.hpp 2>/dev/null; then
-    echo '已安装 usb_cam 0.8.1 存在时间戳单位问题；请先 bash scripts/build_capture_usb_cam.sh。' >&2
-    exit 1
   fi
 fi
 cd "$ROOT"
-# Inspect isolated graph before introducing fake resources.
-if ros2 action list 2>/dev/null | rg -q '^/voice/speak$'; then
-  echo '隔离域已存在 SpeakText；本地入口拒绝启动第二个播报所有者。' >&2; exit 1
-fi
+# Inspect isolated graph before introducing fake resources. Query failure is fatal.
+capture_check_speech_owner
 mkdir -p artifacts/capture-local
 exec 9>artifacts/capture-local/start.lock
 flock -n 9 || { echo '本地拍照入口已运行。' >&2; exit 1; }
@@ -46,7 +44,12 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 start() { local name="$1"; shift; setsid "$@" >"artifacts/capture-local/$name.log" 2>&1 & pids+=("$!"); }
-start mock python3 scripts/mock_capture_cloud.py serve --store artifacts/capture-mock
+mock_args=()
+if [[ -n "${CAPTURE_MOCK_FAIL_UPLOAD:-}" ]]; then
+  case "$CAPTURE_MOCK_FAIL_UPLOAD" in 500|401|409) mock_args=(--fail-upload "$CAPTURE_MOCK_FAIL_UPLOAD") ;;
+    *) echo 'CAPTURE_MOCK_FAIL_UPLOAD 仅接受 500、401、409。' >&2; exit 2 ;; esac
+fi
+start mock python3 scripts/mock_capture_cloud.py serve --store artifacts/capture-mock "${mock_args[@]}"
 if [[ "$synthetic" == false ]]; then
   [[ -r "$camera_device" ]] || { echo '摄像头缺失或无权限；可显式 --synthetic 做软件联调。' >&2; exit 1; }
   start camera ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:="$camera_device" \

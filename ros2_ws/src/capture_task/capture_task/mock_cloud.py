@@ -165,9 +165,10 @@ class Handler(BaseHTTPRequestHandler):
         digest = hashlib.sha256(image).hexdigest()
         if self.headers.get('Content-Type') != 'image/jpeg' or not image.startswith(b'\xff\xd8') or digest != self.headers.get('X-Image-Sha256'):
             raise ValueError()
-        self.server.stopping.wait(self.server.slow_upload)
         with self.server.condition:
             self.server.upload_attempts += 1
+        self.server.stopping.wait(self.server.slow_upload)
+        with self.server.condition:
             if self.server.fail_upload in (500, 401):
                 self.reply(self.server.fail_upload, {'error':'injected_upload_failure'}); return
             key = (task_id, capture_id)

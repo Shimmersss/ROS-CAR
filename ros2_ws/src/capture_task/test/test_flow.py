@@ -85,3 +85,15 @@ def test_nonjson_auth_error_remains_auth_failure(monkeypatch,status):
     monkeypatch.setattr(client,'request',rejected)
     with pytest.raises(CloudError,match='upload_http_'+str(status)):
         client.upload('t','c',b'\xff\xd8test',{},threading.Event(),time.monotonic()+1)
+
+
+def test_failed_notification_preserves_original_outcome():
+    from capture_task.flow import failure_result
+    class FailedSpeaker:
+        def speak_failure(self,detail):
+            raise RuntimeError('speech failed independently')
+        def failure_notice_skipped(self,reason):
+            self.reason=reason
+    ports=FailedSpeaker()
+    assert failure_result(ports,'upload_http_500')==dict(status='failed',detail='upload_http_500')
+    assert ports.reason=='RuntimeError'
