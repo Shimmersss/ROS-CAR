@@ -8,6 +8,7 @@ setup(name='roscar_api', version='0.1.0', packages=['roscar_api'],
       maintainer='ROSCAR', maintainer_email='maintainer@example.invalid',
       description='Public API examples', entry_points={'console_scripts':[
           'chassis = roscar_api.chassis:main',
+          'speech = roscar_api.speech:main',
           'detections = roscar_api.observe:detections_main',
           'radar = roscar_api.observe:radar_main',
           'target = roscar_api.target:main']})

@@ -1,6 +1,8 @@
 """Only this node publishes final velocity. Faults require explicit re-arming."""
 import json
 import math
+import os
+from pathlib import Path
 import time
 from dataclasses import fields
 import signal
@@ -13,13 +15,16 @@ from rclpy.qos import qos_profile_sensor_data
 from rcl_interfaces.msg import ParameterDescriptor
 from geometry_msgs.msg import Twist, TwistStamped
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformListener, TransformException
 from person_interfaces.msg import TargetState
-from roscar_interfaces.srv import SetControlMode
+from roscar_interfaces.srv import SetControlMode, AuthorizeMotion
+from execution_mode_interfaces.srv import TaskHold
 from astra_body_adapter.follow_control import observation_is_fresh
 from .safety import SafetyConfig, clearance
+from .authority import MotionAuthority, AuthorityError
+from .task_hold import StationaryLease
 
 
 def seconds(stamp):
@@ -29,11 +34,13 @@ def seconds(stamp):
 class MotionGuard(Node):
     def __init__(self, **kwargs):
         super().__init__('motion_guard', **kwargs)
-        defaults = dict(command_mode='FOLLOW', motion_enabled=False, geometry_confirmed=False, stopping_model_confirmed=False, mount_calibrated=False,
+        defaults = dict(command_mode='IDLE', motion_enabled=False, geometry_confirmed=False, stopping_model_confirmed=False, mount_calibrated=False,
                         base_frame='base_link', scan_frame='laser', expected_source='astra',
                         target_frame='astra_depth_optical_frame', request_topic='/control/cmd_vel_request',
                         scan_topic='/scan', target_topic='/perception/target_state',
-                        radar_required=False, auto_arm=False)
+                        radar_required=False, auto_arm=False, emergency_kws_required=True,
+                        emergency_health_timeout_s=0.5, allow_legacy_arm=False, estop_latch_path=str(Path(
+                            os.environ.get('XDG_STATE_HOME', str(Path.home() / '.local/state'))) / 'roscar/estop.json'))
         defaults.update(vars(SafetyConfig()))
         for key, value in defaults.items():
             self.declare_parameter(key, value, ParameterDescriptor(read_only=True))
@@ -47,13 +54,19 @@ class MotionGuard(Node):
             raise ValueError('Use distinct laser/base frames and a calibrated mount')
         if self.cfg['request_topic'] in ('/chassis/cmd_vel', '/cmd_vel'):
             raise ValueError('Follow request topic must be distinct from external and output topics')
-        self.mode = 'STANDBY' if self.cfg['motion_enabled'] else 'PERCEPTION_ONLY'
-        self.command_mode = self.cfg['command_mode']
-        if self.command_mode not in ('IDLE', 'EXTERNAL', 'FOLLOW'):
-            raise ValueError('Invalid command_mode')
+        if self.cfg['auto_arm']:
+            raise ValueError('auto_arm is forbidden; use epoch-bound /control/authorize')
+        if self.cfg['command_mode'] != 'IDLE':
+            raise ValueError('Startup command_mode must be IDLE')
+        if not math.isfinite(self.cfg['emergency_health_timeout_s']) or not 0.1 <= self.cfg['emergency_health_timeout_s'] <= 0.5:
+            raise ValueError('Emergency health timeout must be 0.1..0.5 seconds')
+        self.authority = MotionAuthority(self.cfg['estop_latch_path'])
+        self._emergency_ok = False
+        self._emergency_at = -math.inf
         self.mode_since = self.get_clock().now().nanoseconds*1e-9
         self.reason = 'not_armed'
         self.last_fault = ''
+        self.task_hold = StationaryLease()
         self.request = self.scan = self.target = None
         self.received = {}
         self.buffer = Buffer()
@@ -66,27 +79,105 @@ class MotionGuard(Node):
         self.create_subscription(LaserScan,self.cfg['scan_topic'],self.on_scan,qos_profile_sensor_data)
         self.create_subscription(TargetState,self.cfg['target_topic'],self.on_target,1)
         self.create_service(Trigger,'/control/arm',self.arm)
+        self.create_service(AuthorizeMotion,'/control/authorize',self.authorize)
         self.create_service(Trigger,'/control/stop',self.stop_service)
         self.create_service(Trigger,'/control/disarm',self.stop_service)
+        self.create_service(TaskHold,'/control/task_hold',self.on_task_hold)
+        self.create_service(Trigger,'/control/estop',self.estop_service)
+        self.create_service(Trigger,'/control/reset_estop',self.reset_estop)
+        self.create_service(Trigger,'/control/reset_fault',self.reset_fault)
+        self.create_subscription(Bool,'/control/emergency_stop',self.on_estop,10)
+        self.create_subscription(Bool,'/voice/emergency_healthy',self.on_emergency_health,10)
         # Watchdogs keep running if /clock pauses.
         self.timer = self.create_timer(.05,self.tick,clock=Clock(clock_type=ClockType.STEADY_TIME))
 
-    def set_mode(self, request, response):
-        if request.mode not in ('IDLE', 'EXTERNAL', 'FOLLOW'):
-            response.success = False
-            response.message = 'Expected IDLE, EXTERNAL or FOLLOW'
-            return response
-        self.stop_service(None, Trigger.Response())
-        self.command_mode = request.mode
-        self.mode_since = self.get_clock().now().nanoseconds*1e-9
+    @property
+    def command_mode(self):
+        return self.authority.command_mode
+
+    @property
+    def mode(self):
+        if self.authority.armed:
+            return 'ARMED'  # retained /control/state compatibility field
+        if self.authority.state == 'DISARMED':
+            return 'STANDBY' if self.cfg['motion_enabled'] else 'PERCEPTION_ONLY'
+        return self.authority.state
+
+    def clear_requests(self):
         self.request = None
         self.received.pop('request', None)
-        response.success = True
-        response.message = 'Stopped and disarmed; send fresh request then explicitly arm'
+        self.mode_since = self.get_clock().now().nanoseconds * 1e-9
+
+    def set_mode(self, request, response):
+        self.publish(0., 0.)
+        if self.task_hold.active(time.monotonic()) and request.mode != 'IDLE':
+            response.success, response.message = False, 'Execution mode holds the vehicle stationary'
+            return response
+        try:
+            self.authority.select_mode(request.mode)
+            self.clear_requests()
+            response.success, response.message = True, 'Disarmed; fresh zero request and explicit arm required'
+            response.authority_epoch = self.authority.epoch
+        except AuthorityError as exc:
+            if self.authority.armed:
+                self.authority.stop()
+                self.clear_requests()
+            response.success, response.message = False, str(exc)
+        return response
+
+    def emergency_healthy(self):
+        return (not self.cfg['emergency_kws_required'] or
+                (self._emergency_ok and time.monotonic() - self._emergency_at <=
+                 self.cfg['emergency_health_timeout_s']))
+
+    def on_emergency_health(self, message):
+        self._emergency_ok = bool(message.data)
+        self._emergency_at = time.monotonic()
+        if not self._emergency_ok and self.authority.armed:
+            self.authority.fault('emergency_channel_unhealthy')
+            self.publish(0., 0.)
+
+    def on_estop(self, message):
+        if message.data:
+            self.estop_service(None, Trigger.Response())
+
+    def estop_service(self, request, response):
+        del request
+        self.publish(0., 0.)
+        try:
+            self.authority.estop()
+            response.success, response.message = True, 'ESTOP latched; explicit reset then re-arm required'
+        except AuthorityError as exc:
+            response.success, response.message = False, str(exc)
+        self.clear_requests()
+        return response
+
+    def reset_estop(self, request, response):
+        del request
+        self.publish(0., 0.)
+        try:
+            self.authority.reset_estop(self.emergency_healthy())
+            self.clear_requests()
+            response.success, response.message = True, 'ESTOP cleared; DISARMED, select mode and re-arm'
+        except AuthorityError as exc:
+            response.success, response.message = False, str(exc)
+        return response
+
+    def reset_fault(self, request, response):
+        del request
+        self.publish(0., 0.)
+        try:
+            ready = self.emergency_healthy() if self.command_mode == 'IDLE' else self.check()[0]
+            self.authority.reset_fault(ready)
+            self.clear_requests()
+            response.success, response.message = True, 'FAULT cleared; DISARMED'
+        except (AuthorityError, ValueError) as exc:
+            response.success, response.message = False, str(exc)
         return response
 
     def accept_request(self, msg, source):
-        if self.command_mode == source and seconds(msg.header.stamp) > self.mode_since:
+        if (self.authority.state != 'ESTOP' and self.command_mode == source
+                and seconds(msg.header.stamp) > self.mode_since):
             self.request=msg; self.received['request']=time.monotonic()
 
     def on_request(self,msg):
@@ -102,6 +193,10 @@ class MotionGuard(Node):
         self.target=msg; self.received['target']=time.monotonic()
 
     def check(self):
+        if self.task_hold.active(time.monotonic()):
+            return False, 'task_hold', 0., 0.
+        if not self.emergency_healthy():
+            return False, 'emergency_channel_unhealthy', 0., 0.
         if self.command_mode == 'IDLE':
             return False,'idle',0.,0.
         if self.command_mode == 'EXTERNAL' and self.cfg['base_frame'] != 'base_link':
@@ -163,44 +258,94 @@ class MotionGuard(Node):
         except TransformException:
             return False,'tf_unavailable_at_scan_time',0.,0.
 
-    def arm(self,request,response):
-        del request
-        if not self.cfg['motion_enabled']:
-            response.success=False; response.message='motion_enabled=false; perception only'
+    def authorize(self, request, response):
+        if (request.authority_epoch != self.authority.epoch or request.mode != self.command_mode):
+            response.success, response.message = False, 'Stale authorization epoch/mode'
             return response
-        ready,reason,_,_=self.check()
-        response.success=ready; response.message=reason
-        if ready:
-            self.mode='ARMED'; self.reason='explicitly_armed'
-        else:
-            self.reason=reason
+        return self._arm(response)
+
+    def arm(self, request, response):
+        del request
+        if not self.cfg['allow_legacy_arm']:
+            response.success, response.message = False, 'Use epoch-bound /control/authorize'
+            return response
+        return self._arm(response)
+
+    def _arm(self, response):
+        if self.task_hold.active(time.monotonic()):
+            response.success, response.message = False, 'Execution mode holds the vehicle stationary'
+            self.publish(0., 0.)
+            return response
+        try:
+            ready, reason, _, _ = self.check()
+            # Arming must never launch a buffered nonzero command.
+            zero = self.request is not None and all(v == 0 for v in (
+                self.request.twist.linear.x, self.request.twist.angular.z))
+            self.authority.arm(ready and zero, self.cfg['motion_enabled'])
+            response.success, response.message = True, 'Explicitly armed at zero velocity'
+        except (AuthorityError, ValueError) as exc:
+            self.publish(0., 0.)
+            response.success, response.message = False, str(exc)
         return response
 
-    def stop_service(self,request,response):
+    def stop_service(self, request, response):
         del request
-        self.mode='STANDBY' if self.cfg['motion_enabled'] else 'PERCEPTION_ONLY'
-        self.reason='operator_stop'
-        self.publish(0.,0.)
-        response.success=True; response.message='Stopped; explicit arm required to resume'
+        self.authority.stop()  # STOP cannot clear an ESTOP or FAULT latch.
+        self.clear_requests()
+        self.reason = self.authority.reason
+        self.publish(0., 0.)
+        response.success, response.message = True, 'Stopped and disarmed'
         return response
 
     def publish(self,v,w):
         msg=Twist(); msg.linear.x=float(v); msg.angular.z=float(w); self.pub.publish(msg)
 
+    def on_task_hold(self, request, response):
+        now = time.monotonic()
+        try:
+            if request.operation == 'ACQUIRE':
+                if self.authority.state in ('ESTOP', 'FAULT') or not self.emergency_healthy():
+                    raise ValueError('Reset fault/ESTOP and restore emergency channel before entering a mode')
+                response.token = self.task_hold.acquire(request.owner, request.session_id, request.lease_sec, now)
+                self.stop_service(None, Trigger.Response())
+            elif request.operation == 'RENEW':
+                self.task_hold.renew(request.token, request.lease_sec, now)
+                response.token = request.token
+            elif request.operation == 'RELEASE':
+                self.task_hold.release(request.token)
+                self.stop_service(None, Trigger.Response())
+            else:
+                raise ValueError('Expected ACQUIRE, RENEW or RELEASE')
+            response.success, response.detail = True, 'Vehicle remains IDLE; explicit new authorization required'
+        except ValueError as exc:
+            response.success, response.detail = False, str(exc)
+        return response
+
     def tick(self):
-        ready,reason,v,w=self.check()
-        if self.cfg['auto_arm'] and self.cfg['motion_enabled'] and self.mode == 'STANDBY' and ready:
-            self.mode='ARMED'; self.reason='auto_armed'
-        if self.mode=='ARMED' and not ready:
-            self.mode='FAULT'; self.last_fault=reason
-        self.reason=reason
-        self.publish(v if self.mode=='ARMED' and ready else 0.,
-                     w if self.mode=='ARMED' and ready else 0.)
-        self.status_pub.publish(String(data=json.dumps(dict(mode=self.mode,command_mode=self.command_mode,ready=ready,
-             reason=reason,last_fault=self.last_fault,motion_enabled=self.cfg['motion_enabled']))))
+        if self.task_hold.expire(time.monotonic()):
+            self.stop_service(None, Trigger.Response())
+        try:
+            ready, reason, v, w = self.check()
+        except Exception as exc:
+            ready, reason, v, w = False, 'guard_exception:' + type(exc).__name__, 0., 0.
+        if self.authority.armed and not ready:
+            self.authority.fault(reason)
+            self.last_fault = reason
+        self.reason = reason
+        allowed = self.authority.armed and ready and self.cfg['motion_enabled']
+        self.publish(v if allowed else 0., w if allowed else 0.)
+        self.status_pub.publish(String(data=json.dumps(dict(
+            mode=self.mode, authority_state=self.authority.state,
+            authority_epoch=self.authority.epoch, command_mode=self.command_mode,
+            ready=ready, reason=reason, last_fault=self.last_fault,
+            motion_enabled=self.cfg['motion_enabled'], emergency_healthy=self.emergency_healthy(),
+            task_hold=dict(active=self.task_hold.active(time.monotonic()), owner=self.task_hold.owner,
+                           session_id=self.task_hold.session_id)))))
 
     def destroy_node(self):
-        self.timer.cancel(); self.publish(0.,0.)
+        self.timer.cancel()
+        if rclpy.ok(context=self.context):
+            self.publish(0.,0.)
         return super().destroy_node()
 
 

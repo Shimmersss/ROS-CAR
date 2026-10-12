@@ -1,0 +1,18 @@
+tongue_mode:
+  ros__parameters:
+    server_url: http://172.19.128.171:8096
+    expected_pipeline_id: cloud_r50_384_cvAC10_passthrough_debug
+    expected_pipeline_digest: c5b9b1e31f73515b44044569b66e64d49861880441273a1fb86cd84774d6a494
+    camera_topic: /camera/color/image_raw
+    camera_profile: astra_rgb_tongue_v1
+    safety_profile: robot
+    prepare_sec: 2.0
+    task_timeout_sec: 150.0
+    speech_timeout_sec: 30.0
+    frame_timeout_sec: 2.0
+    max_frame_age_sec: 0.5
+    jpeg_quality: 95
+    manager_timeout_sec: 6.0
+    hold_lease_sec: 3.0
+    save_images: false
+    storage_dir: '~/.local/state/roscar/tongue'

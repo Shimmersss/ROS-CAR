@@ -1,0 +1,9 @@
+# Future modules add entries and implement RunMode; no tongue code in the dispatcher.
+modes:
+  - id: tongue
+    action: /modes/tongue/run
+    enter: [舌苔检测, 舌苔判断, 开始舌苔检测, 检测舌苔, 开启舌苔检测, 进入舌苔检测模式, 舌苔检测模式, 检查舌苔, 检查舌头, 拍一下舌头, 舌象分析]
+    retake: [重新检测舌苔, 重新拍一下舌头, 重新拍摄, 重新拍照]
+    repeat: [播报上次结果, 播报舌象结果, 再说一下舌象结果, 播报检测结果]
+    exit: [退出舌苔检测, 退出舌苔判断, 退出舌苔检测模式, 取消舌苔检测, 取消舌苔判断, 取消检查, 取消舌象分析]
+common_exit: [退出当前模式, 取消当前任务, 退出检测模式]

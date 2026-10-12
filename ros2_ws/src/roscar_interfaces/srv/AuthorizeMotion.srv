@@ -1,0 +1,5 @@
+uint64 authority_epoch
+string mode
+---
+bool success
+string message

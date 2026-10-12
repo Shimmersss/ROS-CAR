@@ -17,7 +17,14 @@ IR_INFO_FILE="$ROOT/ros2_ws/src/perception_bringup/config/astra_s_provisional_de
 }
 # Use the vendor launch namespace so outputs match /camera/color|depth/image_raw.
 # Request registration only after the caller has verified the actual camera setup.
-exec ros2 launch astra_camera astra.launch.xml \
-  camera_name:=camera enable_color:=true enable_depth:=true enable_ir:=false \
+camera_args=()
+if [[ -n "${ASTRA_UVC_PRODUCT_ID:-}" ]]; then
+  [[ "${ASTRA_LAUNCH:-astra.launch.xml}" == astra_pro.launch.xml ]] || {
+    echo 'UVC 参数要求显式选择 astra_pro.launch.xml。' >&2; exit 2;
+  }
+  camera_args+=(use_uvc_camera:=true "uvc_product_id:=$ASTRA_UVC_PRODUCT_ID")
+fi
+exec ros2 launch astra_camera "${ASTRA_LAUNCH:-astra.launch.xml}" \
+  camera_name:=camera enable_color:=true "enable_depth:=${ASTRA_ENABLE_DEPTH:-true}" enable_ir:=false \
   enable_point_cloud:=false "depth_registration:=${DEPTH_REGISTERED:-false}" \
-  "color_info_url:=file://$COLOR_INFO_FILE" "ir_info_url:=file://$IR_INFO_FILE"
+  "color_info_url:=file://$COLOR_INFO_FILE" "ir_info_url:=file://$IR_INFO_FILE" "${camera_args[@]}"

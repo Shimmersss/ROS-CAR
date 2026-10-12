@@ -13,6 +13,8 @@ WITH_VOICE="${WITH_VOICE:-true}"
 WITH_CHASSIS="${WITH_CHASSIS:-false}"
 export WITH_RADAR="${WITH_RADAR:-false}"
 WITH_FOLLOWER="${WITH_FOLLOWER:-false}"
+WITH_TONGUE_MODE="${WITH_TONGUE_MODE:-false}"
+TONGUE_SAFETY_PROFILE="${TONGUE_SAFETY_PROFILE:-robot}"
 MOTION_ENABLED="${MOTION_ENABLED:-false}"
 MODEL_PATH="${MODEL_PATH:-$ROOT/models/weights/yolo26s-fp16.engine}"
 YOLO_PYTHON="${YOLO_PYTHON:-$ROOT/.venv-yolo/bin/python3}"
@@ -23,6 +25,8 @@ case "${1:-}" in
     启动 Astra RGB-D、B 人体检测/ByteTrack、Foxglove 和语音。
 WITH_VOICE=false 关闭语音；VOICE_BACKEND=offline|online 选择离线语音或原在线语音。
 WITH_CHASSIS=true 开启底盘串口收发。
+WITH_TONGUE_MODE=true 将舌苔流程接入现有语音，要求 WITH_VOICE/WITH_FOLLOWER=true。
+TONGUE_SAFETY_PROFILE=robot 要求底盘回传；bench 仅允许运动关闭的台架。
 底盘要求 SERIAL_PORT 和 CAR_MODE；WITH_FOLLOWER=true 时跟随器通过 motion_guard 受保护输出。
 DEPTH_REGISTERED=true 使用驱动当前 RGB-D 配准；坐标精度仍须现场量距验证。
 MODEL_PATH、YOLO_PYTHON、YOLO_DEVICE 可覆盖模型和推理环境。
@@ -33,12 +37,18 @@ HELP
   *) echo '未知参数，使用 --help 查看用法。' >&2; exit 2;;
 esac
 set -u
-for value in "$WITH_VOICE" "$WITH_CHASSIS" "$WITH_RADAR" "$WITH_FOLLOWER" "$MOTION_ENABLED" "${DEPTH_REGISTERED:-false}" "$AUTO_LOCK_SINGLE"; do
+for value in "$WITH_VOICE" "$WITH_CHASSIS" "$WITH_RADAR" "$WITH_FOLLOWER" "$WITH_TONGUE_MODE" "$MOTION_ENABLED" "${DEPTH_REGISTERED:-false}" "$AUTO_LOCK_SINGLE"; do
   [[ "$value" == true || "$value" == false ]] || { echo '开关必须为 true/false' >&2; exit 2; }
 done
-if [[ "$WITH_FOLLOWER" == true && "$MOTION_ENABLED" != true ]]; then
-  echo 'WITH_FOLLOWER=true 时必须显式 MOTION_ENABLED=true。' >&2
-  exit 2
+if [[ "$WITH_TONGUE_MODE" == true ]]; then
+  [[ "$WITH_VOICE" == true && "$WITH_FOLLOWER" == true && "${VOICE_TTS_ENABLED:-true}" == true ]] || {
+    echo '舌苔模式需要现有语音、带完成确认的 TTS 和唯一 guard（WITH_FOLLOWER=true）。' >&2; exit 2;
+  }
+  case "$TONGUE_SAFETY_PROFILE" in
+    robot) [[ "$WITH_CHASSIS" == true ]] || { echo 'robot 舌苔模式要求底盘速度回传。' >&2; exit 2; };;
+    bench) [[ "$MOTION_ENABLED" == false ]] || { echo 'bench 舌苔模式要求 MOTION_ENABLED=false。' >&2; exit 2; };;
+    *) echo 'TONGUE_SAFETY_PROFILE 必须为 robot 或 bench。' >&2; exit 2;;
+  esac
 fi
 [[ -f "$MODEL_PATH" && -x "$YOLO_PYTHON" ]] || { echo '缺少 B 模型或 Python 环境。' >&2; exit 1; }
 for file in /opt/ros/humble/setup.bash /home/wheeltec/wheeltec_ros2/install/setup.bash \
@@ -53,8 +63,7 @@ fi
 if [[ "$WITH_VOICE" == true ]]; then
   case "${VOICE_BACKEND:-offline}" in
     online)
-      voice_file="${ROSCAR_VOICE_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/roscar/voice.env}"
-      [[ -f "$voice_file" ]] || { echo "缺少语音私有配置：$voice_file" >&2; exit 1; }
+      echo "统一安全链路要求 VOICE_BACKEND=offline，云端识别可用 ASR_BACKEND=xfyun。" >&2; exit 2
       ;;
     offline)
       offline_root="${ROSCAR_OFFLINE_ROOT:-/home/wheeltec/ROSCAR-offline}"
@@ -62,6 +71,11 @@ if [[ "$WITH_VOICE" == true ]]; then
       voice_files=(
         "$offline_root/venv/lib/python3.10/site-packages/sherpa_onnx/__init__.py"
         "$offline_models/vits-melo-tts-zh_en/model.onnx"
+        "$offline_models/silero_vad.onnx"
+        "$offline_models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/encoder-epoch-13-avg-2-chunk-8-left-64.int8.onnx"
+        "$offline_models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/decoder-epoch-13-avg-2-chunk-8-left-64.onnx"
+        "$offline_models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/joiner-epoch-13-avg-2-chunk-8-left-64.int8.onnx"
+        "$offline_models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/tokens.txt"
       )
       if [[ "${ASR_BACKEND:-offline}" == offline ]]; then
         qwen_model="$offline_models/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25"
@@ -97,12 +111,17 @@ if [[ "$WITH_CHASSIS" == true ]]; then
 fi
 set -u
 packages=(astra_camera yolo_person_tracker perception_bringup)
+[[ "$WITH_TONGUE_MODE" == true ]] && packages+=(execution_mode_interfaces execution_mode_manager tongue_mode)
 [[ "$WITH_RADAR" == true ]] && packages+=(lslidar_driver)
 for package in "${packages[@]}"; do
   ros2 pkg prefix "$package" >/dev/null || { echo "未构建 ROS 包：$package" >&2; exit 1; }
 done
 if [[ "$WITH_VOICE" == true && "${VOICE_BACKEND:-offline}" == offline ]]; then
   ros2 pkg prefix offline_voice >/dev/null || { echo '未构建 ROS 包：offline_voice' >&2; exit 1; }
+fi
+if [[ "$WITH_TONGUE_MODE" == true ]]; then
+  tongue_catalog="${TONGUE_CATALOG:-$ROOT/install/execution_mode_manager/share/execution_mode_manager/config/modes.yaml}"
+  [[ -f "$tongue_catalog" ]] || { echo "缺少执行模式词表：$tongue_catalog" >&2; exit 1; }
 fi
 mkdir -p "$ROOT/artifacts/project"
 exec 8>"$ROOT/artifacts/project/start.lock"
@@ -131,13 +150,20 @@ start_module() {
 start_module camera bash "$ROOT/scripts/run_astra_camera.sh"
 start_module perception bash "$ROOT/scripts/run_b_radar_foxglove.sh"
 if [[ "$WITH_FOLLOWER" == true ]]; then
-  start_module follower bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch motion_guard follow.launch.py motion_enabled:=true expected_source:=yolo target_frame:=camera_color_optical_frame radar_required:=false auto_arm:=true geometry_confirmed:='${FOLLOW_GEOMETRY_CONFIRMED:-false}' mount_calibrated:='${FOLLOW_MOUNT_CALIBRATED:-false}' stopping_model_confirmed:='${FOLLOW_STOPPING_MODEL_CONFIRMED:-false}' target_distance_m:=1.0"
+  start_module follower bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch motion_guard follow.launch.py motion_enabled:='$MOTION_ENABLED' expected_source:=yolo target_frame:=camera_color_optical_frame radar_required:=false auto_arm:=false geometry_confirmed:='${FOLLOW_GEOMETRY_CONFIRMED:-false}' mount_calibrated:='${FOLLOW_MOUNT_CALIBRATED:-false}' stopping_model_confirmed:='${FOLLOW_STOPPING_MODEL_CONFIRMED:-false}' target_distance_m:=1.0"
 fi
 if [[ "$WITH_CHASSIS" == true ]]; then
   start_module chassis bash "$ROOT/scripts/run_chassis_io.sh"
 fi
 if [[ "$WITH_VOICE" == true ]]; then
-  start_module voice bash "$ROOT/scripts/run_voice_assistant.sh"
+  voice_args=()
+  if [[ "$WITH_TONGUE_MODE" == true ]]; then
+    start_module tongue bash "$ROOT/scripts/run_tongue_mode.sh" \
+      catalog:="$tongue_catalog" safety_profile:="$TONGUE_SAFETY_PROFILE" \
+      server_url:="${TONGUE_SERVER_URL:-http://172.19.128.171:8096}"
+    voice_args+=(execution_modes_config:="$tongue_catalog" enable_speech_action:=true)
+  fi
+  start_module voice bash "$ROOT/scripts/run_voice_assistant.sh" "${voice_args[@]}"
 fi
 printf 'B 感知已派发；N10P=%s，底盘串口=%s，直接跟随=%s，语音=%s，配准确认=%s\n' \
   "${WITH_RADAR:-false}" \

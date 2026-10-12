@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import math
+import json
+from std_msgs.msg import String
 import time
 
 from geometry_msgs.msg import TwistStamped
@@ -55,6 +57,9 @@ class PersonFollowerNode(Node):
             raise ValueError('message_timeout_s must be positive and finite')
 
         self.performance = Performance(self, '/control/performance', 'follower')
+        self._authority = {}
+        self._authority_at = -math.inf
+        self.create_subscription(String, '/control/state', self._on_authority, 10)
         self.latest_target = None
         self.received_at = None
         self.publisher = self.create_publisher(TwistStamped, '/control/cmd_vel_request', 1)
@@ -66,7 +71,16 @@ class PersonFollowerNode(Node):
         )
         self.timer = self.create_timer(0.05, self._control_tick)
         self.get_logger().info(
-            'person follower ready; enabled=false until explicitly armed')
+            'person follower ready; nonzero requests require fresh ARMED_FOLLOW authority')
+
+    def _on_authority(self, message):
+        try:
+            value = json.loads(message.data)
+            if not isinstance(value, dict):
+                raise ValueError('Invalid authority state')
+            self._authority, self._authority_at = value, time.monotonic()
+        except (ValueError, TypeError):
+            self._authority, self._authority_at = {}, -math.inf
 
     def _target_callback(self, msg):
         if self.performance.enabled:
@@ -103,7 +117,10 @@ class PersonFollowerNode(Node):
                           target.source, self.get_parameter('expected_source').value))
 
         linear = angular = 0.0
-        if usable:
+        authorized = (now - self._authority_at < .3
+                      and self._authority.get('authority_state') == 'ARMED_FOLLOW'
+                      and self._authority.get('command_mode') == 'FOLLOW')
+        if usable and authorized:
             linear, angular = compute_command(
                 target.horizontal_distance_m,
                 target.bearing_rad,

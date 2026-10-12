@@ -1,0 +1,8 @@
+# Completion means synthesis and ALSA playback finished successfully.
+string utterance_id
+string text
+---
+string status
+string detail
+---
+string phase

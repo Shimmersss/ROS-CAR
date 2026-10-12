@@ -35,7 +35,7 @@ def generate_launch_description():
             get_package_share_directory('motion_guard'))/'config/safety.yaml')),
         DeclareLaunchArgument('motion_enabled',default_value='false',choices=['true','false']),
         DeclareLaunchArgument('radar_required',default_value='false',choices=['true','false']),
-        DeclareLaunchArgument('auto_arm',default_value='false',choices=['true','false']),
+        DeclareLaunchArgument('auto_arm',default_value='false',choices=['false']),
         DeclareLaunchArgument('geometry_confirmed',default_value='false',choices=['true','false']),
         DeclareLaunchArgument('mount_calibrated',default_value='false',choices=['true','false']),
         DeclareLaunchArgument('stopping_model_confirmed',default_value='false',choices=['true','false']),

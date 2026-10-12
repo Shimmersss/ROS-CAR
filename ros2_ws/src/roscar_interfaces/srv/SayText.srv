@@ -1,0 +1,8 @@
+# Plain text to speak; no intent parsing or vehicle control.
+string text
+---
+# Success means synthesis AND ALSA playback completed.
+bool success
+string status
+string utterance_id
+string message

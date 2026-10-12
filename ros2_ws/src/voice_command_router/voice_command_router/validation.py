@@ -3,6 +3,7 @@
 import json
 import math
 import re
+import unicodedata
 from dataclasses import dataclass
 
 
@@ -53,87 +54,182 @@ _ZH_DIGITS = {'零': 0, '〇': 0, '一': 1, '二': 2, '两': 2, '三': 3,
 
 
 def _number(value):
-    if value is None:
-        return None
-    value = value.strip()
-    try:
+    """Decode only well-formed unsigned numbers; never guess missing digits."""
+    if re.fullmatch(r'(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)', value):
         return float(value)
-    except ValueError:
-        if '点' in value:
-            integer, fraction = value.split('点', 1)
-            if fraction and all(x in _ZH_DIGITS for x in fraction):
-                return _number(integer) + float('0.' + ''.join(str(_ZH_DIGITS[x]) for x in fraction))
-        if value in _ZH_DIGITS:
-            return float(_ZH_DIGITS[value])
-        if value.startswith('十'):
-            return float(10 + (_ZH_DIGITS.get(value[1:], 0) if len(value) > 1 else 0))
-        if '十' in value:
-            left, right = value.split('十', 1)
-            return float(_ZH_DIGITS.get(left, 1) * 10 + _ZH_DIGITS.get(right, 0))
-    return None
+    if value == '半':
+        return 0.5
+    integer, separator, fraction = value.partition('点')
+    if integer in _ZH_DIGITS:
+        result = float(_ZH_DIGITS[integer])
+    elif re.fullmatch(r'[一二两三四五六七八九]?十[一二三四五六七八九]?', integer):
+        tens, ones = integer.split('十')
+        result = float(_ZH_DIGITS.get(tens, 1) * 10 + _ZH_DIGITS.get(ones, 0))
+    else:
+        raise CommandValidationError('数字格式不明确，请说零点一或一秒等完整数字')
+    if separator:
+        if not fraction or any(x not in _ZH_DIGITS and x not in '0123456789' for x in fraction):
+            raise CommandValidationError('小数格式不明确')
+        digits = ''.join(str(_ZH_DIGITS[x]) if x in _ZH_DIGITS else x for x in fraction)
+        result += float('0.' + digits)
+    return result
 
 
-def _extract(pattern, text):
-    match = re.search(pattern, text, re.IGNORECASE)
-    return _number(match.group(1)) if match else None
+_NUMBER = r'(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+|[零〇一二两三四五六七八九十]+(?:点[零〇一二两三四五六七八九0-9]+)?)'
+_DURATION = rf'(?:持续|维持)?(?P<duration>{_NUMBER}|半)(?:秒钟|秒|s)'
+_PREFIX = re.compile(r'^(?:麻烦你|麻烦|请你|请|帮我|小车|现在|马上|立即|先|稍微)')
+_SOFT_SUFFIX = r'(?:一下|一点|一点点)?'
+_DIRECTIONS = {
+    'forward': r'(?:前进|(?:向|往|朝)前(?:面|方)?(?:短暂)?(?:移动|挪动|挪|走|行驶|开动|开)?|前)',
+    'reverse': r'(?:后退|倒车|倒退|(?:向|往|朝)后(?:面|方)?(?:短暂)?(?:移动|挪动|挪|走|行驶|开动|开|倒)?|后)',
+    'left': r'(?:左转|左拐|(?:向|往|朝)左(?:边|侧)?(?:短暂)?(?:转动|转弯|转|拐弯|拐|调整方向)?|左)',
+    'right': r'(?:右转|右拐|(?:向|往|朝)右(?:边|侧)?(?:短暂)?(?:转动|转弯|转|拐弯|拐|调整方向)?|右)',
+}
+_STOP = re.compile(
+    r'(?:停止|急停|停下|停下来|停住|停车|停一下|停一停|不要动|别动|别动了|不要动了|'
+    r'(?:退出|取消|结束|停止)(?:(?:遥控|跟随|手动(?:驾驶|控制)?)(?:模式)?|当前动作))'
+    r'(?:小车)?(?:吧)?')
+_ARM = re.compile(
+    r'(?:(?:开始|进入|开启|启动|切换(?:到|为|成)?|切到)?(?:遥控|手动(?:驾驶|控制|操控)?)(?:模式|状态|授权)?|'
+    r'把小车(?:切换到|切到)(?:遥控|手动驾驶)模式|'
+    r'接下来让我手动控制|我现在要接管驾驶)(?:吧)?')
+_FOLLOW = re.compile(
+    r'(?:(?:开始|进入|开启|启动|切换(?:到|为|成)?|切到)?(?:人体)?跟随(?:模式)?|'
+    r'(?:开始)?跟随我|(?:开始)?跟着我(?:走)?|跟我走|跟上我|开始跟在我后面|'
+    r'接下来跟随说话的人|开始跟踪并跟随我)(?:吧)?')
+_STATUS = re.compile(
+    r'(?:(?:查询|查看|报告|告诉我)(?:一下)?(?:小车|车辆)?(?:现在的|目前|当前|剩余)?'
+    r'(?:电量|电池电压|控制模式|状态)|电量|电池|当前状态|控制状态|'
+    r'(?:当前)?是否在跟随|(?:现在)?锁定了目标吗|有没有锁定目标|是否锁定目标|'
+    r'(?:小车)?(?:现在)?(?:是|处于)什么模式|'
+    r'(?:现在的)?控制模式|(?:剩余)?电量(?:是多少|多少|还有多少))')
+# Questions about the state are explicitly handled above. Other context must
+# survive normalization and cannot be stripped into an executable command.
+_CONTEXT = re.compile(
+    r'[?？"\'“”‘’:：]|不要|别|勿|不想|无需|不用|不能|可以|能不能|能否|是否|吗|么|'
+    r'如果|假如|假设|要是|以后|明天|下周|等.+再|待.+再|有空|考虑|'
+    r'他说|说了|说过|有人|口令是|示例|举例|文章|报告中|引用|解释|翻译|朗读|'
+    r'忽略|规则|系统|管理员|白名单|提示词|返回|输出|伪造')
 
 
-def parse_local_text(text, *, forward_mps=0.08, reverse_mps=-0.08,
-                     turn_rps=0.25, duration_s=2.0):
+def _drive_pattern(direction):
+    # A turn takes rad/s, translation takes m/s. Bare "速度" keeps the
+    # historical direction-dependent unit, but explicit wrong units fail.
+    linear = direction in ('forward', 'reverse')
+    unit = r'(?:米每秒|米/秒|m/s)' if linear else r'(?:弧度每秒|弧度/秒|rad/s)'
+    noun = '米' if linear else '弧度'
+    label = r'(?:速度|速率|线速度)' if linear else r'(?:速度|速率|角速度)'
+    speed = (rf'(?:以)?(?:{label}(?:为|是)?(?P<speed>{_NUMBER})(?:{unit})?|'
+             rf'(?P<unit_speed>{_NUMBER}){unit}|每秒(?P<per_second>{_NUMBER}){noun})'
+             r'(?:的速度)?')
+    # Two anchored alternatives allow either slot order, with each slot at
+    # most once. No suffix search or partial action extraction is performed.
+    head = _DIRECTIONS[direction] + _SOFT_SUFFIX
+    return (
+        re.compile(head + rf'(?:{speed})?(?:{_DURATION})?' + _SOFT_SUFFIX + r'(?:吧)?'),
+        re.compile(head + rf'{_DURATION}{speed}' + _SOFT_SUFFIX + r'(?:吧)?'),
+    )
+
+
+_DRIVE_PATTERNS = {key: _drive_pattern(key) for key in _DIRECTIONS}
+
+
+def parse_intent(text):
     """Parse common Chinese driving phrases without network access.
 
     Returns a small action dictionary or ``None`` for ordinary conversation.
     A recognized but ambiguous command raises CommandValidationError.
     """
-    normalized = re.sub(r'[\s，。！？!?、,]', '', str(text or '')).lower()
-    normalized = re.sub(r'^(请|小车|帮我)', '', normalized)
-    aliases = {
-        '停止': {'action': 'STOP'}, '急停': {'action': 'STOP'},
-        '停下': {'action': 'STOP'}, '退出遥控': {'action': 'STOP'},
-        '取消遥控': {'action': 'STOP'}, '不要动': {'action': 'STOP'},
-        '开始遥控': {'action': 'ARM'}, '手动驾驶': {'action': 'ARM'},
-        '手动控制': {'action': 'ARM'}, '进入手动': {'action': 'ARM'},
-        '遥控模式': {'action': 'ARM'}, '进入遥控': {'action': 'ARM'},
-        '开启遥控': {'action': 'ARM'}, '遥控': {'action': 'ARM'},
-        '开始跟随': {'action': 'SET_MODE', 'mode': 'FOLLOW'},
-        '跟随我': {'action': 'SET_MODE', 'mode': 'FOLLOW'},
-        '进入跟随': {'action': 'SET_MODE', 'mode': 'FOLLOW'},
-    }
-    if normalized in aliases:
-        return aliases[normalized]
-    if normalized in ('电量', '电池', '当前状态', '控制状态', '是否在跟随'):
+    normalized = unicodedata.normalize('NFKC', str(text or '')).lower()
+    micro = bool(re.search(r'一下|一点|稍微|短暂', normalized))
+    if len(normalized) > 256:
+        raise CommandValidationError('指令过长，请一次只说一个动作')
+    normalized = re.sub(r'[\s，。、,!！]', '', normalized)
+    normalized = re.sub(r'(?<=[^0-9])\.$', '', normalized)
+    # Prefixes can occur together ("小车，请帮我..."); only this closed
+    # vocabulary is removed. Quotes and question marks are never discarded.
+    while True:
+        stripped = _PREFIX.sub('', normalized, count=1)
+        if stripped == normalized:
+            break
+        normalized = stripped
+    if normalized == '急停':
+        return {'action': 'ESTOP'}
+    if normalized in ('不用了', '退出语音', '休眠'):
+        return {'action': 'END_SESSION'}
+    if normalized == '解除紧急制动':
+        return {'action': 'RESET_ESTOP'}
+    if normalized == '复位故障':
+        return {'action': 'RESET_FAULT'}
+    if _STOP.fullmatch(normalized):
+        return {'action': 'STOP'}
+    if _STATUS.fullmatch(normalized.rstrip('?？')):
         return {'action': 'QUERY_STATUS', 'query': 'status'}
-    if any(word in normalized for word in ('导航', '去客厅', '去门口', '目的地')):
+    if _CONTEXT.search(normalized):
+        raise CommandValidationError('指令包含否定、疑问或转述，请直接说明一个动作')
+    if _ARM.fullmatch(normalized):
+        return {'action': 'ARM'}
+    if _FOLLOW.fullmatch(normalized):
+        return {'action': 'SET_MODE', 'mode': 'FOLLOW'}
+    if re.fullmatch(r'(?:导航)?(?:去|到|前往)(?:客厅|门口|厨房|充电点)(?:等我)?', normalized):
         return {'action': 'QUERY_STATUS', 'query': 'unsupported_navigation'}
-    directions = {'前进':'forward', '向前':'forward', '往前':'forward', '前':'forward',
-                  '后退':'reverse', '倒车':'reverse', '倒退':'reverse',
-                  '向后':'reverse', '往后':'reverse', '后':'reverse',
-                  '左转':'left', '向左':'left', '左拐':'left', '左':'left',
-                  '右转':'right', '向右':'right', '右拐':'right', '右':'right'}
-    # A short pause can leave two repetitions in one ASR utterance. Treat
-    # exact repeated direction words as one command; unrelated long text is
-    # still rejected below instead of guessing a vehicle action.
-    for token in sorted(directions, key=len, reverse=True):
-        normalized = re.sub(rf'(?:{re.escape(token)}){{2,}}$', token, normalized)
-    number = r'(?:[0-9]+(?:\.[0-9]+)?|[零〇一二两三四五六七八九十]+(?:点[零〇一二两三四五六七八九]+)?)'
-    match = re.fullmatch('('+'|'.join(directions)+')'+
-        r'(?:(?:速度|速率)('+number+r')|('+number+r')(?:米每秒|米/秒|m/s))?'+
-        r'(?:('+number+r')(?:秒|s))?', normalized)
-    if not match:
-        if any(word in normalized for word in (*directions, '遥控', '跟随', '停止')):
+    # Keep the old exact repeated-direction convention; never collapse a
+    # repeated suffix inside a larger, possibly negated utterance.
+    repeated = re.fullmatch(r'(前进|后退|倒车|倒退|左转|右转|向前|往前|向后|往后|向左|左拐|向右|右拐|前|后|左|右)\1+', normalized)
+    if repeated:
+        normalized = repeated[1]
+    in_place = normalized.startswith('原地')
+    if in_place:
+        normalized = normalized[2:]
+    for direction, patterns in _DRIVE_PATTERNS.items():
+        match = next((m for pattern in patterns if (m := pattern.fullmatch(normalized))), None)
+        if match:
+            break
+    else:
+        if re.search(r'前|后|左|右|遥控|手动|跟随|跟着|停止|停车|倒车|导航', normalized):
             raise CommandValidationError('指令包含否定、疑问或不明确的参数，请明确说明一个动作')
         return None
-    direction = directions[match[1]]
-    speed = _number(match[2] or match[3])
-    duration = _number(match[4]) if match[4] else float(duration_s)
-    if direction == 'forward':
-        linear, angular = (speed if speed is not None else forward_mps), 0.0
-    elif direction == 'reverse':
-        linear, angular = -(speed if speed is not None else abs(reverse_mps)), 0.0
-    elif direction == 'left':
-        linear, angular = 0.0, speed if speed is not None else abs(turn_rps)
+    slots = match.groupdict()
+    speed_text = slots['speed'] or slots['unit_speed'] or slots['per_second']
+    speed = _number(speed_text) if speed_text is not None else None
+    duration = _number(slots['duration']) if slots['duration'] else None
+    linear = direction in ('forward', 'reverse')
+    # Validate stated slots without inventing vehicle kinematics/defaults.
+    validate_drive((speed if speed is not None else 0.08) if linear else 0.,
+                   0. if linear else (speed if speed is not None else 0.25),
+                   duration if duration is not None else 1.)
+    if in_place and linear:
+        raise CommandValidationError('原地动作必须明确为转向')
+    return {'action': 'MOVE' if linear else 'TURN', 'direction': direction.upper(),
+            'style': 'IN_PLACE' if in_place else 'MICRO' if micro else 'NORMAL',
+            'speed': speed, 'duration_s': duration}
+
+
+def parse_local_text(text, *, forward_mps=0.08, reverse_mps=-0.08,
+                     turn_rps=0.25, duration_s=2.0):
+    """Deprecated compatibility view for old text regressions; not a ROS route.
+
+    Runtime uses parse_intent -> MotionRequest -> chassis adapter.
+    """
+    parsed = parse_intent(text)
+    if parsed is None:
+        return None
+    if parsed['action'] == 'ESTOP':
+        return {'action': 'STOP'}
+    if parsed['action'] not in ('MOVE', 'TURN'):
+        return parsed
+    speed = parsed['speed']
+    direction = parsed['direction']
+    duration = parsed['duration_s'] if parsed['duration_s'] is not None else duration_s
+    linear = angular = 0.
+    if direction == 'FORWARD':
+        linear = speed if speed is not None else forward_mps
+    elif direction == 'REVERSE':
+        linear = -(speed if speed is not None else abs(reverse_mps))
+    elif direction == 'LEFT':
+        angular = speed if speed is not None else abs(turn_rps)
     else:
-        linear, angular = 0.0, -(speed if speed is not None else abs(turn_rps))
+        angular = -(speed if speed is not None else abs(turn_rps))
     command = validate_drive(linear, angular, duration)
     return {'action': 'DRIVE', 'linear_mps': command.linear_mps,
             'angular_rps': command.angular_rps, 'duration_s': command.duration_s}

@@ -22,14 +22,14 @@ from std_srvs.srv import Trigger
 from tf2_ros import StaticTransformBroadcaster, Buffer
 from person_interfaces.msg import TargetState
 from motion_guard.node import MotionGuard
-from roscar_interfaces.srv import SetControlMode
+from roscar_interfaces.srv import SetControlMode, AuthorizeMotion
 
 rclpy.init(); probe=Node('guard_test'); ex=SingleThreadedExecutor(); ex.add_node(probe)
 # Real C++ chassis driver on a PTY; recorded frames never reach hardware.
 master,slave=pty.openpty();os.set_blocking(master,False)
 driver_log=tempfile.TemporaryFile(mode='w+')
 driver=subprocess.Popen(['ros2','run','turn_on_wheeltec_robot','wheeltec_robot_node',
-    '--ros-args','-p','usart_port_name:='+os.ttyname(slave),'-p','car_mode:=mini_mec'],
+    '--ros-args','-p','usart_port_name:='+os.ttyname(slave),'-p','car_mode:=mini_akm'],
     stdout=driver_log,stderr=subprocess.STDOUT,start_new_session=True)
 wire_frames=[];wire_stop=threading.Event()
 def xor(data):
@@ -51,7 +51,7 @@ def wire_loop():
 wire_thread=threading.Thread(target=wire_loop,daemon=True);wire_thread.start()
 params=[Parameter(k,value=v) for k,v in dict(
     motion_enabled=True, geometry_confirmed=True, stopping_model_confirmed=True,
-    mount_calibrated=True, radar_required=True).items()]
+    mount_calibrated=True, radar_required=True,emergency_kws_required=False,estop_latch_path='').items()]
 guard=MotionGuard(parameter_overrides=params);ex.add_node(guard)
 req=probe.create_publisher(TwistStamped,'/control/cmd_vel_request',1)
 scans=probe.create_publisher(LaserScan,'/scan',qos_profile_sensor_data)
@@ -62,8 +62,11 @@ probe.create_subscription(String,'/control/state',lambda m:states.append(json.lo
 broadcaster=StaticTransformBroadcaster(probe)
 tr=TransformStamped();tr.header.frame_id='base_link';tr.child_frame_id='laser';tr.transform.rotation.w=1.
 broadcaster.sendTransform(tr)
-arm=probe.create_client(Trigger,'/control/arm');stop=probe.create_client(Trigger,'/control/stop')
-flags=dict(scan=True,target=True,request=True,obstacle=False,simulated=False,old_request=False,old_target=False,lost=False)
+arm=probe.create_client(AuthorizeMotion,'/control/authorize')
+reset=probe.create_client(Trigger,'/control/reset_fault')
+mode_client=probe.create_client(SetControlMode,'/control/set_mode')
+selected_mode='FOLLOW';stop=probe.create_client(Trigger,'/control/stop')
+flags=dict(scan=True,target=True,request=True,obstacle=False,simulated=False,old_request=False,old_target=False,lost=False,zero=False)
 def pump(duration):
     end=time.monotonic()+duration; last=0
     while time.monotonic()<end:
@@ -72,7 +75,7 @@ def pump(duration):
             last=now;stamp=probe.get_clock().now().to_msg()
             if flags['request']:
                 m=TwistStamped();m.header.stamp=copy.deepcopy(stamp);m.header.frame_id='base_link'
-                m.twist.linear.x=.1
+                m.twist.linear.x=0. if flags['zero'] else .1
                 if flags['old_request']:m.header.stamp.sec-=3
                 req.publish(m)
             if flags['target']:
@@ -89,20 +92,27 @@ def pump(duration):
                 if flags['obstacle']:m.ranges[180]=.3
                 scans.publish(m)
         ex.spin_once(timeout_sec=.005)
-def call(client):
+def call(client,request=None):
     assert client.wait_for_service(timeout_sec=2)
-    f=client.call_async(Trigger.Request());end=time.monotonic()+2
+    f=client.call_async(request or (AuthorizeMotion.Request(mode=guard.command_mode,authority_epoch=guard.authority.epoch) if client is arm else Trigger.Request()));end=time.monotonic()+2
     while not f.done() and time.monotonic()<end:pump(.02)
     assert f.done();return f.result()
 def stopped():
+    pump(.15)  # Await three guard ticks and the asynchronous driver zero.
     assert vel and all(v.linear.x==0 and v.angular.z==0 for v in vel[-3:]),vel[-3:]
     assert wire_frames and wire_frames[-1]==(0,0,0),wire_frames[-3:]
 def enable():
+    flags['zero']=True;pump(.35)
+    if guard.authority.state=='FAULT':assert call(reset).success
+    if guard.command_mode=='IDLE':assert call(mode_client,SetControlMode.Request(mode=selected_mode)).success
     pump(.35);result=call(arm);assert result.success,result.message
+    flags['zero']=False
     pump(.3);assert vel[-1].linear.x>0
     assert any(v[0]==100 for v in wire_frames[-5:]),wire_frames[-5:]
 try:
-    pump(1.5);assert states[-1]['mode']=='STANDBY';stopped()
+    pump(3);assert driver.poll() is None
+    assert probe.count_subscribers('/cmd_vel') >= 2
+    assert states[-1]['mode']=='STANDBY';stopped()
     for key in ('obstacle','simulated','old_request','old_target','lost'):
         enable();flags[key]=True;pump(.25)
         assert states[-1]['mode']=='FAULT',(key,states[-1]);stopped()
@@ -127,6 +137,7 @@ try:
     while not future.done():pump(.02)
     assert future.result().success
     pump(.15);stopped()
+    selected_mode='EXTERNAL'
     flags['target']=False
     follow_req=req
     req=probe.create_publisher(TwistStamped,'/chassis/cmd_vel',1)
@@ -148,4 +159,7 @@ finally:
     try:driver.wait(timeout=4)
     except subprocess.TimeoutExpired:os.killpg(driver.pid,signal.SIGKILL);driver.wait()
     wire_stop.set();wire_thread.join(timeout=2)
-    os.close(master);os.close(slave);driver_log.close()
+    os.close(master);os.close(slave)
+    driver_log.seek(0);content=driver_log.read()
+    if not wire_frames or not any(v[0] == 100 for v in wire_frames):print('Driver diagnostic:',content[-3000:])
+    driver_log.close()
