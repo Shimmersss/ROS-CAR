@@ -1397,3 +1397,9 @@
 
 - 新增两个独立包骨架、CaptureTask action、严格指令/回执与目录校验、播报禁用词、0600 凭据加载、可取消标准库 HTTP、10 分钟有界去重及 mock 云端/CLI。JPEG 路径不依赖 Pillow。结构检查登记 21 个包；未改原语音/舌苔/guard 包。
 - 本阶段检查为纯 Python 单测、原有 CI、结构与 diff 检查；ROS 执行器和编译在 P2 后验收。
+
+### 云端拍照 P2 / P3：执行器与桥接联调
+
+- 实现完成确认播报、准备、新帧连拍、清晰度选优、质检、JPEG 编码、带取消上传和本地元数据记录；bridge 负责长轮询、ack、事件、心跳、10 分钟去重、TTL、匹配取消、网络/鉴权退避。假 TTS 和合成图像仅显式 bench/隔离域启用；speak 指令本轮返回 unsupported（方案可选项）。
+- 本机 Humble x86_64 子集 colcon：18 包通过；27 项纯 Python 测试通过。原生 ROS 运行时 10 个场景通过，包含四任务 JPEG/SHA、新鲜帧、忙时/语音模式互斥、bench 速度发布者与相机发布者门控、播报迟到取消、上传取消/409、bridge 去重/过期/匹配取消/断网与401恢复、20 次任务资源检查（线程增量0、FD增量0）。robot 场景使用现有 motion_guard + 假 odom/KWS，验证申请/续租/释放及 ESTOP 拒绝，非实车。日志 artifacts/capture-validation。
+- 用户已接入 Gemini 彩色 UVC，/dev/video0 有 ACL；用户选择只做采集测试，不做真人/PCB人工验收。真实图像采集另记，不混入模拟结果。
