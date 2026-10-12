@@ -9,6 +9,7 @@ export PERCEPTION_ROUTE="${PERCEPTION_ROUTE:-b}"
 case "$PERCEPTION_ROUTE" in
   b) camera_script=run_astra_camera.sh; model_name=yolo26s; layout=b-radar-layout.json ;;
   c) camera_script=run_gemini_camera.sh; model_name=yolo26s-pose; layout=c-layout.json
+     export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
      if [[ "${1:-}" != --help && "${1:-}" != -h ]]; then
        : "${GEMINI_SERIAL:?C 需要 GEMINI_SERIAL}"
        : "${GEMINI_CALIBRATION:?C 需要 GEMINI_CALIBRATION}"
@@ -51,6 +52,7 @@ case "${1:-}" in
     默认启动 B；PERCEPTION_ROUTE=c 或 scripts/start_c.sh 启动 Gemini/Pose。
 C 必须指定 GEMINI_SERIAL 和 GEMINI_CALIBRATION；相机/配准实测后才设 DEPTH_REGISTERED=true。
 WITH_VOICE=false 关闭语音；VOICE_BACKEND=offline，ASR_BACKEND=xfyun 可回退云端识别。
+启用语音及 TTS 时同时提供 /voice/say，复用唯一 TTS 队列。
 WITH_CHASSIS=true 开启底盘串口收发。
 WITH_TONGUE_MODE=true 将舌苔流程接入现有语音，要求 WITH_VOICE/WITH_FOLLOWER=true。
 TONGUE_SAFETY_PROFILE=robot 要求底盘回传；bench 仅允许运动关闭的台架。
@@ -163,6 +165,9 @@ for package in "${packages[@]}"; do
 done
 if [[ "$WITH_VOICE" == true && "${VOICE_BACKEND:-offline}" == offline ]]; then
   ros2 pkg prefix offline_voice >/dev/null || { echo '未构建 ROS 包：offline_voice' >&2; exit 1; }
+  if [[ "${VOICE_TTS_ENABLED:-true}" == true ]]; then
+    ros2 pkg prefix roscar_api >/dev/null || { echo '未构建 ROS 包：roscar_api' >&2; exit 1; }
+  fi
 fi
 if [[ "$WITH_TONGUE_MODE" == true ]]; then
   tongue_catalog="${TONGUE_CATALOG:-$ROOT/install/execution_mode_manager/share/execution_mode_manager/config/modes.yaml}"
@@ -202,14 +207,20 @@ if [[ "$WITH_CHASSIS" == true ]]; then
 fi
 if [[ "$WITH_VOICE" == true ]]; then
   voice_args=()
+  if [[ "${VOICE_TTS_ENABLED:-true}" == true ]]; then
+    voice_args+=(enable_speech_action:=true)
+  fi
   if [[ "$WITH_TONGUE_MODE" == true ]]; then
     start_module tongue bash "$ROOT/scripts/run_tongue_mode.sh" \
       catalog:="$tongue_catalog" safety_profile:="$TONGUE_SAFETY_PROFILE" \
       camera_topic:="$TONGUE_CAMERA_TOPIC" camera_profile:="$TONGUE_CAMERA_PROFILE" \
       server_url:="${TONGUE_SERVER_URL:-http://172.19.128.171:8096}"
-    voice_args+=(execution_modes_config:="$tongue_catalog" enable_speech_action:=true)
+    voice_args+=(execution_modes_config:="$tongue_catalog")
   fi
   start_module voice bash "$ROOT/scripts/run_voice_assistant.sh" "${voice_args[@]}"
+  if [[ "${VOICE_TTS_ENABLED:-true}" == true ]]; then
+    start_module speech_api bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch roscar_api speech_api.launch.py"
+  fi
 fi
 printf '%s 感知已派发；N10P=%s，底盘串口=%s，直接跟随=%s，语音=%s，配准确认=%s\n' \
   "$PERCEPTION_ROUTE" "${WITH_RADAR:-false}" \

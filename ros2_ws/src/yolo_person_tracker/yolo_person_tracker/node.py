@@ -26,6 +26,7 @@ from .depth import DepthGate, DepthTrackFilter, measure
 from .state import Selection
 from .sot import ArbiterConfig, BridgeArbiter, BridgeConfig, TargetBridge, VitTrack, overlaps_anyone
 from .input_contract import stamp_seconds, validate_pair
+from .visualization import draw_labels
 
 
 def serialized(method):
@@ -538,7 +539,7 @@ class TrackerNode(Node):
             marker.lifetime.nanosec = 200000000
         self.marker_pub.publish(marker)
 
-    def publish_image(self, color, image, detections, overlay_image=None):
+    def publish_image(self, color, image, detections, overlay_image=None, extra_labels=None):
         now = time.monotonic()
         fps = self.cfg['visualization_fps']
         if fps == 0 or now-self.last_visualization_at < 1.0/fps:
@@ -548,12 +549,6 @@ class TrackerNode(Node):
         for detection in detections:
             x1, y1, x2, y2 = map(int, detection.box)
             cv2.rectangle(annotated, (x1,y1), (x2,y2), (0,255,0), 2)
-            identity = 'person' if detection.track_id is None else f'{self.selection.epoch}:{detection.track_id}'
-            label = f'{identity} {detection.confidence:.2f}'
-            if self.selection.target_id == (self.selection.epoch, detection.track_id):
-                label += ' LOCKED'
-            cv2.putText(annotated, label, (x1,max(15,y1)), cv2.FONT_HERSHEY_SIMPLEX,
-                        .5, (0,255,0), 1)
         scale = self.cfg['visualization_scale']
         raw_preview = image
         if scale != 1:
@@ -561,6 +556,16 @@ class TrackerNode(Node):
                                      interpolation=cv2.INTER_AREA)
             annotated = cv2.resize(annotated, None, fx=scale, fy=scale,
                                    interpolation=cv2.INTER_AREA)
+        # Labels are rendered after downscaling, so the two rows stay readable.
+        for detection in detections:
+            identity = 'person' if detection.track_id is None else f'{self.selection.epoch}:{detection.track_id}'
+            label = f'{identity} {detection.confidence:.2f}'
+            if self.selection.target_id == (self.selection.epoch, detection.track_id):
+                label += ' LOCKED'
+            lines = [(label, (0, 255, 0))]
+            if extra_labels and detection.track_id in extra_labels:
+                lines.append(extra_labels[detection.track_id])
+            draw_labels(annotated, [v * scale for v in detection.box], lines)
         output = self.bridge.cv2_to_imgmsg(annotated, encoding='bgr8')
         output.header = copy.deepcopy(color.header)
         self.image_pub.publish(output)

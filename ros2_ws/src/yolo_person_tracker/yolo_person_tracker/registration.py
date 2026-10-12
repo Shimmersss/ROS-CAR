@@ -3,6 +3,15 @@ import cv2
 import numpy as np
 
 
+def depth_millimetres(depth_m):
+    """Quantize valid metres to uint16 mm; zero remains an invalid pixel."""
+    millimetres = np.rint(np.asarray(depth_m, dtype=np.float64) * 1000.)
+    valid = np.isfinite(millimetres) & (millimetres >= 1) & (millimetres <= 65535)
+    result = np.zeros(millimetres.shape, dtype=np.uint16)
+    result[valid] = millimetres[valid].astype(np.uint16)
+    return result
+
+
 def camera_matrix(intrinsic):
     matrix=np.array([[intrinsic['fx'],0,intrinsic['cx']], [0,intrinsic['fy'],intrinsic['cy']], [0,0,1]], dtype=float)
     if not np.isfinite(matrix).all() or matrix[0,0]<=0 or matrix[1,1]<=0:

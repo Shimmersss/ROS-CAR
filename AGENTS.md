@@ -17,7 +17,7 @@
 
 ## 当前状态（2026-10-12，本地合并）
 
-- C：已部署到板上隔离目录 `/home/wheeltec/ROSCAR-c`（Pose FP16 engine、Gemini 驱动均为板上构建），10-12 真人二维骨架与实车低速跟随（1.3 m、0.2 m/s、无避障、三项确认沿用临时授权）由用户现场确认可用；配准与绝对测距未用卷尺验收，Pose 实际约 6–7 帧/秒，现场调试 Foxglove 须走网线。跌倒检测处于离线评估阶段。10-10 按车载机位（镜头离地 27 cm、俯仰 15.1°）重拍并人工标注 20 次跌倒、19 个反例动作；高度线索及可选开关的复评见 `docs/跌倒检测评估记录.md`，按代码现状的逻辑见 `docs/跌倒检测整体逻辑.md`。C 尚未在 Jetson 上做真人或跌倒实测，现场项见 `docs/现场实测要求20261008.md`。
+- C：已部署到板上隔离目录 `/home/wheeltec/ROSCAR-c`（Pose FP16 engine、Gemini 驱动均为板上构建），10-12 真人二维骨架与实车低速跟随（1.3 m、0.2 m/s、无避障、三项确认沿用临时授权）由用户现场确认可用；配准与绝对测距未用卷尺验收，Pose 实际约 6–7 帧/秒，现场调试 Foxglove 须走网线。跌倒检测处于离线评估阶段。10-10 按车载机位（镜头离地 27 cm、俯仰 15.1°）重拍并人工标注 20 次跌倒、19 个反例动作；高度线索及可选开关的复评见 `docs/跌倒检测评估记录.md`，按代码现状的逻辑见 `docs/跌倒检测整体逻辑.md`。合并后的 C 尚未实车复验，跌倒尚未在 Jetson 上做真人实测，现场项见 `docs/现场实测要求20261008.md`。
 - B：Jetson 上 YOLO26s/ByteTrack 有真人在线检测；RGB-D 配准、安装外参和绝对测距精度待验收。
 - 语音：正式入口为本地 Qwen3-ASR + Silero VAD + 固定规则 + 本地 TTS，见 `docs/语音入口与回退.md`。
 - `scripts/start_robot.sh` 启动底盘、语音和受保护跟随器，默认 `MOTION_ENABLED=false`、`auto_arm:=false`，几何确认默认 false，不启 N10P。显式打开运动能力后仍须逐次授权；本轮仅本地合并，没有更新板端服务。
@@ -45,7 +45,7 @@
 
 ## 文字播报接口约定
 
-- 文字播报公共服务为 `/voice/say`（`SayText`），独立入口 `ros2 launch roscar_api speech_api.launch.py` 默认仅复用现有 `/voice/speak` action。正文只交给唯一 TTS 队列，不经过意图/运动解析；超时仅取消本次 goal。只有没有现有 TTS 时才使用 `with_tts:=true`，避免重复播放所有者。调用说明见 `docs/文字播报ROS接口.md`。
+- 文字播报公共服务为 `/voice/say`（`SayText`），独立入口 `ros2 launch roscar_api speech_api.launch.py` 默认仅复用现有 `/voice/speak` action。正文只交给唯一 TTS 队列，不经过意图/运动解析；超时仅取消本次 goal。只有没有现有 TTS 时才使用 `with_tts:=true`，避免重复播放所有者。B/C 总入口 `start_project.sh` 在语音与 TTS 启用时自动开启 SpeakText action 和 `/voice/say` 桥接，复用唯一队列。调用说明见 `docs/文字播报ROS接口.md`。
 
 ## C 路线入口约定
 

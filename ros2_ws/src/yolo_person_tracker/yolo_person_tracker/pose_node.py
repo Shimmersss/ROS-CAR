@@ -227,7 +227,7 @@ class PoseTrackerNode(TrackerNode):
         msg=PersonStateArray(); msg.header=copy.deepcopy(color.header); msg.valid=True
         self.pose_frame=color.header.frame_id
         msg.detail='COCO17; camera-relative heuristic; initial thresholds'
-        annotated=image.copy(); markers=MarkerArray(); current=set()
+        annotated=image.copy(); markers=MarkerArray(); current=set(); extra_labels={}
         stamp=stamp_seconds(color.header.stamp)
         gravity=self.frame_gravity(color,stamp)
         # Falls often break the tracker ID; a lost track may hand over to one new track (pose_handover_s).
@@ -283,8 +283,7 @@ class PoseTrackerNode(TrackerNode):
             for a,b in EDGES:
                 if valid[a] and valid[b]:
                     cv2.line(annotated,tuple(map(int,points[a,:2])),tuple(map(int,points[b,:2])),tint,2)
-            x,y=map(int,detection.box[:2])
-            cv2.putText(annotated,f'{LABELS[person.posture]} fall={person.fall_stage} {person.detail.split(chr(59),1)[0]}',(x,max(30,y+18)),cv2.FONT_HERSHEY_SIMPLEX,.5,tint,1)
+            extra_labels[detection.track_id]=(f'{LABELS[person.posture]} fall={person.fall_stage}',tint)
             marker=Marker(); marker.header=copy.deepcopy(color.header)
             marker.ns=identity; marker.id=0; marker.type=Marker.LINE_LIST; marker.action=Marker.ADD
             marker.pose.orientation.w=1.; marker.scale.x=.025
@@ -304,7 +303,7 @@ class PoseTrackerNode(TrackerNode):
         age=(self.get_clock().now().nanoseconds*1e-9-stamp)*1000.
         if self.performance_enabled:
             self.output_samples.append((time.monotonic(),age))
-        super().publish_image(color,image,detections,overlay_image=annotated)
+        super().publish_image(color,image,detections,overlay_image=annotated,extra_labels=extra_labels)
 
     def apply_height_fall(self, person, identity, stamp, box, gravity):
         """Raise fall_stage from the body-top height cue; a skeleton standing/crouching posture
