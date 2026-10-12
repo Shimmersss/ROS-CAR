@@ -13,6 +13,8 @@ from std_msgs.msg import Bool, Int8, String
 from std_srvs.srv import Trigger
 
 from .audio import ArecordCapture, pcm_rms_s16le
+from .audio_bus import AudioInbox
+from roscar_interfaces.msg import AudioFrame
 from .auth import build_signed_websocket_url
 from .protocol import IatResultAssembler, make_iat_frame
 
@@ -22,6 +24,7 @@ class XfyunAsrNode(Node):
         super().__init__('xfyun_asr')
         self.declare_parameter('endpoint', 'wss://iat-api.xfyun.cn/v2/iat')
         self.declare_parameter('capture_device', 'default')
+        self.declare_parameter('audio_source', 'alsa')
         self.declare_parameter('sample_rate', 16000)
         self.declare_parameter('frame_ms', 40)
         self.declare_parameter('language', 'zh_cn')
@@ -58,6 +61,11 @@ class XfyunAsrNode(Node):
         self._trigger_srv = self.create_service(
             Trigger, '/voice/start_listening', self._on_trigger)
 
+        self._inbox = AudioInbox()
+        self._cancel = threading.Event()
+        self._listen_generation = 0
+        self.create_subscription(AudioFrame, '/voice/audio', self._on_audio, 40)
+        self.create_service(Trigger, '/voice/cancel_listening', self._on_cancel)
         self._speaking = False
         self._busy = False
         self._lock = threading.Lock()
@@ -80,6 +88,35 @@ class XfyunAsrNode(Node):
         message = String()
         message.data = self._state_value
         self._state_pub.publish(message)
+
+    def _on_audio(self, message):
+        if self.get_parameter('audio_source').value != 'topic':
+            return
+        age = self.get_clock().now().nanoseconds * 1e-9 - (message.stamp.sec + message.stamp.nanosec * 1e-9)
+        if message.sample_rate != 16000 or message.channels != 1 or not 0 <= age <= .2:
+            self._inbox.fail('Invalid/stale shared audio')
+        else:
+            self._inbox.push(message.sequence, bytes(message.pcm_s16le))
+
+    def _on_cancel(self, request, response):
+        del request
+        with self._lock:
+            self._listen_generation += 1
+            self._pending_wake = False
+            self._cancel.set()
+        self._inbox.fail('Listening cancelled')
+        response.success, response.message = True, 'Listening cancelled'
+        return response
+
+    def _capture(self, device, sample_rate):
+        source = self.get_parameter('audio_source').value
+        if source == 'topic':
+            if sample_rate != 16000 or self.get_parameter('frame_ms').value != 40:
+                raise ValueError('Shared audio requires 16 kHz / 40 ms')
+            return self._inbox.capture()
+        if source == 'alsa':
+            return ArecordCapture(device, sample_rate)
+        raise ValueError('Unknown audio source')
 
     def _on_speaking(self, message):
         self._speaking = bool(message.data)
@@ -111,7 +148,7 @@ class XfyunAsrNode(Node):
                 return False, 'TTS 正在播放，暂不开始识别'
             if self._busy or not self._requests.empty():
                 return False, 'ASR 已在工作'
-            self._requests.put_nowait(source)
+            self._requests.put_nowait((source, self._listen_generation))
             return True, '已开始一次语音识别'
 
     def _worker_loop(self):
@@ -133,10 +170,15 @@ class XfyunAsrNode(Node):
                 continue
             if item is None:
                 break
+            source, generation = item
             with self._lock:
+                if generation != self._listen_generation:
+                    self._requests.task_done()
+                    continue
+                self._cancel.clear()
                 self._busy = True
             try:
-                self._listen_once(item)
+                self._listen_once(source)
             except Exception as exc:  # hardware/network errors must not kill the node
                 stack = ' -> '.join(f'{entry.name}:{entry.lineno}'
                                     for entry in traceback.extract_tb(exc.__traceback__))
@@ -198,7 +240,7 @@ class XfyunAsrNode(Node):
         device = self.get_parameter('capture_device').value
 
         url = build_signed_websocket_url(endpoint, api_key, api_secret)
-        capture = ArecordCapture(device, sample_rate)
+        capture = self._capture(device, sample_rate)
         ws = None
         assembler = IatResultAssembler()
         self._publish_state('CONNECTING')
@@ -214,7 +256,7 @@ class XfyunAsrNode(Node):
             first_frame = True
             server_final = False
 
-            while not self._stop.is_set() and not self._speaking:
+            while not self._stop.is_set() and not self._speaking and not self._cancel.is_set():
                 audio = capture.read(frame_bytes)
                 rms = pcm_rms_s16le(audio)
                 if rms >= energy_threshold:
@@ -251,6 +293,8 @@ class XfyunAsrNode(Node):
                 if elapsed >= max_utterance:
                     break
 
+            if self._cancel.is_set() or self._stop.is_set() or self._speaking:
+                return
             if not server_final:
                 self._phase = 'SENDING_FINAL'
                 ws.send(json.dumps(make_iat_frame(
@@ -262,13 +306,15 @@ class XfyunAsrNode(Node):
                 )))
                 self._publish_state('RECOGNIZING')
                 deadline = time.monotonic() + response_timeout
-                while time.monotonic() < deadline:
+                while time.monotonic() < deadline and not self._cancel.is_set() and not self._stop.is_set():
                     self._phase = 'RECEIVING_FINAL'
                     remaining = max(0.01, min(0.5, deadline - time.monotonic()))
                     if self._receive_one(ws, assembler, remaining):
                         server_final = True
                         break
 
+            if self._cancel.is_set() or self._stop.is_set() or self._speaking:
+                return
             text = assembler.text.strip()
             trusted_wake = trigger_source == 'trusted_wake'
             if not speech_started and not (trusted_wake and text):

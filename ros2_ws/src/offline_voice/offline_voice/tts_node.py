@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import rclpy
+from rclpy.executors import MultiThreadedExecutor
 
 from xfyun_speech.audio import AplaySink
 from xfyun_speech.tts_node import XfyunTtsNode
@@ -50,18 +51,28 @@ class OfflineTtsNode(XfyunTtsNode):
     def _speak(self, text):
         import sherpa_onnx
 
+        if self._speech_cancelled():
+            return
         generation = sherpa_onnx.GenerationConfig()
         generation.speed = float(self.get_parameter('speech_speed').value)
         self._publish_speaking(True)
         self._publish_state('SPEAKING')
         audio = self._tts.generate(text, generation)
+        if self._speech_cancelled():
+            return
         if len(audio.samples) == 0:
             raise RuntimeError('离线 TTS 未生成音频')
         pcm = (np.clip(audio.samples, -1.0, 1.0) * 32767).astype('<i2').tobytes()
         sink = AplaySink(str(self.get_parameter('playback_device').value), audio.sample_rate)
+        self._track_sink(sink)
         sink.start()
         try:
-            sink.write(pcm)
+            chunk_bytes = audio.sample_rate * 2 // 50
+            for offset in range(0, len(pcm), chunk_bytes):
+                if self._speech_cancelled():
+                    sink.abort()
+                    return
+                sink.write(pcm[offset:offset + chunk_bytes])
         finally:
             sink.close()
 
@@ -69,11 +80,17 @@ class OfflineTtsNode(XfyunTtsNode):
 def main(args=None):
     rclpy.init(args=args)
     node = OfflineTtsNode()
+    executor = MultiThreadedExecutor(num_threads=4)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        node._stop.set()
+        if node._action_speech:
+            node._action_speech.stop()
+        executor.shutdown(timeout_sec=3.)
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

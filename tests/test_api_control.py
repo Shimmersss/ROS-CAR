@@ -13,14 +13,14 @@ from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from tf2_ros import StaticTransformBroadcaster, Buffer
-from roscar_interfaces.srv import SetControlMode
+from roscar_interfaces.srv import SetControlMode, AuthorizeMotion
 from motion_guard.node import MotionGuard
 
 rclpy.init()
 p = Node('api_test'); ex=SingleThreadedExecutor(); ex.add_node(p)
 g=MotionGuard(parameter_overrides=[Parameter(k,value=v) for k,v in dict(
     command_mode='IDLE',motion_enabled=True,geometry_confirmed=True,
-    stopping_model_confirmed=True,mount_calibrated=True,radar_required=True).items()]); ex.add_node(g)
+    stopping_model_confirmed=True,mount_calibrated=True,radar_required=True,emergency_kws_required=False,estop_latch_path='').items()]); ex.add_node(g)
 ext=p.create_publisher(TwistStamped,'/chassis/cmd_vel',1)
 follow=p.create_publisher(TwistStamped,'/control/cmd_vel_request',1)
 scan=p.create_publisher(LaserScan,'/scan',qos_profile_sensor_data)
@@ -28,19 +28,20 @@ vel=[]; states=[]
 p.create_subscription(Twist,'/cmd_vel',vel.append,10)
 p.create_subscription(String,'/control/state',lambda m:states.append(json.loads(m.data)),10)
 tf=StaticTransformBroadcaster(p); t=TransformStamped();t.header.frame_id='base_link';t.child_frame_id='laser';t.transform.rotation.w=1.;tf.sendTransform(t)
-flags=dict(send=True,obstacle=False,old=False,field=None,value=0.,frame='base_link')
-mode=p.create_client(SetControlMode,'/control/set_mode');arm=p.create_client(Trigger,'/control/arm')
+flags=dict(send=True,obstacle=False,old=False,field=None,value=0.,frame='base_link',zero=False)
+mode=p.create_client(SetControlMode,'/control/set_mode');arm=p.create_client(AuthorizeMotion,'/control/authorize')
+reset=p.create_client(Trigger,'/control/reset_fault')
 def pump(duration):
     end=time.monotonic()+duration;last=0
     while time.monotonic()<end:
         if time.monotonic()-last>.025:
             last=time.monotonic(); stamp=p.get_clock().now().to_msg()
-            m=TwistStamped();m.header.stamp=copy.deepcopy(stamp);m.header.frame_id=flags['frame'];m.twist.linear.x=.1
+            m=TwistStamped();m.header.stamp=copy.deepcopy(stamp);m.header.frame_id=flags['frame'];m.twist.linear.x=0. if flags['zero'] else .1
             if flags['old']:m.header.stamp.sec-=10
             if flags['field']:
                 group,field=flags['field'].split('.');setattr(getattr(m.twist,group),field,flags['value'])
             if flags['send']:ext.publish(m)
-            m.twist.linear.x=.14; follow.publish(m)
+            m.twist.linear.x=0. if flags['zero'] else .14; follow.publish(m)
             s=LaserScan();s.header.stamp=stamp;s.header.frame_id='laser';s.angle_min=-math.pi;s.angle_increment=math.pi/180;s.angle_max=math.pi-s.angle_increment
             s.range_min=.15;s.range_max=15.;s.ranges=[3.]*360
             if flags['obstacle']:s.ranges[180]=.3
@@ -55,26 +56,33 @@ def set_mode(value):
     q=SetControlMode.Request();q.mode=value;return call(mode,q)
 def stopped():
     pump(.15);assert all(v.linear.x==0 and v.angular.z==0 for v in vel[-2:]),states[-1]
+def ticket():
+    q=AuthorizeMotion.Request();q.mode=g.command_mode;q.authority_epoch=g.authority.epoch;return q
+
 def enable():
-    pump(.3);r=call(arm,Trigger.Request());assert r.success,r.message
+    if g.authority.state=='FAULT':
+        flags['zero']=True;pump(.3);assert call(reset,Trigger.Request()).success
+    if g.command_mode=='IDLE':assert set_mode('EXTERNAL').success
+    flags['zero']=True;pump(.3);r=call(arm,ticket());assert r.success,r.message
+    flags['zero']=False
     pump(.15);assert vel[-1].linear.x==.1,states[-1]
 try:
     pump(.6);assert states[-1]['command_mode']=='IDLE';stopped()
-    assert not call(arm,Trigger.Request()).success
+    assert not call(arm,ticket()).success
     assert not set_mode('external').success;assert g.command_mode=='IDLE'
     assert set_mode('EXTERNAL').success;enable() # No target publisher exists.
-    assert not set_mode('INVALID').success;assert g.mode=='ARMED'
+    assert not set_mode('INVALID').success;assert g.mode=='STANDBY';stopped()
     assert set_mode('EXTERNAL').success;stopped();assert g.mode=='STANDBY'
     flags['send']=False
     assert set_mode('FOLLOW').success;stopped();assert g.request is not None
-    assert not call(arm,Trigger.Request()).success # Missing target still blocks FOLLOW.
+    assert not call(arm,ticket()).success # Missing target still blocks FOLLOW.
     assert set_mode('EXTERNAL').success;stopped();assert g.request is None
-    assert not call(arm,Trigger.Request()).success # Unselected FOLLOW cannot fill request.
+    assert not call(arm,ticket()).success # Unselected FOLLOW cannot fill request.
     flags['send']=True; flags['old']=True;pump(.2);assert g.request is None
     flags['old']=False;enable()
     for field,value in [('linear.x',-g.safety.max_reverse_mps-.01),('linear.x',g.safety.max_linear_mps+.01),('linear.y',.01),('linear.z',.01),('angular.x',.01),('angular.y',.01),('angular.z',g.safety.max_angular_rps+.01),('angular.z',math.nan),('linear.x',math.inf)]:
         flags['field']=field;flags['value']=value;pump(.15);assert g.mode=='FAULT',(field,value,g.mode);stopped()
-        assert not call(arm,Trigger.Request()).success
+        assert not call(arm,ticket()).success
         flags['field']=None;pump(.2);assert g.mode=='FAULT';enable()
     flags['frame']='camera_optical';pump(.2);assert g.mode=='FAULT';stopped()
     flags['frame']='base_link';enable()

@@ -11,17 +11,41 @@
 - SSH：Wi-Fi `wheeltec@192.168.1.240`（别名 `roscar-wifi`）、网线 `wheeltec@192.168.100.2`（`roscar-ethernet`），端口 22。密码、代理订阅 URL、节点和登录凭据、讯飞/DeepSeek 凭据不得写入项目文件或日志；语音凭据只存板上权限 0600 的私有文件。小车上的 Codex CLI 与 Clash Verge 配置见 `deploy/README.md`。
 - 相机：C 使用 Gemini Pro（序列号 AY2755200PW）；早期 Astra 实物为 ORBBEC ASTRA S（2bc5:0402），两者标定不能混用。底盘 OLED 显示 `Akm`，车型键按 `mini_akm`，不要用源码默认 `mini_mec`。底盘商品型号仍待核对。
 - 代码：主动工作区 `ros2_ws/src/`，构建只扫描此处。厂商原包 `JP6.2_wheeltec_ros2_src_20260903/` 保持原样并排除 Git 和同步。迁入的厂商包（chassis_vendor、radar_vendor、wheeltec_mic、wheeltec_mic_aiui、tts_make_ros2）保留 `COLCON_IGNORE`，由独立脚本构建；`SOURCE_MANIFEST.json` 保留原始哈希，本地补丁记 `local_modifications`。
-- Jetson 正式目录 `/home/wheeltec/ROSCAR-current`（含在运行的语音服务），离线语音依赖在 `/home/wheeltec/ROSCAR-offline`。Mac 同步脚本默认 dry-run、按白名单，不传厂商包、权重、录像、构建产物或代理配置，不执行远端删除。旧 A 的 `roscar-route-a.service` 若在运行会占用相机，启动其他相机入口前先停止。
+- Jetson 已有整机目录 `/home/wheeltec/ROSCAR-current`（实时服务状态须现场核对，语音舌苔试运行副本见下文），离线语音依赖在 `/home/wheeltec/ROSCAR-offline`。Mac 同步脚本默认 dry-run、按白名单，不传厂商包、权重、录像、构建产物或代理配置，不执行远端删除。旧 A 的 `roscar-route-a.service` 若在运行会占用相机，启动其他相机入口前先停止。
 - 只有显式 `route:=demo` 输出 `is_simulated=true` 的模拟数据；demo、容器编译、CI 单测、合成测试和离线录像回放都不能描述为实机识别或实车验收。感知验收中不得混入跟随或底盘控制节点。
 - 流程图位于 `docs/diagrams/`，必须区分“已有源码/库”“待开发/接入”“待实机验证”；修改 SVG 后如需分享合并图，同步重新导出 PNG。
 
-## 当前状态（2026-10-11）
+## 当前状态（2026-10-12，本地合并）
 
 - C：跌倒检测处于离线评估阶段。10-10 按车载机位（镜头离地 27 cm、俯仰 15.1°）重拍并人工标注 20 次跌倒、19 个反例动作；高度线索及可选开关的复评见 `docs/跌倒检测评估记录.md`，按代码现状的逻辑见 `docs/跌倒检测整体逻辑.md`。C 尚未在 Jetson 上做真人或跌倒实测，现场项见 `docs/现场实测要求20261008.md`。
 - B：Jetson 上 YOLO26s/ByteTrack 有真人在线检测；RGB-D 配准、安装外参和绝对测距精度待验收。
 - 语音：正式入口为本地 Qwen3-ASR + Silero VAD + 固定规则 + 本地 TTS，见 `docs/语音入口与回退.md`。
-- `scripts/start_robot.sh` 是板上整车配置，会启动底盘、语音和经 motion_guard 的自动跟随（`MOTION_ENABLED=true`、`auto_arm:=true`，三项跟随确认为用户临时授权，不启 N10P）；感知验证只用 `start_project.sh` / `start_c.sh`，文档不得把 `start_robot.sh` 写成不运动。
+- `scripts/start_robot.sh` 启动底盘、语音和受保护跟随器，默认 `MOTION_ENABLED=false`、`auto_arm:=false`，几何确认默认 false，不启 N10P。显式打开运动能力后仍须逐次授权；本轮仅本地合并，没有更新板端服务。
 - 底盘串口已在 Jetson 收发里程计；N10P、motion_guard、导航和云台桥接有软件与本机测试，实车运动、避障和云台硬件均未验收。
+
+## 当前语音开发约定（2026-10-12，运动关闭试运行）
+
+- 实机试运行入口为 `scripts/run_voice_tongue_trial.sh`，由手动用户服务 `roscar-voice-tongue-trial.service` 监督，固定运动关闭且不自动授权；不能叠加旧整车服务。合并后试运行默认使用 Gemini 独立驱动，必须指定 GEMINI_SERIAL / GEMINI_CALIBRATION；旧 UVC 仅显式 TRIAL_CAMERA_BACKEND=astra 兼容。口头唤醒词“小微小微”与内部“小车唤醒”事件须区分。部署路径、实际验证范围和待验收项见 `docs/2026-10-12语音舌苔实机试运行.md`。
+
+- 以 `docs/语音优化无车实施与验收.md` 为本轮入口和验收边界。没有小车时只做本机软件/模拟/数字音频回放，不宣称板端收音、AEC、制动或物理运动通过。
+- 固定规则运行链使用 `parse_intent -> MotionRequest -> Capability Validator/Ackermann adapter`；旧 `parse_local_text` 仅供兼容文本回归。禁止 LLM 生成底盘运动控制。
+- `motion_guard` 是唯一最终 `/cmd_vel` 发布者和运动授权来源。启动 IDLE/DISARMED，禁止 auto_arm；显式授权必须绑定当前模式返回的 epoch，且有新鲜零请求与 KWS 健康心跳。停止/故障/模式切换/重启使旧票据失效。
+- ESTOP 锁存持久化，普通 STOP/模式切换不能清除；复位仅回到未授权状态。KWS 常开，包括 TTS 期间；共享录音只允许一个 ALSA 所有者。
+- Qwen3-ASR CPU2、MeloTTS 不替换；热词、阿克曼转向、微动标定及总运动开关默认关闭，未经真人实车验收不得默认开启。测试中的校准/免 KWS 参数只用于隔离模拟域。
+- 主入口 `VOICE_BACKEND=offline`；讯飞 ASR 仅通过显式 `ASR_BACKEND=xfyun` 回退，不能通过旧 online 路径恢复 LLM 控制。
+
+## 语音与舌苔执行模式整合约定（2026-10-04）
+
+- 新分支以 `docs/语音舌苔流程整合与验收.md` 为整合入口；原舌苔模块来自 `codex/tongue-execution-mode` / `1b422eb`，来源分支的旧验证记录不作为本分支验收。
+- 舌苔流程复用当前 ASR、共享录音、常开 KWS、唯一 TTS 队列和原始 RGB；仅新增 execution_mode_interfaces / execution_mode_manager / tongue_mode，不建立新的最终速度出口。
+- 模式进入先确认 STOP，再获得 TaskHold；保持期间禁止运动授权。急停/故障/急停健康失效终止检测，释放租约不能清除锁存或恢复运动。
+- 保留唤醒刷新与 8 秒普通会话，超时不取消检测任务；READY 只为语音交互开放一次有界续聊窗口。明确退出语音、停车和急停清理模式。检测中的唤醒不取消有完成确认的任务播报。
+- 整机入口仅在 `WITH_TONGUE_MODE=true` 时接入；robot 要求底盘静止回传，bench 必须运动关闭。测试中的假输入/模型不能称为实车或舌象分类准确率验证。
+- 模式切换等待旧 RunMode 的最终清理，播报顺序使用 SpeakText 完成确认；云端冻结版本与八项多标签结果契约必须验证，图像及凭据不提交 Git。
+
+## 文字播报接口约定
+
+- 文字播报公共服务为 `/voice/say`（`SayText`），独立入口 `ros2 launch roscar_api speech_api.launch.py` 默认仅复用现有 `/voice/speak` action。正文只交给唯一 TTS 队列，不经过意图/运动解析；超时仅取消本次 goal。只有没有现有 TTS 时才使用 `with_tts:=true`，避免重复播放所有者。调用说明见 `docs/文字播报ROS接口.md`。
 
 ## C 路线入口约定
 
@@ -63,7 +87,7 @@
 
 - 对外 ROS 2 入口为 `ros2 launch roscar_api api.launch.py`，默认 IDLE/运动关闭/不启硬件。接口手册 `docs/ROS接口使用文档.md`；外部速度只发 `/chassis/cmd_vel`，模式服务 `/control/set_mode`，由唯一 motion_guard 输出 `/cmd_vel`。禁止与已有包含 guard 的组合入口重复启动。检测列表沿用同步 RGB-D，未跟踪框不参与目标锁定。
 - V5.1 语音入口保留 V5 的本地控制与 DeepSeek 结构化控制工具，但不再声明或接受蜂鸣器动作；`voice_assistant.launch.py` 不启动蜂鸣器适配节点。独立 `voice_command_router` 包内的蜂鸣器解析与 GPIO 源码保留，历史条目中关于语音蜂鸣器的描述不代表当前入口行为。
-- 当前正式 `/home/wheeltec/ROSCAR-current` 的语音入口默认为本地 Qwen3-ASR 0.6B INT8、Silero VAD 连续收音、固定规则控制和本地 TTS；不启动 Ollama。路由器独占语音会话，首条明确运动口令自动请求模式和授权，必须读回 guard 的 `ARMED` 状态才发速度。`CONTINUOUS_ASR=false` 回退旧逐轮本地收音，`ASR_BACKEND=xfyun` 回退讯飞识别。离线依赖在 `/home/wheeltec/ROSCAR-offline`；部署和回退见 `docs/语音入口与回退.md`。
+- 本地合并主线采用共享录音 + Qwen3-ASR / Silero VAD + 固定语义规则 + 常开 KWS + 唯一 MeloTTS；8 秒有界续聊，运动显式绑定 epoch 授权，不能由方向口令自动授权。ASR_BACKEND=xfyun 只替换识别，仍消费共享音频。远端旧 continuous_asr 实现不合入，CONTINUOUS_ASR 不切换录音方案。云端 C 跌倒状态仍不触发语音或底盘动作。
 
 ## 测试与 CI
 

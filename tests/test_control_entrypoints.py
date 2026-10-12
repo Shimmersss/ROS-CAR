@@ -15,6 +15,8 @@ from geometry_msgs.msg import Twist,TwistStamped,TransformStamped
 from sensor_msgs.msg import LaserScan
 from person_interfaces.msg import TargetState
 from std_srvs.srv import Trigger
+from std_msgs.msg import String
+from roscar_interfaces.srv import SetControlMode, AuthorizeMotion
 from rcl_interfaces.srv import GetParameters
 from tf2_ros import StaticTransformBroadcaster
 
@@ -24,19 +26,24 @@ scan=n.create_publisher(LaserScan,'/scan',1)
 n.create_subscription(TwistStamped,'/control/cmd_vel_request',requests.append,10)
 n.create_subscription(Twist,'/cmd_vel',vel.append,10)
 request=None;processes=[];logs=[]
+zero_request=True; authority_pub=None
 b=StaticTransformBroadcaster(n);tr=TransformStamped();tr.header.frame_id='base_footprint';tr.child_frame_id='laser';tr.transform.rotation.w=1.;b.sendTransform(tr)
 def feed():
+    if authority_pub is not None:
+        authority_pub.publish(String(data=json.dumps({'authority_state':'ARMED_FOLLOW','command_mode':'FOLLOW'})))
     stamp=n.get_clock().now().to_msg()
     t=TargetState();t.header.stamp=stamp;t.header.frame_id='astra_depth_optical_frame';t.source='astra';t.target_id='test';t.status=t.TRACKING;t.position_valid=True;t.position.z=3.;t.horizontal_distance_m=3.;t.measurement_age_s=math.nan;target.publish(t)
     s=LaserScan();s.header.stamp=stamp;s.header.frame_id='laser';s.angle_min=-math.pi;s.angle_increment=math.pi/180;s.angle_max=s.angle_min+359*s.angle_increment;s.range_min=.15;s.range_max=15.;s.ranges=[3.]*360;scan.publish(s)
     if request is not None:
-        m=TwistStamped();m.header.stamp=stamp;m.header.frame_id='base_footprint';m.twist.linear.x=.1;request.publish(m)
+        m=TwistStamped();m.header.stamp=stamp;m.header.frame_id='base_footprint';m.twist.linear.x=0. if zero_request else .1;request.publish(m)
 n.create_timer(.025,feed)
 def wait(fn,timeout=8):
     end=time.monotonic()+timeout
     while time.monotonic()<end:
         rclpy.spin_once(n,timeout_sec=.02)
         if fn():return
+    for log in logs:
+        log.seek(0);print('Entrypoint diagnostic:',log.read()[-2000:])
     raise AssertionError('Timed out')
 def spawn(cmd):
     log=tempfile.TemporaryFile(mode='w+');logs.append(log)
@@ -49,21 +56,29 @@ def term(p):
     until=time.monotonic()+.2;wait(lambda:time.monotonic()>until)
 try:
     p=spawn([executable('astra_body_adapter','person_follower'),'--ros-args','-p','enabled:=true','-p','base_frame:=base_footprint'])
+    wait(lambda:requests and requests[-1].twist.linear.x==0)
+    authority_pub=n.create_publisher(String,'/control/state',10)
     wait(lambda:requests and requests[-1].twist.linear.x>0)
     assert requests[-1].header.frame_id=='base_footprint'
     mark=len(requests);term(p)
     assert len(requests)>mark and requests[-1].twist.linear.x==0
     wait(lambda:n.count_publishers('/control/cmd_vel_request')==0)
+    n.destroy_publisher(authority_pub);authority_pub=None
     request=n.create_publisher(TwistStamped,'/control/cmd_vel_request',1)
     args=[executable('motion_guard','guard'),'--ros-args']
-    for param in ('motion_enabled:=true','geometry_confirmed:=true','mount_calibrated:=true','stopping_model_confirmed:=true','base_frame:=base_footprint'):args+=['-p',param]
-    p=spawn(args);client=n.create_client(Trigger,'/control/arm');wait(client.service_is_ready)
+    for param in ('motion_enabled:=true','geometry_confirmed:=true','mount_calibrated:=true','stopping_model_confirmed:=true','base_frame:=base_footprint','emergency_kws_required:=false','estop_latch_path:='+str(Path(tempfile.mkdtemp())/'estop.json')):args+=['-p',param]
+    p=spawn(args);client=n.create_client(AuthorizeMotion,'/control/authorize');wait(client.service_is_ready)
+    select=n.create_client(SetControlMode,'/control/set_mode');wait(select.service_is_ready)
+    future=select.call_async(SetControlMode.Request(mode='FOLLOW'));wait(future.done)
+    assert future.result().success
+    epoch=future.result().authority_epoch
     armed=False
     for _ in range(8):
-        future=client.call_async(Trigger.Request());wait(future.done)
+        future=client.call_async(AuthorizeMotion.Request(mode='FOLLOW',authority_epoch=epoch));wait(future.done)
         if future.result().success:armed=True;break
         until=time.monotonic()+.3;wait(lambda:time.monotonic()>until)
     assert armed
+    zero_request=False
     wait(lambda:vel and vel[-1].linear.x>0)
     mark=len(vel);term(p)
     assert len(vel)>mark and vel[-1].linear.x==0 and vel[-1].angular.z==0

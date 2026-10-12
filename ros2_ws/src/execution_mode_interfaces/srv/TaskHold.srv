@@ -1,0 +1,11 @@
+# ACQUIRE enters IDLE atomically; RENEW/RELEASE require the returned token.
+# Expiry and release leave the vehicle in IDLE.
+string operation
+string owner
+string session_id
+string token
+float64 lease_sec
+---
+bool success
+string token
+string detail

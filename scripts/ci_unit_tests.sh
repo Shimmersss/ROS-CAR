@@ -9,7 +9,8 @@ PY=${PYTHON:-python3}
 # Packages are tested from their own directory: make a relative interpreter path absolute.
 case $PY in */*) PY="$(cd "$(dirname "$PY")" && pwd)/$(basename "$PY")" ;; esac
 # These import rclpy; they belong to the ROS runtime checks (Docker/Jetson), not this job.
-NEEDS_ROS=(navigation_bringup/test/test_status_validation.py xfyun_speech/test/test_asr_timeout.py)
+NEEDS_ROS=(navigation_bringup/test/test_status_validation.py xfyun_speech/test/test_asr_timeout.py
+           voice_command_router/test/test_mode_bridge.py)
 status=0
 for dir in ros2_ws/src/*/test; do
   pkg=${dir%/test}

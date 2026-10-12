@@ -15,6 +15,7 @@ from geometry_msgs.msg import Twist, TransformStamped
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String, Header
 from std_srvs.srv import Trigger
+from roscar_interfaces.srv import AuthorizeMotion
 from tf2_ros import StaticTransformBroadcaster
 from vision_msgs.msg import Detection2DArray
 from astra_body_adapter.detections import detection_array
@@ -25,7 +26,7 @@ processes=[];logs=[];guard=None
 states=[];vel=[]
 p.create_subscription(String,'/control/state',lambda m:states.append(json.loads(m.data)),10)
 p.create_subscription(Twist,'/cmd_vel',vel.append,10)
-scan=p.create_publisher(LaserScan,'/scan',qos_profile_sensor_data)
+scan=p.create_publisher(LaserScan,'/scan',10)
 dets=p.create_publisher(Detection2DArray,'/perception/detections',10)
 tf=StaticTransformBroadcaster(p)
 tr=TransformStamped();tr.header.frame_id='base_link';tr.child_frame_id='laser';tr.transform.rotation.w=1.
@@ -61,25 +62,24 @@ try:
     stop(launched);pump(.3)
     guard=MotionGuard(parameter_overrides=[Parameter(k,value=v) for k,v in dict(command_mode='IDLE',
         motion_enabled=True,geometry_confirmed=True,stopping_model_confirmed=True,mount_calibrated=True,
-        radar_required=True).items()])
+        radar_required=True,emergency_kws_required=False,estop_latch_path='').items()])
     ex.add_node(guard);tf.sendTransform(tr)
     chassis,log=start(['ros2','run','roscar_api','chassis','--duration','.4'])
     pump(1.3);assert chassis.poll() is None,output(log)
     assert guard.command_mode=='EXTERNAL' and guard.mode=='STANDBY'
     assert all(v.linear.x==0 for v in vel[-5:])
-    arm=p.create_client(Trigger,'/control/arm');assert arm.wait_for_service(timeout_sec=2)
-    future=arm.call_async(Trigger.Request())
+    arm=p.create_client(AuthorizeMotion,'/control/authorize');assert arm.wait_for_service(timeout_sec=2)
+    future=arm.call_async(AuthorizeMotion.Request(mode=guard.command_mode,authority_epoch=guard.authority.epoch))
     while not future.done():pump(.01)
     assert future.result().success,future.result().message
     pump(1.2);assert chassis.poll()==0,output(log)
     assert any(v.linear.x==.05 for v in vel)
     assert guard.mode=='STANDBY' and vel[-1].linear.x==0
     print('PASS installed default API launch; chassis example zero/explicit arm/velocity/final stop')
-    readers=[]
     for name in ('detections','radar'):
-        readers.append(start(['ros2','run','roscar_api',name]))
-    pump(1.3)
-    for proc,log in readers:
+        proc,log=start(['ros2','run','roscar_api',name])
+        deadline=time.monotonic()+6
+        while not ('person' in output(log) or '360 rays' in output(log)) and time.monotonic()<deadline:pump(.1)
         stop(proc);assert ('person' in output(log) or '360 rays' in output(log)),output(log)
     def success(req,res):res.success=True;res.message='synthetic target service';return res
     services=[p.create_service(Trigger,'/perception/'+name+'_target',success) for name in ('lock','release')]
