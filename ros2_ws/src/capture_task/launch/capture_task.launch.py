@@ -19,7 +19,7 @@ def nodes(context):
         'safety_profile':value('safety_profile'),'storage_dir':value('storage_dir'),
         'save_images':ParameterValue(LaunchConfiguration('save_images'),value_type=bool)}])]
     if value('with_bridge')=='true':
-        result.append(Node(package='capture_task',executable='bridge_node',output='screen',parameters=[common,{'catalog':value('catalog')}]))
+        result.append(Node(package='capture_task',executable='bridge_node',output='screen',parameters=[common,{'catalog':value('catalog'),'poll_wait_sec':ParameterValue(LaunchConfiguration('poll_wait_sec'),value_type=int)}]))
     if fake:
         result.append(Node(package='capture_task',executable='fake_tts_node',output='screen',parameters=[{'test_only':True}]))
     if synthetic:
@@ -29,7 +29,7 @@ def nodes(context):
 
 def generate_launch_description():
     share=Path(get_package_share_directory('capture_task'))
-    defaults=dict(catalog=str(share/'config/tasks.yaml'),cloud_url=os.environ.get('CAPTURE_CLOUD_URL','http://127.0.0.1:8090'),
+    defaults=dict(poll_wait_sec=os.environ.get('CAPTURE_POLL_WAIT_SEC','1'),catalog=str(share/'config/tasks.yaml'),cloud_url=os.environ.get('CAPTURE_CLOUD_URL','http://127.0.0.1:8090'),
                   robot_id=os.environ.get('CAPTURE_ROBOT_ID','roscar-01'),token_file=os.environ.get('CAPTURE_TOKEN_FILE',''),
                   camera_topic='/camera/color/image_raw',camera_profile='raw_rgb_v1',safety_profile='bench',
                   storage_dir='artifacts/capture-task',save_images='false',with_bridge='true',fake_tts='false',synthetic_camera='false')

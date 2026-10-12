@@ -1427,3 +1427,15 @@
 - 本机43项纯Python通过；Humble x86_64子集18包编译通过。ROS新增500三次/401、TTL、质检失败通知，TTS失败、ROS/cloud取消和SIGTERM抑制，robot假odom异常期间持有租约至通知完成。多线程测试替换节点前停止executor，避免rclpy销毁竞争；播报测试时限1.5秒覆盖CI调度抖动。本组完整ROS运行时13/13通过，20任务线程/FD增量0/0；标准PATH无rg时，真实独占假TTS及注入坏头文件均被入口拒绝。
 - 真实Gemini本机入口（假TTS）500故障：三次请求后FAILED upload_http_500，日志收到安全失败原文。54帧1920×1080，13.67Hz，ROS帧龄0.086–0.114秒，1相机发布者/0速度发布者。没有扬声器听感、真人摆拍、Jetson或实车验收。日志 artifacts/capture-validation/repairs/，不提交图像或凭据。
 - 最小审查：bash语法、结构与diff检查通过；protected十包不改。scripts中WITH_FOLLOWER=true仅剩start_robot.sh的既有显式整机配置，没有新增自动赋值；shellcheck本机未安装。
+
+
+### 编号4–7：帧容差、可配置轮询、状态期限、URL前缀
+
+- 编号4：ROS帧龄容许最多50ms超前（MAX_FUTURE_STAMP=0.05，与舌苔一致）；monotonic非负接收龄及采集窗口后条件保留。覆盖+30ms接受/+80ms拒绝、落后400ms接受/600ms拒绝、窗口前和负接收龄拒绝。
+- 编号5：poll_wait_sec默认1、仅整数0–20，launch和CAPTURE_POLL_WAIT_SEC透传，outbox待发时0。GET总时限和实际socket预算同步wait+2（避免只改deadline而socket仍固定2秒）。协议说明默认约1Hz、目标10秒心跳和单线程调大wait的延迟；未重构线程。
+- 编号6：执行器/bridge的模式状态按monotonic接收时刻6.5秒过期，注释注明manager失联6秒后的舌苔清理依据；解析失败active同样过期。bridge执行器状态1.5秒过期，ack unavailable优先于busy，心跳unknown/健康false，bridge_state含executor_stale。
+- 编号7：CloudClient规范安全路径前缀并同时用于bridge与上传，拒绝空段/点段/编码/凭据（含空用户名）/query/fragment；生产request断言/v1/，mock工具独立admin_request。mock/CLI支持serve --prefix，CLI带前缀status/send通过，未改变生产接口范围。
+- 本机ROS运行时14/14通过：一次active消息6.5秒后恢复、执行器停止后的unavailable与unknown心跳、/roscar前缀上传JPEG/SHA一致、poll_wait_sec=5取消约0.047秒、原13场景回归；20任务线程增量2、FD增量0（仍在既定上限内）。文字播报原8/8通过；Humble x86_64子集18包编译通过。
+- 更新协议/实现验收文档，无新增文档。最小审查核对所有CloudClient生产路径、参数上下限/真实socket超时、过期优先级及finally通知/租约顺序；protected十包相对main仍零改动。不push、不SSH、不部署，模拟数据不作为实车或识别准确率验收。
+
+- 最终统一检查：整仓纯Python CI通过（capture_task 74项、录像工具22项；沿用原有ROS依赖排除口径）；结构21包/358个Python文件、shell语法、git diff --check main..HEAD及工作区通过。最终子集重建18包通过，日志final-build.log。无shellcheck可执行文件。所有联调子进程已清理，保护包diff为空。

@@ -26,3 +26,14 @@ def remaining_ttl(command, received, default, now=None):
     now = time.monotonic() if now is None else now
     ttl = command.get('ttl_sec', 0) or default
     return max(0., ttl - (now-received))
+
+
+def validate_poll_wait(value):
+    if type(value) is not int or not 0 <= value <= 20:
+        raise ValueError('poll_wait_sec_requires_integer_0_to_20')
+    return value
+
+
+def poll_request(robot_id, poll_wait_sec, pending):
+    wait = 0 if pending else validate_poll_wait(poll_wait_sec)
+    return '/v1/robots/'+robot_id+'/commands/next?wait='+str(wait), wait+2.

@@ -9,6 +9,7 @@ import secrets
 import threading
 import time
 from urllib.parse import parse_qs, urlsplit
+from .cloud_client import path_prefix
 from .protocol import MAX_IMAGE, MAX_JSON, identifier, loads
 
 
@@ -16,7 +17,8 @@ class MockCloud(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, store, token='', fail_upload=0, slow_upload=0., drop_poll=False):
+    def __init__(self, address, store, token='', fail_upload=0, slow_upload=0., drop_poll=False, prefix=''):
+        self.prefix = path_prefix(prefix)
         super().__init__(address, Handler)
         self.store = Path(store)
         self.store.mkdir(parents=True, exist_ok=True)
@@ -77,10 +79,19 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError('short_body')
         return body
 
+    def routed_path(self):
+        path = urlsplit(self.path)
+        if self.server.prefix and not path.path.startswith(self.server.prefix+'/'):
+            self.reply(404, {'error':'not_found'})
+            return None
+        return path._replace(path=path.path[len(self.server.prefix):])
+
     def do_GET(self):
         if not self.authorized():
             return
-        path = urlsplit(self.path)
+        path = self.routed_path()
+        if path is None:
+            return
         if path.path == '/admin/status':
             self.reply(200, self.server.snapshot())
             return
@@ -110,7 +121,10 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(400, {'error':'invalid_request'})
 
     def post(self):
-        path = urlsplit(self.path).path
+        routed = self.routed_path()
+        if routed is None:
+            return
+        path = routed.path
         if path == '/admin/commands':
             data = loads(self.read_body(MAX_JSON))
             # Deliberately allow malformed commands for admission/fault tests.

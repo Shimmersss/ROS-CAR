@@ -17,6 +17,7 @@ def main():
     parser.add_argument('--token-file', default='')
     sub = parser.add_subparsers(dest='operation', required=True)
     serve = sub.add_parser('serve')
+    serve.add_argument('--prefix', default='')
     serve.add_argument('--port', type=int, default=8090)
     serve.add_argument('--store', default='artifacts/capture-mock')
     serve.add_argument('--token', default='', help='Prefer CAPTURE_CLOUD_TOKEN over shell history')
@@ -35,7 +36,7 @@ def main():
     token = token_from_env(args.token_file)
     if args.operation == 'serve':
         server = MockCloud(('127.0.0.1', args.port), args.store, args.token or token,
-                           args.fail_upload, args.slow_upload, args.drop_poll)
+                           args.fail_upload, args.slow_upload, args.drop_poll, args.prefix)
         print('Mock cloud: loopback port', server.server_port, flush=True)
         try:
             server.serve_forever()
@@ -44,7 +45,7 @@ def main():
         return
     client = CloudClient(args.url, token)
     if args.operation == 'status':
-        code, value = client.request('GET', '/admin/status')
+        code, value = client.admin_request('GET', '/admin/status')
     else:
         cmd = dict(command_id='c-'+uuid.uuid4().hex, type=args.operation)
         if args.operation == 'send':
@@ -60,7 +61,7 @@ def main():
             cmd['task_id'] = args.task_id
         else:
             cmd['text'] = args.text
-        code, value = client.request('POST', '/admin/commands', cmd)
+        code, value = client.admin_request('POST', '/admin/commands', cmd)
         value['command'] = cmd
     print(json.dumps(value, ensure_ascii=False, indent=2))
     if code != 200:

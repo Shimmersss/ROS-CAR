@@ -53,7 +53,7 @@ WITH_TONGUE_MODE=true 将舌苔流程接入现有语音，要求 WITH_VOICE/WITH
 WITH_CAPTURE_TASKS=true 启用独立云端拍照；要求语音/TTS；接底盘使用 robot，须显式 WITH_FOLLOWER=true。
 WITH_FOLLOWER=true 会同时启动跟随器；运动仍受 MOTION_ENABLED 与逐次授权约束。
 无底盘拍照为 bench，要求 WITH_FOLLOWER=false / MOTION_ENABLED=false；默认关闭。
-CAPTURE_CLOUD_URL / CAPTURE_ROBOT_ID / CAPTURE_TOKEN_FILE 配置云端；默认原始 RGB。
+CAPTURE_CLOUD_URL / CAPTURE_ROBOT_ID / CAPTURE_TOKEN_FILE 配置云端；CAPTURE_POLL_WAIT_SEC 为 0–20 整数，默认 1；默认原始 RGB。
 TONGUE_SAFETY_PROFILE=robot 要求底盘回传；bench 仅允许运动关闭的台架。
 TONGUE_CAMERA_TOPIC 默认原始 RGB；C 的拍照元数据默认为 gemini_rgb_tongue_v1。
 底盘要求 SERIAL_PORT 和 CAR_MODE；WITH_FOLLOWER=true 时跟随器通过 motion_guard 受保护输出。
@@ -221,6 +221,7 @@ fi
 if [[ "$WITH_CAPTURE_TASKS" == true ]]; then
   start_module capture ros2 launch capture_task capture_task.launch.py \
     safety_profile:="$CAPTURE_SAFETY_PROFILE" \
+    poll_wait_sec:="${CAPTURE_POLL_WAIT_SEC:-1}" \
     cloud_url:="${CAPTURE_CLOUD_URL:-http://127.0.0.1:8090}" robot_id:="${CAPTURE_ROBOT_ID:-roscar-01}" \
     token_file:="${CAPTURE_TOKEN_FILE:-}" camera_topic:="${CAPTURE_CAMERA_TOPIC:-/camera/color/image_raw}" \
     camera_profile:="${CAPTURE_CAMERA_PROFILE:-${PERCEPTION_ROUTE}_raw_rgb_v1}" \

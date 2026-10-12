@@ -6,6 +6,7 @@ import hashlib
 import http.client
 import json
 import os
+import re
 from pathlib import Path
 import socket
 import stat
@@ -42,11 +43,24 @@ def token_from_env(path=''):
     return value
 
 
+def path_prefix(path):
+    if path in ('', '/'):
+        return ''
+    if not re.fullmatch(r'(?:/[A-Za-z0-9._~-]+)+/?', path):
+        raise ValueError('invalid_cloud_prefix')
+    normalized = path.removesuffix('/')
+    if any(segment in ('.', '..') for segment in normalized.split('/')[1:]):
+        raise ValueError('invalid_cloud_prefix')
+    return normalized
+
+
 class CloudClient:
     def __init__(self, url, token='', timeout=3.):
         parsed = urlsplit(url)
-        if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in ('', '/'):
+        if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment or any(c.isspace() for c in url) or '?' in url or '#' in url:
             raise ValueError('invalid_cloud_url')
+        self.prefix = path_prefix(parsed.path)
+        parsed.port  # Validate the authority before the first request.
         self.url, self.token, self.timeout = parsed, token, timeout
         self.lock = threading.Lock()
         self.serial = threading.Lock()
@@ -63,9 +77,19 @@ class CloudClient:
                 pass
             conn.close()
 
-    def request(self, method, path, body=None, headers=None, cancel=None, deadline=None):
+    def request(self, method, path, body=None, headers=None, cancel=None, deadline=None, timeout=None):
+        assert path.startswith('/v1/'), 'internal_cloud_path_requires_v1'
+        return self._request(method,path,body,headers,cancel,deadline,timeout)
+
+    def admin_request(self, method, path, body=None, **kwargs):
+        """Loopback mock tooling only; production clients use request (/v1/)."""
+        assert path.startswith('/admin/'), 'internal_mock_admin_path'
+        return self._request(method,path,body,**kwargs)
+
+    def _request(self, method, path, body=None, headers=None, cancel=None, deadline=None, timeout=None):
+        timeout = self.timeout if timeout is None else timeout
         cancel = cancel or threading.Event()
-        deadline = deadline or time.monotonic() + self.timeout
+        deadline = deadline or time.monotonic() + timeout
         def check():
             if cancel.is_set():
                 raise Cancelled()
@@ -85,12 +109,12 @@ class CloudClient:
         with self.serial:
             check()
             cls = http.client.HTTPSConnection if self.url.scheme == 'https' else http.client.HTTPConnection
-            conn = cls(self.url.hostname, self.url.port, timeout=max(.01, min(self.timeout, deadline-time.monotonic())))
+            conn = cls(self.url.hostname, self.url.port, timeout=max(.01, min(timeout, deadline-time.monotonic())))
             with self.lock:
                 self.connection = conn
             try:
                 check()
-                conn.request(method, path, data, fields)
+                conn.request(method, self.prefix + path, data, fields)
                 check()
                 response = conn.getresponse()
                 raw = response.read(MAX_JSON + 1)

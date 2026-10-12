@@ -11,6 +11,7 @@ capture_task_executor:
     hold_lease_sec: 3.0
 capture_cloud_bridge:
   ros__parameters:
+    poll_wait_sec: 1
     cloud_url: http://127.0.0.1:8090
     robot_id: roscar-01
     token_file: ''

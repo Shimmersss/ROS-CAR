@@ -29,6 +29,7 @@ from .catalog import Catalog, number
 from .cloud_client import CloudClient, CloudError, Cancelled, token_from_env
 from .flow import CaptureFlow, failure_result
 from .frames import FrameBuffer
+from .state import mode_active
 from .protocol import identifier, loads
 
 
@@ -133,7 +134,7 @@ class CaptureExecutor(Node):
                 number(request.ttl_sec,0,600)
             except ValueError:
                 return self.rejection(request,'invalid')
-            if self.mode.get('active') is True:
+            if mode_active(self.mode,self.mode_at):
                 return self.rejection(request,'voice_mode_active')
             now=time.monotonic();ttl=request.ttl_sec or self.catalog.defaults['task_timeout_sec']
             self.job=Job(request,task,now,now+ttl)
@@ -186,7 +187,7 @@ class CaptureExecutor(Node):
             self.cloud.cancel();raise ValueError('task_timeout')
         if job.safety_error:
             raise ValueError(job.safety_error)
-        if self.mode.get('active') is True:
+        if mode_active(self.mode,self.mode_at):
             raise ValueError('voice_mode_active')
         if job.monitor:
             self.verify_stationary()

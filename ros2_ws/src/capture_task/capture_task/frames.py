@@ -6,6 +6,9 @@ import numpy as np
 from .cloud_client import Cancelled
 
 
+MAX_FUTURE_STAMP = 0.05  # Same device-clock conversion tolerance as tongue_mode.
+
+
 @dataclass(frozen=True)
 class Frame:
     rgb: np.ndarray
@@ -37,7 +40,7 @@ class FrameBuffer:
             now = time.monotonic()
             with self.condition:
                 frame = self.latest
-                if frame and frame.received > after and frame.ros_stamp > ros_after and 0 <= now-frame.received <= max_age and 0 <= ros_now()-frame.ros_stamp <= max_age:
+                if frame and frame.received > after and frame.ros_stamp > ros_after and 0 <= now-frame.received <= max_age and -MAX_FUTURE_STAMP <= ros_now()-frame.ros_stamp <= max_age:
                     return Frame(frame.rgb.copy(),frame.sequence,frame.received,frame.ros_stamp)
                 if now >= end:
                     raise ValueError('fresh_frame_timeout')

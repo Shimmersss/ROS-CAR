@@ -313,11 +313,76 @@ class CaptureRuntime(unittest.TestCase):
         self.assertLessEqual(delta_threads,2);self.assertLessEqual(delta_fds,3)
         self.bridge.stop()
 
+    def test_09a_prefix_poll_cancel_and_state_expiry(self):
+        from capture_task.cloud_client import CloudClient
+        self.bridge.stop();self.pause_ros()
+        self.nodes.remove(self.bridge);self.bridge.destroy_node()
+        self.cloud.prefix='/roscar'
+        self.capture.cloud=CloudClient(self.url+'/roscar')
+        type(self).bridge=CaptureBridge(parameter_overrides=parameters(catalog=str(self.catalog),cloud_url=self.url+'/roscar',poll_wait_sec=5))
+        self.nodes.append(self.bridge);self.resume_ros()
+        bridge_states=[]
+        sub=self.client_node.create_subscription(String,'/capture_task/bridge_state',lambda msg:bridge_states.append(json.loads(msg.data)),10)
+        pub=self.client_node.create_publisher(String,'/execution_mode/state',10);self.extra.append(pub)
+        def send(data):
+            with self.cloud.condition:
+                self.cloud.commands.append(data);self.cloud.condition.notify_all()
+        cmd=dict(command_id='prefix-full',type='capture',task_id='prefix-full',task_type='helmet',params={'prepare_sec':0},ttl_sec=60)
+        try:
+            self.wait(lambda:self.bridge.state=='online' and not self.bridge.executor_stale())
+            self.wait(lambda:pub.get_subscription_count()>=2)
+            pub.publish(String(data='{"active":true}'))
+            self.wait(lambda:self.capture.mode.get('active') and self.bridge.mode.get('active'))
+            mode_at=self.capture.mode_at
+            handle,_=self.goal();self.assertFalse(handle.accepted)
+            self.bridge.dispatch({**cmd,'command_id':'mode-blocked','task_id':'mode-blocked'})
+            self.wait(lambda:'mode-blocked' in self.cloud.acks)
+            self.assertEqual(self.cloud.acks['mode-blocked']['reason'],'voice_mode_active')
+            self.wait(lambda:time.monotonic()-mode_at>6.6,8.)
+            handle,_=self.goal();self.assertTrue(handle.accepted)
+            self.assertEqual(self.result(handle).status,'uploaded')
+            self.wait(lambda:not self.bridge.executor_state.get('active') and self.bridge.current is None)
+            send(cmd)
+            self.wait(lambda:any(e.get('result',{}).get('status')=='uploaded' for e in self.cloud.events.get('prefix-full',[])),15.)
+            record=next(e['result'] for e in self.cloud.events['prefix-full'] if e.get('result',{}).get('status')=='uploaded')
+            image=self.root/'cloud'/'prefix-full'/(record['capture_id']+'.jpg')
+            self.assertEqual(hashlib.sha256(image.read_bytes()).hexdigest(),record['upload_json'][0]['sha256'])
+            self.wait(lambda:self.bridge.current is None and self.capture.job is None)
+            send({**cmd,'command_id':'prefix-cancel','task_id':'prefix-cancel','params':{'prepare_sec':10}})
+            self.wait(lambda:self.capture.job and self.capture.job.phase=='PREPARE',10.)
+            before=self.speaker.received.count(self.capture.catalog.defaults['fail_announce'])
+            started=time.monotonic();send(dict(command_id='prefix-stop',type='cancel',task_id='prefix-cancel'))
+            self.wait(lambda:self.capture.job is None,4.9)
+            latency=time.monotonic()-started
+            self.assertLess(latency,5.)
+            self.wait(lambda:any(e.get('result',{}).get('status')=='cancelled' for e in self.cloud.events.get('prefix-cancel',[])),10.)
+            self.assertEqual(self.speaker.received.count(self.capture.catalog.defaults['fail_announce']),before)
+            print('wait=5 cancel latency:',latency,flush=True)
+            self.wait(lambda:self.bridge.current is None)
+            self.pause_ros();self.capture.destroy_node();self.nodes[0]=None;self.resume_ros()
+            # Preserve a last busy/healthy snapshot to reproduce a crashed executor.
+            self.bridge.on_executor_state(String(data='{"active":true,"camera_ok":true,"tts_ok":true}'))
+            self.wait(self.bridge.executor_stale,3.)
+            self.bridge.heartbeat_at=0.
+            send({**cmd,'command_id':'executor-stale','task_id':'executor-stale'})
+            self.wait(lambda:'executor-stale' in self.cloud.acks,10.)
+            self.assertEqual(self.cloud.acks['executor-stale']['reason'],'unavailable')
+            self.wait(lambda:self.cloud.heartbeats[-1]['state']=='unknown',10.)
+            self.assertFalse(self.cloud.heartbeats[-1]['camera_ok']);self.assertFalse(self.cloud.heartbeats[-1]['tts_ok'])
+            self.wait(lambda:any(state.get('executor_stale') for state in bridge_states))
+        finally:
+            self.bridge.stop();self.pause_ros()
+            self.client_node.destroy_subscription(sub)
+            self.nodes.remove(self.bridge);self.bridge.destroy_node();delattr(type(self),'bridge')
+            if self.nodes[0] is not None:self.capture.destroy_node()
+            self.cloud.prefix=''
+            type(self).capture=CaptureExecutor(parameter_overrides=parameters(catalog=str(self.catalog),cloud_url=self.url,storage_dir=str(self.root/'records')))
+            self.nodes[0]=self.capture;self.resume_ros();time.sleep(.3)
+
     def test_10_robot_guard_lease_renew_release(self):
         from motion_guard.node import MotionGuard
-        self.executor.remove_node(self.capture);self.capture.destroy_node()
+        self.pause_ros();self.capture.destroy_node()
         guard=MotionGuard(parameter_overrides=parameters(motion_enabled=False,estop_latch_path=str(self.root/'estop.json')))
-        self.executor.add_node(guard)
         odom_pub=self.client_node.create_publisher(Odometry,'/odom',qos_profile_sensor_data)
         kws_pub=self.client_node.create_publisher(Bool,'/voice/emergency_healthy',10)
         velocity=[0.]
@@ -326,7 +391,7 @@ class CaptureRuntime(unittest.TestCase):
         timer=self.client_node.create_timer(.05,publish)
         type(self).capture=CaptureExecutor(parameter_overrides=parameters(catalog=str(self.catalog),cloud_url=self.url,
             storage_dir=str(self.root/'robot-records'),safety_profile='robot',hold_lease_sec=1.))
-        self.nodes[0]=self.capture;self.executor.add_node(self.capture)
+        self.nodes[0]=self.capture;self.resume_ros();self.executor.add_node(guard)
         time.sleep(1.)
         try:
             handle,_=self.goal(prepare_sec=1.5);self.assertTrue(handle.accepted)

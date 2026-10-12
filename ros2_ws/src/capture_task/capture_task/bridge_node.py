@@ -11,8 +11,10 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.clock import Clock, ClockType
 from rclpy.node import Node
 from std_msgs.msg import String
+from rcl_interfaces.msg import ParameterDescriptor
 from capture_task_interfaces.action import CaptureTask
-from .bridge_logic import CommandCache, remaining_ttl
+from .bridge_logic import CommandCache, remaining_ttl, validate_poll_wait, poll_request
+from .state import fresh, mode_active, EXECUTOR_MAX_AGE
 from .catalog import Catalog
 from .cloud_client import CloudClient, CloudError, Cancelled, token_from_env
 from .protocol import command, identifier, loads
@@ -21,16 +23,17 @@ from .protocol import command, identifier, loads
 class CaptureBridge(Node):
     def __init__(self,**kwargs):
         super().__init__('capture_cloud_bridge',**kwargs)
-        defaults=dict(cloud_url='http://127.0.0.1:8090',robot_id='roscar-01',token_file='',
+        defaults=dict(poll_wait_sec=1,cloud_url='http://127.0.0.1:8090',robot_id='roscar-01',token_file='',
                       catalog=str(Path(get_package_share_directory('capture_task'))/'config/tasks.yaml'))
         for key,value in defaults.items():
-            self.declare_parameter(key,value)
+            self.declare_parameter(key,value,ParameterDescriptor(read_only=True))
         self.cfg={key:self.get_parameter(key).value for key in defaults};identifier(self.cfg['robot_id'])
+        validate_poll_wait(self.cfg['poll_wait_sec'])
         self.catalog=Catalog.load(self.cfg['catalog'])
         self.cloud=CloudClient(self.cfg['cloud_url'],token_from_env(self.cfg['token_file']),timeout=2.)
         self.stop_event=threading.Event();self.lock=threading.RLock()
         self.cache=CommandCache();self.outbox=deque();self.sequences=OrderedDict()
-        self.current=None;self.rejections={};self.executor_state={};self.mode={}
+        self.current=None;self.rejections={};self.executor_state={};self.executor_at=0.;self.mode={};self.mode_at=0.
         self.state='backoff';self.last_poll=0.;self.current_command='';self.backoff=1.;self.retry_at=0.;self.heartbeat_at=0.
         self.group=ReentrantCallbackGroup()
         self.client=ActionClient(self,CaptureTask,'/capture_task/run',callback_group=self.group)
@@ -54,19 +57,29 @@ class CaptureBridge(Node):
 
     def on_executor_state(self,message):
         try:
-            self.executor_state=loads(message.data)
+            self.executor_state=loads(message.data);self.executor_at=time.monotonic()
         except ValueError:
-            self.executor_state={}
+            self.executor_state={};self.executor_at=0.
 
     def on_mode(self,message):
         try:
-            self.mode=loads(message.data)
+            self.mode=loads(message.data);self.mode_at=time.monotonic()
         except ValueError:
-            self.mode={'active':True}
+            self.mode={'active':True};self.mode_at=time.monotonic()
+
+    def executor_stale(self):
+        return not fresh(self.executor_at,EXECUTOR_MAX_AGE)
+
+    def heartbeat(self):
+        stale=self.executor_stale();active=self.current;state=self.executor_state
+        return dict(state='unknown' if stale else ('busy' if active or state.get('active') else 'idle'),
+                    task_id='' if stale else (active['task_id'] if active else state.get('task_id','')),
+                    camera_ok=False if stale else state.get('camera_ok',False),
+                    tts_ok=False if stale else state.get('tts_ok',False),version='0.1.0')
 
     def publish_state(self):
         self.pub.publish(String(data=json.dumps(dict(state=self.state,last_poll_monotonic=self.last_poll,
-                            command_id=self.current_command,outbox_size=len(self.outbox)))))
+                            command_id=self.current_command,outbox_size=len(self.outbox),executor_stale=self.executor_stale()))))
 
     def queue(self,path,data):
         with self.lock:
@@ -130,9 +143,11 @@ class CaptureBridge(Node):
         if ttl<=0:
             self.ack(cmd,False,'expired');return
         with self.lock:
+            if self.executor_stale():
+                self.ack(cmd,False,'unavailable');return
             if self.current or self.executor_state.get('active'):
                 self.ack(cmd,False,'busy');return
-            if self.mode.get('active'):
+            if mode_active(self.mode,self.mode_at):
                 self.ack(cmd,False,'voice_mode_active');return
             if not self.client.server_is_ready():
                 self.ack(cmd,False,'unavailable');return
@@ -191,7 +206,7 @@ class CaptureBridge(Node):
 
     def request(self,method,path,body=None,timeout=2.):
         try:
-            code,data=self.cloud.request(method,path,body,cancel=self.stop_event,deadline=time.monotonic()+timeout)
+            code,data=self.cloud.request(method,path,body,cancel=self.stop_event,deadline=time.monotonic()+timeout,timeout=timeout)
         except CloudError as exc:
             if exc.status in (401,403):
                 self.auth_failed()
@@ -229,15 +244,11 @@ class CaptureBridge(Node):
                 self.flush()
                 now=time.monotonic()
                 if now-self.heartbeat_at>=10.:
-                    active=self.current
-                    self.request('POST','/v1/robots/'+self.cfg['robot_id']+'/heartbeat',dict(
-                        state='busy' if active or self.executor_state.get('active') else 'idle',
-                        task_id=active['task_id'] if active else self.executor_state.get('task_id',''),
-                        camera_ok=self.executor_state.get('camera_ok',False),tts_ok=self.executor_state.get('tts_ok',False),version='0.1.0'))
+                    self.request('POST','/v1/robots/'+self.cfg['robot_id']+'/heartbeat',self.heartbeat())
                     self.heartbeat_at=now
-                # Shorter than v0 maximum, keeping feedback, cancel and heartbeat responsive.
-                wait=0 if self.outbox else 1
-                code,data=self.request('GET','/v1/robots/'+self.cfg['robot_id']+'/commands/next?wait='+str(wait))
+                # One HTTP worker: pending events must not incur another long wait.
+                path,timeout=poll_request(self.cfg['robot_id'],self.cfg['poll_wait_sec'],bool(self.outbox))
+                code,data=self.request('GET',path,timeout=timeout)
                 self.last_poll=time.monotonic()
                 if self.state!='auth_failed' or time.monotonic()>=self.retry_at:
                     self.state='online';self.backoff=1.
