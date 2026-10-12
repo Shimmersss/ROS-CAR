@@ -1,5 +1,7 @@
 # ROSCAR ROS 2 接口使用文档
 
+> 2026-10-12：新增文字播报服务 `/voice/say`（`roscar_interfaces/srv/SayText`），并公开既有 `/voice/speak` action 的调用方式。发送文字即可使用现有 TTS 播放，详细命令、结果与启动方法见 [文字播报 ROS 接口](文字播报ROS接口.md)。以下历史部署边界以各条目的日期为准。
+
 > 2026-10-04 开发接口更新（未部署）：`SetControlMode` 返回 `authority_epoch`，显式授权改用 `/control/authorize`（`AuthorizeMotion`），旧 `/control/arm` 默认拒绝；语音运动改用 `MotionRequest`。新消息/服务需要重建 overlay。当前约定及无车验证见 [语音优化无车实施与验收](语音优化无车实施与验收.md)，下文旧无票据示例须按此迁移。
 
 

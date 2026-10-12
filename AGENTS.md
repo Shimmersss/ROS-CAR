@@ -21,6 +21,10 @@
 - 整机入口仅在 `WITH_TONGUE_MODE=true` 时接入；robot 要求底盘静止回传，bench 必须运动关闭。测试中的假输入/模型不能称为实车或舌象分类准确率验证。
 - 模式切换等待旧 RunMode 的最终清理，播报顺序使用 SpeakText 完成确认；云端冻结版本与八项多标签结果契约必须验证，图像及凭据不提交 Git。
 
+## 文字播报接口约定
+
+- 文字播报公共服务为 `/voice/say`（`SayText`），独立入口 `ros2 launch roscar_api speech_api.launch.py` 默认仅复用现有 `/voice/speak` action。正文只交给唯一 TTS 队列，不经过意图/运动解析；超时仅取消本次 goal。只有没有现有 TTS 时才使用 `with_tts:=true`，避免重复播放所有者。调用说明见 `docs/文字播报ROS接口.md`。
+
 ## B 路线当前入口约定
 
 - B 管理入口默认 `models/weights/yolo26s-fp16.engine`，由目标 Jetson 导出；缺文件必须报错，不静默回退。显式 `MODEL_PATH=.../yolo26s.pt` 可做基线对比。

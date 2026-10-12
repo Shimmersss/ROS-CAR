@@ -1,5 +1,13 @@
 # 工作记录
 
+## 2026-10-12：新增 ROS 2 文字播报公共服务
+
+- 按用户要求从 `dd7a284` 新建 `codex/voice-speak-api`。新增 `roscar_interfaces/srv/SayText` 和 `/voice/say` 服务，正文直接转给已有 `/voice/speak` action；无需唤醒、不经过 ASR/意图/运动解析，复用唯一 TTS 队列。返回完成、失败、取消、繁忙等状态，限制 300 字符，默认等待 120 秒；超时包括迟到接受时只请求取消自身 goal。
+- 增加独立 `speech_api.launch.py`，默认只启动桥接节点，已有 TTS 必须开启 action。仅在没有 TTS 时可显式 `with_tts:=true`。专项试运行加入桥接节点；同步 ROS 接口文档、说明书入口和独立文字播报说明。
+- Jetson 原生 ARM64/Humble 15 个依赖/API 包编译成功（约 75 秒）；隔离域 186 的 8 项真实 ROS service/action 测试通过，使用模拟播放验证成功、原文与唯一编号、非法输入、繁忙、服务缺失、拒绝、播放失败、超时及迟到接受取消。退出时出现模拟 action 客户端已离开的结果发送提示，不影响测试断言。
+- 在真实运行域 182 调用 `/voice/say` 播放“你好，文字播报接口已经准备好了。”返回 `success=true/status=completed`，用户确认听到且声音正常。采样 99 条 KWS 健康消息均为 true、199 条最终速度均为零；只有一个 TTS 和一个 `/cmd_vel` 发布者，保持 IDLE/DISARMED、运动关闭。
+- 最小审查覆盖 action 结果与播放完成语义、排队上限、超时/迟到取消范围、独立入口不重复启动 TTS、ROS 依赖与类型生成；Python 编译、Bash 语法及 Git 空白检查通过。接口实机播放通过不代表真人 ASR、紧急词召回率、舌图分类或车辆运动验收。
+
 ## 2026-10-12：Jetson 语音舌苔隔离试运行
 
 - 源码 `066c2ad` 上传至 `/home/wheeltec/ROSCAR-voice-tongue-20261012-066c2ad`，源码及新增 KWS 模型压缩包 SHA-256 校验一致；沿用板端 Qwen3/Melo 模型和独立 sherpa-onnx 环境。原生 ARM64 Humble 12 包编译成功，接口生成有既存 CMake 未使用变量警告。

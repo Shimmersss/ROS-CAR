@@ -41,6 +41,7 @@ start voice bash "$ROOT/scripts/run_voice_assistant.sh" \
   "execution_modes_config:=$ROOT/install/execution_mode_manager/share/execution_mode_manager/config/modes.yaml" \
   enable_speech_action:=true
 start tongue bash "$ROOT/scripts/run_tongue_mode.sh" safety_profile:=robot
+start speech_api ros2 launch roscar_api speech_api.launch.py
 echo '试运行已启动：运动关闭，原始 RGB、真实里程计、共享录音、KWS、ASR、TTS、舌苔模式。'
 wait -n "${pids[@]}"
 # A child exiting cleanly is still unexpected while the supervisor is running.
