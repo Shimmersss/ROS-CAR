@@ -212,7 +212,70 @@ class HeightFallTrackerTests(unittest.TestCase):
         self.assertEqual(t.update('0:1', 1.7, .3)[0], 1)                     # same drop seen in full view
         self.assertEqual(t.update('0:1', 2.0, .3, side=True)[0], 1)          # an ongoing fall is kept
 
+    def test_continuation_is_off_by_default(self):
+        t = HeightFallTracker()
+        self.feed(t, [(1., 1.3), (1.2, 1.3), (1.4, 1.3), (1.6, .3)])
+        self.assertEqual(t.continuable(1.7, {}), [])
+
+    def test_continuation_confirms_a_person_lost_mid_drop(self):
+        # 2026-10-10 A3: the box vanished at a 0.56 m top and only a static low ID came back 3.4 s later.
+        t = HeightFallTracker(HeightFallConfig(continue_s=6.))
+        self.feed(t, [(1., 1.3), (1.2, 1.3), (1.4, 1.3), (1.6, .9), (1.7, .56)])
+        self.assertEqual(t.continuable(1.8, {}), ['0:1'])
+        self.assertEqual(t.update('0:1', 1.8, .5, continued=True)[0], 1)
+        out = [t.update('0:1', 1.8+.1*i, .22, continued=True)[0] for i in range(1, 12)]
+        self.assertEqual(out[-1], 2)
+        self.assertEqual(t.tracks['0:1']['seen'], 1.7)                          # continuation is not a detection
+
+    def test_continuation_only_counts_a_lying_body_top(self):
+        t = HeightFallTracker(HeightFallConfig(continue_s=6.))
+        self.feed(t, [(1., 1.3), (1.2, 1.3), (1.4, 1.3), (1.6, .3)])           # suspected
+        for i, top in enumerate((1.6, .05, None, 1.6)):                       # wall behind, bare floor, no depth
+            self.assertEqual(t.update('0:1', 1.7+.1*i, top, continued=True)[0], 1)
+        self.assertIsNotNone(t.tracks['0:1']['pending'])                       # unmeasured: paused, not cancelled
+        self.assertEqual(t.tracks['0:1']['top'], .3)
+
+    def test_continuation_limits(self):
+        t = HeightFallTracker(HeightFallConfig(continue_s=6.))
+        self.feed(t, [(1., 1.3), (1.2, 1.3), (1.4, 1.3)], ident='up')         # lost while upright
+        self.feed(t, [(1., 1.3), (1.2, 1.3), (1.4, 1.3), (1.6, .3)])
+        self.assertEqual(t.continuable(1.7, {'0:2': (0, 0, 1, 1)}), ['0:1'])
+        self.assertEqual(t.continuable(1.7, {'0:1': (0, 0, 1, 1)}), [])        # still detected
+        for i in range(1, 5):                                                  # never a lying top: stops after 4 max_gap_s
+            t.update('0:1', 1.6+.5*i, 2., continued=True)
+        self.assertEqual(t.continuable(3.7, {}), [])
+        t2 = HeightFallTracker(HeightFallConfig(continue_s=2.))
+        self.feed(t2, [(1., 1.3), (1.2, 1.3), (1.4, 1.3), (1.6, .3)])
+        for i in range(1, 21):
+            t2.update('0:1', 1.6+.1*i, .3, continued=True)
+        self.assertEqual(t2.continuable(3.7, {}), [])                          # continue_s after the last detection
+
+    def test_continued_track_hands_over_to_the_returning_detection(self):
+        t = HeightFallTracker(HeightFallConfig(continue_s=6.))
+        old = (100., 100., 200., 400.)
+        self.feed(t, [(1., 1.3), (1.2, 1.3), (1.4, 1.3), (1.6, .3)])
+        for i in range(1, 15):
+            t.update('0:1', 1.6+.1*i, .25, continued=True)
+        self.assertTrue(t.tracks['0:1']['fallen'])
+        moved = t.handover(3.1, {'0:9': (90., 300., 230., 410.)}, {'0:1': old})
+        self.assertEqual(moved, {'0:9': '0:1'})
+        self.assertTrue(t.tracks['0:9']['fallen'])
+
+    def test_continuation_yields_to_a_detection_for_good(self):
+        # 2026-10-09 A2a: the person got up under a new ID next to the continued lying identity.
+        t = HeightFallTracker(HeightFallConfig(continue_s=6.))
+        self.feed(t, [(1., 1.3), (1.2, 1.3), (1.4, 1.3), (1.6, .3)])
+        lying = (100., 300., 300., 400.)
+        self.assertFalse(t.yields('0:1', lying, {'0:5': (400., 100., 500., 400.)}))
+        self.assertEqual(t.continuable(1.7, {'0:5': (400., 100., 500., 400.)}), ['0:1'])
+        self.assertTrue(t.yields('0:1', lying, {'0:6': (150., 150., 260., 420.)}))   # sitting up in place
+        self.assertEqual(t.continuable(1.8, {}), [])
+        t.update('0:1', 1.9, .3)                                                   # detected again: may continue later
+        self.assertEqual(t.continuable(2.0, {}), ['0:1'])
+
     def test_config_validation(self):
+        with self.assertRaises(ValueError): HeightFallConfig(continue_min_m=.6)
+        with self.assertRaises(ValueError): HeightFallConfig(continue_s=-1.)
         with self.assertRaises(ValueError): HeightFallConfig(low_max_m=1.)
         with self.assertRaises(ValueError): HeightFallConfig(confirm_s=0.)
         with self.assertRaises(ValueError): HeightFallConfig(top_percentile=120.)

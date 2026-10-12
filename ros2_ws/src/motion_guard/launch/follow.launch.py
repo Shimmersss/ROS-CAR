@@ -24,6 +24,8 @@ def start(context):
                  parameters=[path,{'motion_enabled':motion,'expected_source':source,'target_frame':target_frame,
                     'radar_required':LaunchConfiguration('radar_required').perform(context)=='true',
                     'auto_arm':LaunchConfiguration('auto_arm').perform(context)=='true',
+                    'target_grace_s':float(LaunchConfiguration('target_grace_s').perform(context)),
+                    'target_auto_recover':LaunchConfiguration('target_auto_recover').perform(context)=='true',
                     'geometry_confirmed':LaunchConfiguration('geometry_confirmed').perform(context)=='true',
                     'mount_calibrated':LaunchConfiguration('mount_calibrated').perform(context)=='true',
                     'stopping_model_confirmed':LaunchConfiguration('stopping_model_confirmed').perform(context)=='true'}])]
@@ -36,6 +38,10 @@ def generate_launch_description():
         DeclareLaunchArgument('motion_enabled',default_value='false',choices=['true','false']),
         DeclareLaunchArgument('radar_required',default_value='false',choices=['true','false']),
         DeclareLaunchArgument('auto_arm',default_value='false',choices=['true','false']),
+        # Brief target-gap tolerance in FOLLOW (0 = off); see motion_guard/node.py.
+        DeclareLaunchArgument('target_grace_s',default_value='0.0'),
+        # Re-arm by itself after a target-only FAULT once the target is valid again (Route A behaviour).
+        DeclareLaunchArgument('target_auto_recover',default_value='false',choices=['true','false']),
         DeclareLaunchArgument('geometry_confirmed',default_value='false',choices=['true','false']),
         DeclareLaunchArgument('mount_calibrated',default_value='false',choices=['true','false']),
         DeclareLaunchArgument('stopping_model_confirmed',default_value='false',choices=['true','false']),

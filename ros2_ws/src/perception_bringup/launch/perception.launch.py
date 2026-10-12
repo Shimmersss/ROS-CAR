@@ -76,6 +76,15 @@ def launch_route(context):
         if identity_lock and LaunchConfiguration('reid_enabled').perform(context) != 'true':
             raise ValueError('reid_lock_enabled requires reid_enabled:=true')
         parameters.append({'reid_lock_enabled': identity_lock})
+        reacquire = LaunchConfiguration('reid_reacquire_enabled').perform(context) == 'true'
+        if reacquire and (identity_lock or LaunchConfiguration('reid_enabled').perform(context) != 'true'
+                          or LaunchConfiguration('sot_enabled').perform(context) != 'true'):
+            raise ValueError('reid_reacquire_enabled requires reid_enabled:=true sot_enabled:=true and excludes reid_lock_enabled')
+        parameters.append({'reid_reacquire_enabled': reacquire})
+    if route in ('yolo', 'yolo_pose'):
+        sot = LaunchConfiguration('sot_enabled').perform(context) == 'true'
+        parameters.append({'sot_enabled': sot, 'sot_model_path': ParameterValue(
+            LaunchConfiguration('sot_model_path').perform(context), value_type=str)})
     node_options = {}
     if route in ('yolo', 'yolo_pose'):
         python = LaunchConfiguration('yolo_python').perform(context)
@@ -139,6 +148,9 @@ def generate_launch_description():
         DeclareLaunchArgument('reid_enabled', default_value='false', choices=['true', 'false']),
         DeclareLaunchArgument('reid_lock_enabled', default_value='false', choices=['true', 'false']),
         DeclareLaunchArgument('reid_model_path', default_value=''),
+        DeclareLaunchArgument('sot_enabled', default_value='false', choices=['true', 'false']),
+        DeclareLaunchArgument('reid_reacquire_enabled', default_value='false', choices=['true', 'false']),
+        DeclareLaunchArgument('sot_model_path', default_value=''),
         DeclareLaunchArgument('reid_config', default_value=PathJoinSubstitution([
             FindPackageShare('perception_bringup'), 'config', 'reid.yaml'])),
         DeclareLaunchArgument('pose_config', default_value=PathJoinSubstitution([FindPackageShare('perception_bringup'), 'config', 'pose.yaml'])),

@@ -93,7 +93,7 @@ string message
 | `/control/stop` | std_srvs/srv/Trigger | 立即发零并解除授权；需要再次显式 arm 才能恢复 |
 | `/control/disarm` | std_srvs/srv/Trigger | 与 stop 相同 |
 
-缺请求、目标失效（FOLLOW）或重复发布者等会使已授权状态进入 FAULT 并发零；本版本不因缺少雷达、雷达 TF、扫描或雷达障碍结果触发 FAULT。数据恢复或节点重启不会自动恢复运动。服务用 ROS 默认可靠服务 QoS，无固定频率。
+缺请求、目标失效（FOLLOW）或重复发布者等会使已授权状态进入 FAULT 并发零；本版本不因缺少雷达、雷达 TF、扫描或雷达障碍结果触发 FAULT。数据恢复或节点重启不会自动恢复运动；例外：`target_auto_recover:=true`（`start_project.sh` 跟随入口默认开启）时，目标类故障在目标重新有效后自动回到 ARMED，其他故障仍锁存。服务用 ROS 默认可靠服务 QoS，无固定频率。
 
 ```bash
 ros2 service call /control/set_mode roscar_interfaces/srv/SetControlMode "{mode: EXTERNAL}"

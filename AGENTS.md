@@ -17,7 +17,7 @@
 
 ## 当前状态（2026-10-11）
 
-- C：跌倒检测处于离线评估阶段。10-10 按车载机位（镜头离地 27 cm、俯仰 15.1°）重拍并人工标注 20 次跌倒、19 个反例动作；高度线索及可选开关的复评见 `docs/跌倒检测评估记录.md`，按代码现状的逻辑见 `docs/跌倒检测整体逻辑.md`。C 尚未在 Jetson 上做真人或跌倒实测，现场项见 `docs/现场实测要求20261008.md`。
+- C：已部署到板上隔离目录 `/home/wheeltec/ROSCAR-c`（Pose FP16 engine、Gemini 驱动均为板上构建），10-12 真人二维骨架与实车低速跟随（1.3 m、0.2 m/s、无避障、三项确认沿用临时授权）由用户现场确认可用；配准与绝对测距未用卷尺验收，Pose 实际约 6–7 帧/秒，现场调试 Foxglove 须走网线。跌倒检测处于离线评估阶段。10-10 按车载机位（镜头离地 27 cm、俯仰 15.1°）重拍并人工标注 20 次跌倒、19 个反例动作；高度线索及可选开关的复评见 `docs/跌倒检测评估记录.md`，按代码现状的逻辑见 `docs/跌倒检测整体逻辑.md`。C 尚未在 Jetson 上做真人或跌倒实测，现场项见 `docs/现场实测要求20261008.md`。
 - B：Jetson 上 YOLO26s/ByteTrack 有真人在线检测；RGB-D 配准、安装外参和绝对测距精度待验收。
 - 语音：正式入口为本地 Qwen3-ASR + Silero VAD + 固定规则 + 本地 TTS，见 `docs/语音入口与回退.md`。
 - `scripts/start_robot.sh` 是板上整车配置，会启动底盘、语音和经 motion_guard 的自动跟随（`MOTION_ENABLED=true`、`auto_arm:=true`，三项跟随确认为用户临时授权，不启 N10P）；感知验证只用 `start_project.sh` / `start_c.sh`，文档不得把 `start_robot.sh` 写成不运动。
@@ -29,16 +29,20 @@
 - Gemini 使用独立固定版本驱动及设备自身标定，不继承 Astra S 临时内参。要求明确序列号与标定文件，物理配准和安装外参分别确认；不能只改 frame_id。
 - C 单目地面定位为独立 `ground_localizer`：输出脚下接地点，`target_state_ground.source=yolo_ground`，不混入 `yolo` 光学目标或卡尔曼；安装外参与地面平面须分别确认，默认 NOT_READY；身高先验不是实测个体身高。设计和边界见 `docs/方案C实现与验收.md`。
 - 骨架/跌倒首版只发布人体状态与可视化，不接语音或运动。相机直立未确认最多疑似；静态躺卧不补报跌倒。新增入口及边界见 `docs/方案C实现与验收.md`。
-- 跌倒鲁棒开关 `pose_gap_pause`/`pose_handover_s`/`pose_confirm_lying_only`/`pose3d_knee_fallback` 与无骨架高度线索 `height_fall_enabled`（及其可选项 `height_lost_hold_s`/`height_sit_hold_s`/`height_side_edge_px`，0 为关）默认全关；高度线索需重力与地面均确认才可确认，否则最多疑似，只写 detail。默认值须经标注录像 `scripts/evaluate_falls.py` 复评后再定，见 `docs/跌倒检测评估记录.md`。离线回放的相机几何用 `scripts/estimate_camera_geometry.py`（消失点重力 + 站立双踝高度，反光地面不能用深度地面拟合），结果仅诊断，不得据此置任何 `*_confirmed`。
+- 跌倒鲁棒开关 `pose_gap_pause`/`pose_handover_s`/`pose_confirm_lying_only`/`pose3d_knee_fallback` 与无骨架高度线索 `height_fall_enabled`（及其可选项 `height_lost_hold_s`/`height_sit_hold_s`/`height_side_edge_px`，0 为关）默认全关；丢人后继续测量 `height_continue_s` 的延续中人员只发布到单独话题 `person_states_continued`，不得混入 `person_states`（ReID/地面定位只消费真实检测），节点只用最后检出框，VitTrack 延续仅离线回放 `sot`；下游跌倒告警统一读每帧汇总的 `fall_alarm`（FallAlarm），首版仍不接语音/运动；高度线索需重力与地面均确认才可确认，否则最多疑似，只写 detail。默认值须经标注录像 `scripts/evaluate_falls.py` 复评后再定，见 `docs/跌倒检测评估记录.md`。离线回放的相机几何用 `scripts/estimate_camera_geometry.py`（消失点重力 + 站立双踝高度，反光地面不能用深度地面拟合），结果仅诊断，不得据此置任何 `*_confirmed`。
 
 ## C 深度融合、定位与三维姿态
 
 - C 默认 `fusion_enabled=true`，统一关联当帧关节和区域真实深度；关节缺失保持 NaN。目标是框中心射线上的虚拟代表点，不是骨盆或地面点，后续地面定位不得直接混入同一观测。`pose.yaml` 中关闭融合可恢复原 C 路径；B 区域测距保持兼容。参数与验收边界见 `docs/方案C实现与验收.md`。
 - C 单目地面定位默认要求双踝一致，禁止无接地证据的框底回退。身高先验默认关闭，需绑定已确认的 epoch:track_id 且持续站立；UNKNOWN 不套站立先验。预测发布必须按真实测量年龄复核保持期限。
-- C ReID默认关闭；显式REID_ENABLED/REID_MODEL_PATH启用本地OSNet ONNX及校验文件，不自动下载。另需REID_LOCK_ENABLED=true才接入身份锁定恢复：禁用邻框接续，连续新鲜身份确认后才关联当前轨迹，歧义/失效保持LOST，释放清除身份。持久身份与epoch:track_id分离，不转移身高先验或旧轨迹滤波状态。入口与测试见docs/方案C身份ReID接入与验收.md。
+- C ReID默认关闭；显式REID_ENABLED/REID_MODEL_PATH启用本地OSNet ONNX及校验文件，不自动下载。另需REID_LOCK_ENABLED=true才接入身份锁定恢复：禁用邻框接续，连续新鲜身份确认后才关联当前轨迹，歧义/失效保持LOST，释放清除身份。持久身份与epoch:track_id分离，不转移身高先验或旧轨迹滤波状态。`reid.yaml` 启用 10-11 录像评估得出的同框互斥、已绑定核验门槛、重叠骨架掩码等选项（`IdentityConfig` 默认值仍是原逻辑）；衣着相近的多人场景未验证安全，不得据此开启锁定。入口与测试见docs/方案C身份ReID接入与验收.md。
 - C统一定位使用独立 `/perception/person_positions` 与 `target_state_unified`，参考点为双踝中点的地面投影；不把原框中心代表点混入。原躯体深度需先通过同轨迹近期确认的关系换算为脚下参考点，才与脚部观测作保守相关融合；映射有龄期且不跨身份。各来源必须有一致性和新鲜度；未确认安装/地面不发布有效统一位置，身高先验不进入统一输出。
 - C三维姿态仅使用真实有效关节；`pose3d_gravity_confirmed` / `pose3d_ground_confirmed` 默认false，依据不足降级二维并标注basis，异常几何未知。二维时序持续更新，三维时序独立保存，短时缺深度暂停确认计时、超时仅清三维候选；不跨像素/米搬用基线。已确认三维事件需三维直立证据恢复。参数及边界见 `docs/方案C统一定位与三维姿态.md`。
 - C深度地面拟合（`floor_fit_enabled`，发布`floor_plane`）与动态重力（`pose3d_up_source=floor|tf`）、统一定位实测地面（`floor_plane_enabled`）默认全部关闭；实测地面只作逐帧证据，替代而非叠加标定平面上的单目双踝，按完全相同时间戳匹配，永不自动置任何`*_confirmed`。动态来源缺失时本帧退二维且不复用旧值，横滚超限二维未知，相机转动重置二维像素下坠参考。见`docs/方案C统一定位与三维姿态.md`。
+
+- 单目标跟踪联动（VitTrack + `BridgeArbiter`）默认关闭，`sot_enabled`/`SOT_ENABLED` 显式开启并需本地模型与校验文件；仲裁器只能保持、确认接续或释放目标，不得自行挑人，曾与目标同框的轨迹不得接续，冲突帧暂停输出；与 ReID 锁定合用时只在跟踪器连续一致、无反证、身份可信（用户锁定或 ReID 持续确认 2 秒）且目标未与别人重叠时延续身份（`reid_lock_bridge_carry_s`），冲突只作废授权、由 ReID 自动重新确认。以跟随稳定为目标时用 `reid_reacquire_enabled`（`OwnerSelection`，需 `sot_enabled`，与 ReID 锁定互斥）：联动负责连续性，ReID 只否决和丢失后找回主人；主人身份经 `owner_focus` 固定在 ReID 节点并补充多视角。Jetson 自带 OpenCV 4.5.4 无法加载该模型，需 onnxruntime 或 TensorRT，尚未在板上安装和测速。见 `docs/方案C单目标跟踪联动.md`。
+
+- 跟随运动：`motion_guard` 的 `target_grace_s`（默认 0）只对 FOLLOW 中目标短暂无效/超时生效，宽限内衰减到零并可自动恢复，超时仍 FAULT 锁存，其他故障不享受宽限；`start_project.sh` 跟随入口按用户确认设 0.6 s（`FOLLOW_TARGET_GRACE_S`）。`target_auto_recover`（默认 false）只让目标类 FAULT 在目标重新有效后自动回 ARMED（同方案 A 跟随器），其他故障仍锁存；跟随入口按用户 10-12 确认默认开启（`FOLLOW_TARGET_AUTO_RECOVER`）。跟随距离 `FOLLOW_TARGET_DISTANCE_M`（默认 1.0）。控制律仍为 A 实测过的 `follow_control.compute_command`。不得扩大宽限或自动恢复范围、延长上限而不经用户确认。
 
 ## 云台约定
 

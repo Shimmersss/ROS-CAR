@@ -119,3 +119,71 @@ class IdentityLockTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class BridgeCarryTests(IdentityLockTests):
+    """Identity carried by a continuously agreeing single-object bridge (carry_s > 0)."""
+    def setUp(self):
+        self.s = IdentitySelection(carry_s=3.)
+        self.t = 10.
+        self.frame([1])
+        self.s.lock(now=self.t)
+
+    def bridged(self, ids, rows, agrees=True):
+        self.frame(ids); self.s.note_bridge(agrees, self.t); self.evidence(rows)
+
+    def test_missing_evidence_carried_only_while_bridge_agrees_and_within_limit(self):
+        self.confirm(); self.s.note_bridge(True, self.t)
+        for _ in range(10):  # 1 s of unverified ReID, well past max_age_s
+            self.bridged([1], [('0:1', '', False, True)])
+            self.assertIsNotNone(self.s.selected(self.t))
+        self.bridged([1], [('0:1', '', False, True)], agrees=False)
+        self.assertIsNone(self.s.selected(self.t))
+        self.confirm(); self.s.note_bridge(True, self.t)
+        for _ in range(35):
+            self.bridged([1], [('0:1', '', False, True)])
+        self.assertIsNone(self.s.selected(self.t))  # carry_s exceeded
+
+    def test_contradiction_still_invalidates_immediately(self):
+        self.confirm(); self.s.note_bridge(True, self.t)
+        self.bridged([1, 2], [('0:1', '', False, True), ('0:2', 'alice', True, True)])
+        self.assertIsNone(self.s.selected(self.t))
+        self.confirm(); self.s.note_bridge(True, self.t)
+        self.bridged([1], [('0:1', 'bob', True, True)])
+        self.assertIsNone(self.s.selected(self.t))
+
+    def test_bridge_handover_keeps_identity_and_target_absence_does_not_reset(self):
+        self.confirm(); self.s.note_bridge(True, self.t)
+        self.frame([2]); self.s.note_bridge(True, self.t)  # target undetected, bridge continues
+        self.assertEqual(self.s.count, 3)
+        self.assertTrue(self.s.bridge_handover(2, self.t))
+        self.assertEqual(self.s.target_id, (0, 2)); self.assertEqual(self.s.selected(self.t).track_id, 2)
+        self.assertFalse(self.s.bridge_handover(9, self.t))
+
+    def test_without_bridge_behaviour_is_unchanged(self):
+        self.s = IdentitySelection(); self.frame([1]); self.s.lock(now=self.t); self.confirm()
+        self.s.note_bridge(True, self.t)
+        self.assertFalse(self.s.bridge_handover(1, self.t))
+        self.frame([1]); self.evidence([('0:1', '', False, True)])
+        self.assertIsNone(self.s.selected(self.t))
+
+
+class CarryTrustTests(BridgeCarryTests):
+    def test_reid_jump_to_new_track_is_not_carried_until_sustained(self):
+        self.confirm(); self.s.note_bridge(True, self.t)
+        self.confirm(2); self.s.note_bridge(True, self.t)  # ReID moves the identity to track 2
+        self.assertEqual(self.s.target_id, (0, 2)); self.assertFalse(self.s.trusted())
+        self.bridged([2], [('0:2', '', False, True)])
+        self.assertIsNone(self.s.selected(self.t))  # not carried: single ReID jump
+        for _ in range(21):  # ReID keeps confirming track 2 for > trust_s
+            self.frame([2]); self.s.note_bridge(True, self.t); self.evidence([('0:2', 'alice', True, True)])
+        self.assertTrue(self.s.trusted())
+        self.bridged([2], [('0:2', '', False, True)])
+        self.assertIsNotNone(self.s.selected(self.t))
+
+    def test_distrust_after_bridge_conflict_blocks_carry(self):
+        self.confirm(); self.s.note_bridge(True, self.t)
+        self.s.distrust()
+        self.confirm(); self.s.note_bridge(True, self.t)
+        self.bridged([1], [('0:1', '', False, True)])
+        self.assertIsNone(self.s.selected(self.t))

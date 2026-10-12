@@ -35,7 +35,8 @@ from gemini_recording import load_depth_m, read_rows  # noqa: E402
 MODES = ('2d', '3d-fixed', '3d-floor', '3d-geometry', 'height')
 VARIANT = {}   # rule switches under evaluation, set from --variant
 HEIGHT_KEYS = dict(upright='upright_min_m', low='low_max_m', drop='drop_min_m', recovery='recovery_s', confirm='confirm_s',
-                   hint='hint_upright_min_m', lost='lost_hold_s', sit='sit_hold_s', side='side_edge_px')
+                   hint='hint_upright_min_m', lost='lost_hold_s', sit='sit_hold_s', side='side_edge_px',
+                   cont='continue_s', cont_min='continue_min_m')
 IMAGE_WIDTH = 640   # recorder colour stream (record_gemini_mac.py)
 MERGE_S = 1.5   # detections closer than this belong to the same event
 
@@ -105,7 +106,71 @@ def person_heights(recording, frames, geometry_of, cache_path):
     return out
 
 
-def replay_height(frames, heights):
+class Continuation:
+    """Body top inside continuation boxes for tracks the detector lost (HeightFallConfig.continue_s).
+
+    Without sot the box is the track's last detected box (depth hold, static camera). With sot a
+    VitTrack per lost track starts from that box on the previous analysed frame and follows it on
+    analysed frames only, as the node would. Diagnostic replay; nothing here is cached."""
+
+    def __init__(self, recording, geometry_of, sot=False):
+        self.recording, self.geometry_of = recording, geometry_of
+        self.reg = Registration(json.loads((recording/'device.json').read_text()))
+        k = self.reg.color
+        self.intrinsics = (k['fx'], k['fy'], k['cx'], k['cy'])
+        self.depths = {r['frame']: r for r in read_rows(recording/'timestamps.csv')}
+        self.blank = np.zeros((k['height'], k['width'], 3), np.uint8)
+        self.sot, self.trackers, self.frame, self.image, self.previous = sot, {}, None, None, None
+        if sot:
+            import cv2
+            from yolo_person_tracker.sot import VitTrack
+            self.cap, self.n = cv2.VideoCapture(str(recording/'color.avi')), 0
+            self.model = lambda: VitTrack(str(ROOT/'models/weights/object_tracking_vittrack_2023sep.onnx'))
+
+    def advance(self, frame):
+        """Call once per analysed frame, in order."""
+        self.frame = frame
+        if self.sot:
+            while self.n < frame['frame']:
+                ok, raw = self.cap.read()
+                if not ok:
+                    raise RuntimeError(f'{self.recording.name}: video ends before frame {frame["frame"]}')
+                self.n += 1
+            self.previous, self.image = self.image, cv2_remap(raw, self.reg)
+
+    def box(self, ident, last_box):
+        if not self.sot:
+            return last_box
+        tracker = self.trackers.get(ident)
+        if tracker is None:
+            if self.previous is None:
+                return None
+            x1, y1, x2, y2 = map(int, last_box)
+            tracker = self.trackers[ident] = self.model()
+            tracker.init(self.previous, (x1, y1, x2-x1, y2-y1))
+        (x, y, w, h), _ = tracker.update(self.image)
+        return (x, y, x+w, y+h)
+
+    def stop(self, keep):
+        for ident in [i for i in self.trackers if i not in keep]:
+            del self.trackers[ident]
+
+    def top(self, box):
+        f = self.frame
+        geometry = self.geometry_of(f)
+        if box is None or not f['depth_matched'] or geometry is None:
+            return None
+        _, aligned = self.reg.apply(self.blank, load_depth_m(self.recording, self.depths[f['depth_frame']]))
+        measured = body_heights(aligned, box, self.intrinsics, geometry[0], geometry[1])
+        return None if measured is None else measured[0]
+
+
+def cv2_remap(raw, reg):
+    import cv2
+    return cv2.remap(raw, *reg.maps, cv2.INTER_LINEAR)
+
+
+def replay_height(frames, heights, continuation=None):
     overrides = {k: VARIANT[k] for k in HEIGHT_KEYS.values() if k in VARIANT}
     if 'veto_aspect' in VARIANT:
         overrides['veto_min_aspect'] = VARIANT['veto_aspect'] or 1e-6
@@ -133,6 +198,22 @@ def replay_height(frames, heights):
             state = 'FALLEN' if phase == 2 else 'LYING' if 'drop' in detail or 'low' in detail else 'UNKNOWN'
             timeline.append(dict(t=f['time_s'], id=ident, state=state, phase=phase, basis='height',
                                  detail=detail[:160], height=float(box[3]-box[1])))
+        if continuation is not None:
+            continuation.advance(f)
+            keep = tracker.continuable(stamp, present)
+            continuation.stop(keep)
+            for ident in keep:
+                # boxes keeps the last detected box: handover matches against it, never the
+                # continuation box (a tracker box following someone up moved alarms onto them).
+                box = continuation.box(ident, boxes[ident])
+                if box is None or tracker.yields(ident, box, present):
+                    continue
+                top = continuation.top(box)
+                phase, detail = tracker.update(ident, stamp, top, continued=True,
+                                               side=at_side_edge(boxes[ident], IMAGE_WIDTH, tracker.cfg))
+                state = 'FALLEN' if phase == 2 else 'LYING' if 'drop' in detail or 'low' in detail else 'UNKNOWN'
+                timeline.append(dict(t=f['time_s'], id=ident, state=state, phase=phase, basis='height',
+                                     detail=('continued; '+detail)[:160], height=0.))
     return timeline
 
 
@@ -247,7 +328,8 @@ def main():
                         help='per-frame gravity/camera height from estimate_camera_geometry.py (height, 3d-geometry)')
     parser.add_argument('--variant', default='baseline',
                         help="baseline, or comma list of gap_pause, knee_fallback, confirm_lying_only, veto2d, "
-                             "handover=<s>, transition=<s>, upright=<m>, low=<m>, drop=<m>, recovery=<s>, confirm=<s>, hint=<m>, lost=<s>, sit=<s>, side=<px>")
+                             "handover=<s>, transition=<s>, upright=<m>, low=<m>, drop=<m>, recovery=<s>, confirm=<s>, hint=<m>, lost=<s>, sit=<s>, side=<px>, "
+                             "cont=<s>, cont_min=<m>, sot (continuation boxes from VitTrack instead of the last box)")
     args = parser.parse_args()
     for item in filter(None, args.variant.split(',')):
         if item == 'baseline':
@@ -259,7 +341,7 @@ def main():
             VARIANT['transition_s'] = float(value)
         elif key in HEIGHT_KEYS:
             VARIANT[HEIGHT_KEYS[key]] = float(value)
-        elif key in ('gap_pause', 'knee_fallback', 'confirm_lying_only', 'veto2d'):
+        elif key in ('gap_pause', 'knee_fallback', 'confirm_lying_only', 'veto2d', 'sot'):
             VARIANT[key] = True
             if key == 'veto2d' and value:
                 VARIANT['veto_aspect'] = float(value)
@@ -287,14 +369,19 @@ def main():
             continue
         if mode == 'height':
             if geometry:
-                heights = person_heights(args.recording, frames, lambda f: geometry.get(f['frame']),
-                                         args.output/'heights-geometry.jsonl')
+                geometry_of = lambda f: geometry.get(f['frame'])
+                heights = person_heights(args.recording, frames, geometry_of, args.output/'heights-geometry.jsonl')
             elif fixed is not None:
-                heights = person_heights(args.recording, frames, lambda f: fixed, args.output/'heights.jsonl')
+                geometry_of = lambda f: fixed
+                heights = person_heights(args.recording, frames, geometry_of, args.output/'heights.jsonl')
             else:
                 report['modes'][mode] = 'skipped: no stable floor fit'
                 continue
-            timeline = replay_height(frames, heights)
+            if VARIANT.get('sot') and not VARIANT.get('continue_s'):
+                parser.error('sot needs cont=<s>')
+            continuation = (Continuation(args.recording, geometry_of, VARIANT.get('sot', False))
+                            if VARIANT.get('continue_s') else None)
+            timeline = replay_height(frames, heights, continuation)
         else:
             timeline = replay(frames, floors, mode, pose, spatial, fixed, geometry)
         timelines[mode] = timeline

@@ -1,4 +1,14 @@
-"""Only this node publishes final velocity. Faults require explicit re-arming."""
+"""Only this node publishes final velocity. Faults require explicit re-arming.
+
+Optional target_grace_s (FOLLOW only, default 0 = off): a target that is briefly invalid or late
+keeps the guard ARMED while the last command decays linearly to zero over the grace period; a valid
+target within it resumes following, a longer gap is a FAULT as before. Every other check failure
+faults immediately. With radar_required the grace output is zero (no clearance check is possible).
+
+Optional target_auto_recover (FOLLOW only, default false): a FAULT whose latched reason is a target
+reason re-arms on the first tick where every check passes again, like the direct Route A follower
+resumed when its target came back. Any other latched fault still requires an explicit arm.
+"""
 import json
 import math
 import time
@@ -21,6 +31,8 @@ from roscar_interfaces.srv import SetControlMode
 from astra_body_adapter.follow_control import observation_is_fresh
 from .safety import SafetyConfig, clearance
 
+TARGET_REASONS = ('target_timeout', 'target_timestamp', 'target_invalid')
+
 
 def seconds(stamp):
     return stamp.sec+stamp.nanosec*1e-9
@@ -33,7 +45,8 @@ class MotionGuard(Node):
                         base_frame='base_link', scan_frame='laser', expected_source='astra',
                         target_frame='astra_depth_optical_frame', request_topic='/control/cmd_vel_request',
                         scan_topic='/scan', target_topic='/perception/target_state',
-                        radar_required=False, auto_arm=False)
+                        radar_required=False, auto_arm=False, target_grace_s=0.,
+                        target_auto_recover=False)
         defaults.update(vars(SafetyConfig()))
         for key, value in defaults.items():
             self.declare_parameter(key, value, ParameterDescriptor(read_only=True))
@@ -45,6 +58,11 @@ class MotionGuard(Node):
             raise ValueError('Explicit nonempty frames required')
         if self.cfg['base_frame'] == self.cfg['scan_frame']:
             raise ValueError('Use distinct laser/base frames and a calibrated mount')
+        grace = self.cfg['target_grace_s']
+        if isinstance(grace, bool) or not isinstance(grace, (int, float)) or not 0 <= grace <= 1.:
+            raise ValueError('target_grace_s must be within [0, 1] seconds')
+        if not isinstance(self.cfg['target_auto_recover'], bool):
+            raise ValueError('target_auto_recover must be a boolean')
         if self.cfg['request_topic'] in ('/chassis/cmd_vel', '/cmd_vel'):
             raise ValueError('Follow request topic must be distinct from external and output topics')
         self.mode = 'STANDBY' if self.cfg['motion_enabled'] else 'PERCEPTION_ONLY'
@@ -54,6 +72,8 @@ class MotionGuard(Node):
         self.mode_since = self.get_clock().now().nanoseconds*1e-9
         self.reason = 'not_armed'
         self.last_fault = ''
+        self.last_ok_at = -math.inf  # last tick that was ARMED and ready (monotonic)
+        self.last_cmd = (0., 0.)
         self.request = self.scan = self.target = None
         self.received = {}
         self.buffer = Buffer()
@@ -172,6 +192,7 @@ class MotionGuard(Node):
         response.success=ready; response.message=reason
         if ready:
             self.mode='ARMED'; self.reason='explicitly_armed'
+            self.last_ok_at=-math.inf; self.last_cmd=(0.,0.)
         else:
             self.reason=reason
         return response
@@ -189,13 +210,31 @@ class MotionGuard(Node):
 
     def tick(self):
         ready,reason,v,w=self.check()
+        now=time.monotonic()
         if self.cfg['auto_arm'] and self.cfg['motion_enabled'] and self.mode == 'STANDBY' and ready:
             self.mode='ARMED'; self.reason='auto_armed'
-        if self.mode=='ARMED' and not ready:
+            self.last_ok_at=-math.inf; self.last_cmd=(0.,0.)
+        if (self.cfg['target_auto_recover'] and self.mode == 'FAULT' and ready
+                and self.command_mode == 'FOLLOW' and self.last_fault in TARGET_REASONS):
+            # Only a target loss recovers by itself; the fresh target passed every check this tick.
+            self.mode='ARMED'; self.reason='target_recovered'
+            self.last_ok_at=-math.inf; self.last_cmd=(0.,0.)
+            self.get_logger().info('Target valid again after '+self.last_fault+'; re-armed')
+        grace=self.cfg['target_grace_s']
+        in_grace=(self.mode=='ARMED' and not ready and self.command_mode=='FOLLOW' and grace>0
+                  and reason in TARGET_REASONS and 0 <= now-self.last_ok_at <= grace)
+        if in_grace:
+            # Brief target gap: stay armed, decay the last command; never extend it.
+            k=0. if self.cfg['radar_required'] else max(0.,1.-(now-self.last_ok_at)/grace)
+            v,w=self.last_cmd[0]*k,self.last_cmd[1]*k
+            reason='target_grace:'+reason
+        elif self.mode=='ARMED' and not ready:
             self.mode='FAULT'; self.last_fault=reason
+        if self.mode=='ARMED' and ready:
+            self.last_ok_at=now; self.last_cmd=(v,w)
         self.reason=reason
-        self.publish(v if self.mode=='ARMED' and ready else 0.,
-                     w if self.mode=='ARMED' and ready else 0.)
+        moving=self.mode=='ARMED' and (ready or in_grace)
+        self.publish(v if moving else 0., w if moving else 0.)
         self.status_pub.publish(String(data=json.dumps(dict(mode=self.mode,command_mode=self.command_mode,ready=ready,
              reason=reason,last_fault=self.last_fault,motion_enabled=self.cfg['motion_enabled']))))
 

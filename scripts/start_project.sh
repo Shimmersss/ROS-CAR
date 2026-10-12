@@ -42,6 +42,9 @@ WITH_VOICE=false 关闭语音；VOICE_BACKEND=offline|online 选择离线语音�
 WITH_CHASSIS=true 开启底盘串口收发。
 底盘要求 SERIAL_PORT 和 CAR_MODE；WITH_FOLLOWER=true 时跟随器通过 motion_guard 受保护输出。
 DEPTH_REGISTERED=true 使用驱动当前 RGB-D 配准；坐标精度仍须现场量距验证。
+FOLLOW_TARGET_DISTANCE_M 跟随距离（米，默认 1.0，按相机测得水平距离）；
+FOLLOW_TARGET_GRACE_S 目标短时缺失宽限（默认 0.6）；FOLLOW_TARGET_AUTO_RECOVER=false
+关闭"目标恢复后自动续动"，恢复为目标故障锁存、需手动 /control/arm。
 MODEL_PATH、YOLO_PYTHON、YOLO_DEVICE 可覆盖模型和推理环境。
 Ctrl-C 或任一子模块退出时停止本入口启动的全部模块。
 HELP
@@ -50,9 +53,10 @@ HELP
   *) echo '未知参数，使用 --help 查看用法。' >&2; exit 2;;
 esac
 set -u
-for value in "$WITH_VOICE" "$WITH_CHASSIS" "$WITH_RADAR" "$WITH_FOLLOWER" "$MOTION_ENABLED" "${DEPTH_REGISTERED:-false}" "$AUTO_LOCK_SINGLE"; do
+for value in "$WITH_VOICE" "$WITH_CHASSIS" "$WITH_RADAR" "$WITH_FOLLOWER" "$MOTION_ENABLED" "${DEPTH_REGISTERED:-false}" "$AUTO_LOCK_SINGLE" "${FOLLOW_TARGET_AUTO_RECOVER:-true}"; do
   [[ "$value" == true || "$value" == false ]] || { echo '开关必须为 true/false' >&2; exit 2; }
 done
+[[ "${FOLLOW_TARGET_DISTANCE_M:-1.0}" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo 'FOLLOW_TARGET_DISTANCE_M 必须为非负米数' >&2; exit 2; }
 if [[ "$WITH_FOLLOWER" == true && "$MOTION_ENABLED" != true ]]; then
   echo 'WITH_FOLLOWER=true 时必须显式 MOTION_ENABLED=true。' >&2
   exit 2
@@ -113,11 +117,12 @@ if [[ "$WITH_CHASSIS" == true ]]; then
   # shellcheck disable=SC1091
   source "$ROOT/ros2_ws/chassis_install/setup.bash"
 fi
-set -u
 if [[ "$PERCEPTION_ROUTE" == c ]]; then
+  # Colcon setup scripts read unset variables (COLCON_TRACE); source before set -u.
   # shellcheck disable=SC1091
   source "$ROOT/ros2_ws/gemini_driver/install/setup.bash"
 fi
+set -u
 packages=(astra_camera yolo_person_tracker perception_bringup)
 [[ "$WITH_RADAR" == true ]] && packages+=(lslidar_driver)
 for package in "${packages[@]}"; do
@@ -153,7 +158,7 @@ start_module() {
 start_module camera bash "$ROOT/scripts/$camera_script"
 start_module perception bash "$ROOT/scripts/run_b_radar_foxglove.sh"
 if [[ "$WITH_FOLLOWER" == true ]]; then
-  start_module follower bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch motion_guard follow.launch.py motion_enabled:=true expected_source:=yolo target_frame:=camera_color_optical_frame radar_required:=false auto_arm:=true geometry_confirmed:='${FOLLOW_GEOMETRY_CONFIRMED:-false}' mount_calibrated:='${FOLLOW_MOUNT_CALIBRATED:-false}' stopping_model_confirmed:='${FOLLOW_STOPPING_MODEL_CONFIRMED:-false}' target_distance_m:=1.0"
+  start_module follower bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch motion_guard follow.launch.py motion_enabled:=true expected_source:=yolo target_frame:=camera_color_optical_frame radar_required:=false auto_arm:=true target_grace_s:='${FOLLOW_TARGET_GRACE_S:-0.6}' target_auto_recover:='${FOLLOW_TARGET_AUTO_RECOVER:-true}' geometry_confirmed:='${FOLLOW_GEOMETRY_CONFIRMED:-false}' mount_calibrated:='${FOLLOW_MOUNT_CALIBRATED:-false}' stopping_model_confirmed:='${FOLLOW_STOPPING_MODEL_CONFIRMED:-false}' target_distance_m:='${FOLLOW_TARGET_DISTANCE_M:-1.0}'"
 fi
 if [[ "$WITH_CHASSIS" == true ]]; then
   start_module chassis bash "$ROOT/scripts/run_chassis_io.sh"
