@@ -4,7 +4,7 @@ import time
 
 
 class CommandCache:
-    def __init__(self, lifetime=600., capacity=2048):
+    def __init__(self, lifetime=600., capacity=None):
         self.entries = OrderedDict()
         self.lifetime, self.capacity = lifetime, capacity
 
@@ -18,7 +18,7 @@ class CommandCache:
 
     def put(self, key, ack, now=None):
         self.entries[key] = (time.monotonic() if now is None else now, dict(ack))
-        while len(self.entries) > self.capacity:
+        while self.capacity is not None and len(self.entries) > self.capacity:
             self.entries.popitem(last=False)
 
 

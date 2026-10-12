@@ -213,6 +213,13 @@ class CaptureRuntime(unittest.TestCase):
         self.assertGreater(self.bridge.retry_at-time.monotonic(),55.)
         self.cloud.token='';self.bridge.retry_at=time.monotonic() # accelerate only the test's 60s backoff.
         self.wait(lambda:self.bridge.state=='online')
+        self.cloud.fail_upload=401
+        send({**cmd,'command_id':'upload-auth','task_id':'upload-auth','task_type':'helmet'})
+        self.wait(lambda:self.bridge.state=='auth_failed')
+        self.assertGreater(self.bridge.retry_at-time.monotonic(),55.)
+        self.cloud.fail_upload=0;self.bridge.retry_at=time.monotonic()
+        self.wait(lambda:self.bridge.state=='online')
+        self.wait(lambda:any(e.get('result',{}).get('detail')=='upload_http_401' for e in self.cloud.events.get('upload-auth',[])))
         self.wait(lambda:self.bridge.current is None and self.capture.job is None)
         time.sleep(.5)
         threads=threading.active_count();fds=len(list(Path('/proc/self/fd').iterdir()))
@@ -248,6 +255,23 @@ class CaptureRuntime(unittest.TestCase):
             result=self.result(handle);self.assertEqual(result.status,'uploaded',result.detail)
             self.assertFalse(guard.task_hold.active(time.monotonic()))
             self.assertEqual(guard.authority.state,'DISARMED');self.assertEqual(guard.command_mode,'IDLE')
+            original_acquire=guard.task_hold.acquire
+            def delayed_acquire(*args,**kwargs):
+                time.sleep(.4)
+                return original_acquire(*args,**kwargs)
+            guard.task_hold.acquire=delayed_acquire
+            handle,_=self.goal(ttl=.15)
+            self.assertEqual(self.result(handle).status,'failed')
+            time.sleep(.5)
+            self.wait(lambda:not guard.task_hold.active(time.monotonic()),timeout=.2) # before the 1s lease could expire
+            guard.task_hold.acquire=original_acquire
+            # Cleanup keeps the executor spinning while its own task releases.
+            handle,_=self.goal(prepare_sec=2.)
+            self.wait(lambda:guard.task_hold.active(time.monotonic()))
+            self.capture.stop()
+            self.assertEqual(self.result(handle).status,'cancelled')
+            self.assertFalse(guard.task_hold.active(time.monotonic()))
+            self.capture.closing=False
             guard.authority.estop()
             handle,_=self.goal();self.assertEqual(self.result(handle).detail,'hold_failed')
             self.assertEqual(guard.authority.state,'ESTOP')

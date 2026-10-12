@@ -125,6 +125,8 @@ class CloudClient:
                     return receipt(value, task_id, capture_id, digest, status == 409)
                 raise CloudError(status, 'upload_http_' + str(status))
             except CloudError as exc:
+                if exc.status in (401,403):
+                    raise CloudError(exc.status,'upload_http_'+str(exc.status)) from exc
                 if exc.status and exc.status < 500 or attempt == 2:
                     raise
                 until = min(deadline, time.monotonic()+2**attempt)

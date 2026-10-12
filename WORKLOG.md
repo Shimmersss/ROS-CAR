@@ -1403,3 +1403,15 @@
 - 实现完成确认播报、准备、新帧连拍、清晰度选优、质检、JPEG 编码、带取消上传和本地元数据记录；bridge 负责长轮询、ack、事件、心跳、10 分钟去重、TTL、匹配取消、网络/鉴权退避。假 TTS 和合成图像仅显式 bench/隔离域启用；speak 指令本轮返回 unsupported（方案可选项）。
 - 本机 Humble x86_64 子集 colcon：18 包通过；27 项纯 Python 测试通过。原生 ROS 运行时 10 个场景通过，包含四任务 JPEG/SHA、新鲜帧、忙时/语音模式互斥、bench 速度发布者与相机发布者门控、播报迟到取消、上传取消/409、bridge 去重/过期/匹配取消/断网与401恢复、20 次任务资源检查（线程增量0、FD增量0）。robot 场景使用现有 motion_guard + 假 odom/KWS，验证申请/续租/释放及 ESTOP 拒绝，非实车。日志 artifacts/capture-validation。
 - 用户已接入 Gemini 彩色 UVC，/dev/video0 有 ACL；用户选择只做采集测试，不做真人/PCB人工验收。真实图像采集另记，不混入模拟结果。
+
+### 云端拍照 P4采集 / P5接入准备与审查
+
+- 用户接入Gemini UVC后先测到1920×1080约14.1Hz，但首任务fresh_frame_timeout。定位本机usb_cam0.8.1的get_epoch_time_shift_us将tv_usec再除1000，造成约0.95秒时间戳偏差；未放宽新鲜度。新增本机独立构建脚本，固定官方提交cb2ae6b，只修微秒单位，源码/overlay在artifacts，不改系统或车端驱动。修正后采集14.75Hz；并行回归时13.66Hz，ROS帧龄0.070–0.094秒，R/B1.0112；1个相机发布者、0个速度发布者。
+- 真实相机四任务均上传且SHA一致，仍用假播报；用户选择不做人工摆拍，PCB当前场景清晰度31.78低于门槛80，按warn如实上报。图片仅在忽略的artifacts。真人/舌体/安全帽/PCB内容与真实TTS未验收。
+- 整机入口新增默认关闭WITH_CAPTURE_TASKS；开时复用Speech action，接底盘强制robot与唯一guard，无底盘bench禁止跟随/运动。两流程robot可共用停车租约；两个bench因guard要求冲突明确拒绝并记文档。补README/AGENTS长期约定、接口和实现验收文档。
+- 最小审查补强：SIGINT/SIGTERM保持ROS运行以释放自身资源；取消/失败不保留显式调试图片；401/403非JSON响应也进入鉴权失败；修复上传鉴权失败与在途轮询的状态竞争。补TTL/入口门控/迟到租约释放与stop清理测试。受保护的7个旧包diff为零。
+- 本机整仓21包Humble编译通过；运行时10场景含20任务资源增量0/0、原文字播报8项回归通过。最终纯Python/结构/diff与构建日志均在artifacts/capture-validation，均非Jetson或实车验收。
+
+- 最终验收：新增37项纯Python测试通过，整仓CI通过（录像工具22项）；结构21包/355个Python文件、Shell语法、diff检查通过。复核版ROS运行时10场景通过，文字播报8项通过；真实采集任务PREPARE阶段SIGTERM返回CANCELLED并送达mock，入口进程已清理。迟到租约用短于原租约超时的断言确认主动释放。
+
+- 去重复核：bridge保留完整10分钟原ack，不因超过2048条提前淘汰；新增跨容量原结果回放测试，缓存仍随时间到期清理。

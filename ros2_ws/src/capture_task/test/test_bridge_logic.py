@@ -11,3 +11,11 @@ def test_dedup_expiry_capacity():
     assert cache.get('a',now=703) is None
     assert remaining_ttl({'ttl_sec':1},100,60,now=101) == 0
     assert remaining_ttl({'ttl_sec':0},100,60,now=101) == 59
+
+
+def test_default_keeps_full_ten_minute_window():
+    cache=CommandCache()
+    for index in range(2050):
+        cache.put(str(index),dict(accepted=True,reason='accepted'),now=10.)
+    assert cache.get('0',now=609.)==dict(accepted=True,reason='accepted')
+    assert cache.get('0',now=610.) is None

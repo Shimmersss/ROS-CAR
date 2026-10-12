@@ -4,7 +4,6 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
 from execution_mode_interfaces.action import SpeakText
 from .catalog import speech_text
 
@@ -44,12 +43,5 @@ class FakeTTS(Node):
 
 
 def main(args=None):
-    rclpy.init(args=args);node=FakeTTS();executor=MultiThreadedExecutor(num_threads=3);executor.add_node(node)
-    try:
-        executor.spin()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        executor.shutdown(timeout_sec=3.);node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+    from .runtime import run
+    run(FakeTTS,args,threads=3)

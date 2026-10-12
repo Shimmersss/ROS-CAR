@@ -41,7 +41,7 @@ class CaptureFlow:
             capture_id = 'cap-'+uuid.uuid4().hex
             record = dict(task_id=job['task_id'],task_type=job['task_type'],capture_id=capture_id,
                           frame_index=index, frame_sequence=frame.sequence, frame_stamp=frame.ros_stamp,
-                          capture_time=datetime.now(timezone.utc).isoformat(), quality=metrics,
+                          capture_time=datetime.fromtimestamp(frame.ros_stamp,timezone.utc).isoformat(), quality=metrics,
                           warnings=issues, bytes=len(image),sha256=hashlib.sha256(image).hexdigest())
             record['receipt'] = ports.upload(image,record)
             ports.check()

@@ -14,7 +14,6 @@ import rclpy
 from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.clock import Clock, ClockType
-from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rcl_interfaces.msg import ParameterDescriptor
@@ -51,6 +50,7 @@ class Job:
     renew_pending: bool = False
     safety_error: str = ''
     records: list = field(default_factory=list)
+    pending_images: list = field(default_factory=list)
 
 
 class CaptureExecutor(Node):
@@ -344,7 +344,7 @@ class CaptureExecutor(Node):
         temporary=root/'result.json.tmp';temporary.write_text(json.dumps(record,ensure_ascii=False,allow_nan=False),encoding='utf-8')
         temporary.replace(root/'result.json')
         if self.cfg['save_images']:
-            (root/'image.jpg').write_bytes(image)
+            self.job.pending_images.append((root/'image.jpg',image))
         self.job.records.append(record)
 
     def execute(self,goal):
@@ -353,7 +353,10 @@ class CaptureExecutor(Node):
         try:
             self.stage('ACCEPTED')
             records=CaptureFlow().run(self,dict(task_id=job.request.task_id,task_type=job.request.task_type),job.task,self.catalog.defaults)
-            self.check();status='uploaded';detail=job.detail
+            self.check()
+            for image_path,image in job.pending_images:
+                self.check();image_path.write_bytes(image)
+            status='uploaded';detail=job.detail
         except Cancelled:
             status='cancelled';detail='cancelled'
         except Exception as exc:
@@ -368,17 +371,30 @@ class CaptureExecutor(Node):
             job.finished.set();self.cloud.cancel()
             if job.speech:
                 job.speech.cancel_goal_async()
-            released=self.release_token(job.token)
+            try:
+                released=self.release_token(job.token)
+            except Exception:
+                released=None
+                status='failed';detail='hold_release_unconfirmed'
             if released:
                 until=time.monotonic()+2.
                 while not released.done() and time.monotonic()<until:
                     time.sleep(.01)
-                if not released.done() or not released.result().success:
+                try:
+                    release_ok=released.done() and released.result().success
+                except Exception:
+                    release_ok=False
+                if not release_ok:
                     status='failed';detail='hold_release_unconfirmed'
+            if status!='uploaded':
+                for image_path,_ in job.pending_images:
+                    image_path.unlink(missing_ok=True)
+            job.pending_images.clear()
             data=dict(status=status,detail=detail,task_id=job.request.task_id,task_type=job.request.task_type,
                       capture_id=job.records[0]['capture_id'] if job.records else '',records=list(job.records))
             try:
-                self.stage(status.upper(),detail)
+                if job.phase!=status.upper() or job.detail!=detail:
+                    self.stage(status.upper(),detail)
                 self.write_event(data)
             except OSError:
                 status='failed';data.update(status=status,detail='record_write_failed')
@@ -408,13 +424,5 @@ class CaptureExecutor(Node):
 
 
 def main(args=None):
-    rclpy.init(args=args);node=CaptureExecutor();executor=MultiThreadedExecutor(num_threads=6)
-    executor.add_node(node)
-    try:
-        executor.spin()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        node.stop();executor.shutdown(timeout_sec=5.);node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+    from .runtime import run
+    run(CaptureExecutor,args,threads=6)

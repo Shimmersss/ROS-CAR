@@ -88,6 +88,8 @@ ros2_ws/src/
   gimbal_bridge/         云台串口桥接（仅仿真验证）
   execution_mode_interfaces/ execution_mode_manager/ tongue_mode/
                          舌苔任务、模式调度、停车保持
+  capture_task_interfaces/ 独立云端拍照 action
+  capture_task/          云端任务→完成确认播报→新鲜原始RGB→上传（默认关闭）
   offline_voice/         本地 ASR/TTS 语音入口
   xfyun_speech/          讯飞流式 ASR/TTS（回退）
   deepseek_ros2/         DeepSeek 文本桥（历史源码，不作为运动回退）
@@ -109,6 +111,7 @@ docs/      方案、接口、计划；docs/archive/ 为历史文档
 
 ## 文档索引
 
+- [云端拍照任务实现与验收](docs/云端拍照任务实现与验收.md)（独立链路、本机联调与待现场项）
 - [云端拍照任务接口协议](docs/云端拍照任务接口协议.md)（HTTP v0、mock 参考实现）
 - [云端拍照任务执行方案](docs/云端拍照任务执行方案.md)（本机独立链路实施入口）
 

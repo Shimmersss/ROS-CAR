@@ -4,7 +4,7 @@
   <description>Cloud-issued stationary RGB capture and upload, independent of voice intents.</description>
   <maintainer email="maintainer@example.invalid">ROSCAR maintainers</maintainer><license>Proprietary</license>
   <buildtool_depend>ament_python</buildtool_depend>
-  <exec_depend>rclpy</exec_depend><exec_depend>std_msgs</exec_depend><exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>rclpy</exec_depend><exec_depend>rcl_interfaces</exec_depend><exec_depend>std_msgs</exec_depend><exec_depend>sensor_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend><exec_depend>cv_bridge</exec_depend>
   <exec_depend>capture_task_interfaces</exec_depend><exec_depend>execution_mode_interfaces</exec_depend>
   <exec_depend>python3-numpy</exec_depend><exec_depend>python3-opencv</exec_depend><exec_depend>python3-yaml</exec_depend>

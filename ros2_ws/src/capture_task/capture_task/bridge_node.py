@@ -9,7 +9,6 @@ from ament_index_python.packages import get_package_share_directory
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.clock import Clock, ClockType
-from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import String
 from capture_task_interfaces.action import CaptureTask
@@ -191,7 +190,12 @@ class CaptureBridge(Node):
         self.state='auth_failed';self.retry_at=time.monotonic()+60.
 
     def request(self,method,path,body=None,timeout=2.):
-        code,data=self.cloud.request(method,path,body,cancel=self.stop_event,deadline=time.monotonic()+timeout)
+        try:
+            code,data=self.cloud.request(method,path,body,cancel=self.stop_event,deadline=time.monotonic()+timeout)
+        except CloudError as exc:
+            if exc.status in (401,403):
+                self.auth_failed()
+            raise
         if code in (401,403):
             self.auth_failed();raise CloudError(code,'auth_failed')
         if not 200<=code<300:
@@ -234,7 +238,9 @@ class CaptureBridge(Node):
                 # Shorter than v0 maximum, keeping feedback, cancel and heartbeat responsive.
                 wait=0 if self.outbox else 1
                 code,data=self.request('GET','/v1/robots/'+self.cfg['robot_id']+'/commands/next?wait='+str(wait))
-                self.last_poll=time.monotonic();self.state='online';self.backoff=1.
+                self.last_poll=time.monotonic()
+                if self.state!='auth_failed' or time.monotonic()>=self.retry_at:
+                    self.state='online';self.backoff=1.
                 if code==200:
                     self.dispatch(data, self.last_poll)
             except Cancelled:
@@ -269,12 +275,5 @@ class CaptureBridge(Node):
 
 
 def main(args=None):
-    rclpy.init(args=args);node=CaptureBridge();executor=MultiThreadedExecutor(num_threads=4);executor.add_node(node)
-    try:
-        executor.spin()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        node.stop();executor.shutdown(timeout_sec=4.);node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+    from .runtime import run
+    run(CaptureBridge,args,threads=4)

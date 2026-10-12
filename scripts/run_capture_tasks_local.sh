@@ -14,6 +14,15 @@ esac
 source /opt/ros/humble/setup.bash
 [[ -f "$ROOT/install/setup.bash" ]] || { echo '请先按实现与验收文档构建。' >&2; exit 1; }
 source "$ROOT/install/setup.bash"
+if [[ "$synthetic" == false ]]; then
+  overlay="$ROOT/artifacts/capture-usb-cam"
+  if [[ -f "$overlay/install/setup.bash" && -f "$overlay/timestamp-fix.txt" ]]; then
+    source "$overlay/install/setup.bash"
+  elif rg -q 'epoch_time.tv_usec / 1000.0' /opt/ros/humble/include/usb_cam/utils.hpp 2>/dev/null; then
+    echo '已安装 usb_cam 0.8.1 存在时间戳单位问题；请先 bash scripts/build_capture_usb_cam.sh。' >&2
+    exit 1
+  fi
+fi
 cd "$ROOT"
 # Inspect isolated graph before introducing fake resources.
 if ros2 action list 2>/dev/null | rg -q '^/voice/speak$'; then

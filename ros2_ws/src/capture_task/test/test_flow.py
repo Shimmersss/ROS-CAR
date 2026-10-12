@@ -66,3 +66,22 @@ def test_upload_cancel(cloud):
         except Exception as error: errors.append(type(error))
     worker=threading.Thread(target=upload);worker.start();time.sleep(.1);cancel.set();client.cancel();worker.join(1)
     assert not worker.is_alive() and errors==[Cancelled]
+
+
+def test_upload_deadline(cloud):
+    server,url=cloud;server.slow_upload=.5;client=CloudClient(url)
+    metadata={'X-Robot-Id':'r','X-Task-Type':'face','X-Quality':'{"brightness":100,"sharpness":10,"rb_ratio":1,"width":1,"height":1}'}
+    started=time.monotonic()
+    with pytest.raises(CloudError):
+        client.upload('t','c',b'\xff\xd8synthetic',metadata,threading.Event(),started+.1)
+    assert time.monotonic()-started<.4
+
+
+@pytest.mark.parametrize('status',[401,403])
+def test_nonjson_auth_error_remains_auth_failure(monkeypatch,status):
+    client=CloudClient('http://127.0.0.1:1')
+    def rejected(*args,**kwargs):
+        raise CloudError(status,'invalid_response')
+    monkeypatch.setattr(client,'request',rejected)
+    with pytest.raises(CloudError,match='upload_http_'+str(status)):
+        client.upload('t','c',b'\xff\xd8test',{},threading.Event(),time.monotonic()+1)

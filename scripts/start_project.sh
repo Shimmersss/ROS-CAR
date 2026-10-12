@@ -30,6 +30,7 @@ WITH_CHASSIS="${WITH_CHASSIS:-false}"
 export WITH_RADAR="${WITH_RADAR:-false}"
 WITH_FOLLOWER="${WITH_FOLLOWER:-false}"
 WITH_TONGUE_MODE="${WITH_TONGUE_MODE:-false}"
+WITH_CAPTURE_TASKS="${WITH_CAPTURE_TASKS:-false}"
 TONGUE_SAFETY_PROFILE="${TONGUE_SAFETY_PROFILE:-robot}"
 TONGUE_CAMERA_TOPIC="${TONGUE_CAMERA_TOPIC:-/camera/color/image_raw}"
 if [[ "$PERCEPTION_ROUTE" == c ]]; then
@@ -49,6 +50,9 @@ C 必须指定 GEMINI_SERIAL 和 GEMINI_CALIBRATION；相机/配准实测后才�
 WITH_VOICE=false 关闭语音；VOICE_BACKEND=offline，ASR_BACKEND=xfyun 可回退云端识别。
 WITH_CHASSIS=true 开启底盘串口收发。
 WITH_TONGUE_MODE=true 将舌苔流程接入现有语音，要求 WITH_VOICE/WITH_FOLLOWER=true。
+WITH_CAPTURE_TASKS=true 启用独立云端拍照；要求语音/TTS；接底盘强制 robot + WITH_FOLLOWER=true。
+无底盘拍照为 bench，要求 WITH_FOLLOWER=false / MOTION_ENABLED=false；默认关闭。
+CAPTURE_CLOUD_URL / CAPTURE_ROBOT_ID / CAPTURE_TOKEN_FILE 配置云端；默认原始 RGB。
 TONGUE_SAFETY_PROFILE=robot 要求底盘回传；bench 仅允许运动关闭的台架。
 TONGUE_CAMERA_TOPIC 默认原始 RGB；C 的拍照元数据默认为 gemini_rgb_tongue_v1。
 底盘要求 SERIAL_PORT 和 CAR_MODE；WITH_FOLLOWER=true 时跟随器通过 motion_guard 受保护输出。
@@ -61,9 +65,23 @@ HELP
   *) echo '未知参数，使用 --help 查看用法。' >&2; exit 2;;
 esac
 set -u
-for value in "$WITH_VOICE" "$WITH_CHASSIS" "$WITH_RADAR" "$WITH_FOLLOWER" "$WITH_TONGUE_MODE" "$MOTION_ENABLED" "${DEPTH_REGISTERED:-false}" "$AUTO_LOCK_SINGLE"; do
+for value in "$WITH_VOICE" "$WITH_CHASSIS" "$WITH_RADAR" "$WITH_FOLLOWER" "$WITH_TONGUE_MODE" "$WITH_CAPTURE_TASKS" "$MOTION_ENABLED" "${DEPTH_REGISTERED:-false}" "$AUTO_LOCK_SINGLE"; do
   [[ "$value" == true || "$value" == false ]] || { echo '开关必须为 true/false' >&2; exit 2; }
 done
+if [[ "$WITH_CAPTURE_TASKS" == true ]]; then
+  [[ "$WITH_VOICE" == true && "${VOICE_TTS_ENABLED:-true}" == true ]] || {
+    echo '云端拍照要求现有语音及带完成确认的 TTS。' >&2; exit 2;
+  }
+  if [[ "$WITH_CHASSIS" == true ]]; then
+    WITH_FOLLOWER=true
+    CAPTURE_SAFETY_PROFILE=robot
+  else
+    CAPTURE_SAFETY_PROFILE=bench
+    [[ "$WITH_FOLLOWER" == false && "$MOTION_ENABLED" == false ]] || {
+      echo '无底盘云端拍照 bench 要求无 /cmd_vel 发布者：WITH_FOLLOWER=false / MOTION_ENABLED=false。' >&2; exit 2;
+    }
+  fi
+fi
 if [[ "$WITH_TONGUE_MODE" == true ]]; then
   [[ "$WITH_VOICE" == true && "$WITH_FOLLOWER" == true && "${VOICE_TTS_ENABLED:-true}" == true ]] || {
     echo '舌苔模式需要现有语音、带完成确认的 TTS 和唯一 guard（WITH_FOLLOWER=true）。' >&2; exit 2;
@@ -139,6 +157,7 @@ if [[ "$PERCEPTION_ROUTE" == c ]]; then
   source "$ROOT/ros2_ws/gemini_driver/install/setup.bash"
 fi
 packages=(astra_camera yolo_person_tracker perception_bringup)
+[[ "$WITH_CAPTURE_TASKS" == true ]] && packages+=(capture_task capture_task_interfaces)
 [[ "$WITH_TONGUE_MODE" == true ]] && packages+=(execution_mode_interfaces execution_mode_manager tongue_mode)
 [[ "$WITH_RADAR" == true ]] && packages+=(lslidar_driver)
 for package in "${packages[@]}"; do
@@ -185,14 +204,24 @@ if [[ "$WITH_CHASSIS" == true ]]; then
 fi
 if [[ "$WITH_VOICE" == true ]]; then
   voice_args=()
+  [[ "$WITH_CAPTURE_TASKS" == true ]] && voice_args+=(enable_speech_action:=true)
   if [[ "$WITH_TONGUE_MODE" == true ]]; then
     start_module tongue bash "$ROOT/scripts/run_tongue_mode.sh" \
       catalog:="$tongue_catalog" safety_profile:="$TONGUE_SAFETY_PROFILE" \
       camera_topic:="$TONGUE_CAMERA_TOPIC" camera_profile:="$TONGUE_CAMERA_PROFILE" \
       server_url:="${TONGUE_SERVER_URL:-http://172.19.128.171:8096}"
-    voice_args+=(execution_modes_config:="$tongue_catalog" enable_speech_action:=true)
+    voice_args+=(execution_modes_config:="$tongue_catalog")
+    [[ "$WITH_CAPTURE_TASKS" == true ]] || voice_args+=(enable_speech_action:=true)
   fi
   start_module voice bash "$ROOT/scripts/run_voice_assistant.sh" "${voice_args[@]}"
+fi
+if [[ "$WITH_CAPTURE_TASKS" == true ]]; then
+  start_module capture ros2 launch capture_task capture_task.launch.py \
+    safety_profile:="$CAPTURE_SAFETY_PROFILE" \
+    cloud_url:="${CAPTURE_CLOUD_URL:-http://127.0.0.1:8090}" robot_id:="${CAPTURE_ROBOT_ID:-roscar-01}" \
+    token_file:="${CAPTURE_TOKEN_FILE:-}" camera_topic:="${CAPTURE_CAMERA_TOPIC:-/camera/color/image_raw}" \
+    camera_profile:="${CAPTURE_CAMERA_PROFILE:-${PERCEPTION_ROUTE}_raw_rgb_v1}" \
+    storage_dir:="$ROOT/artifacts/capture-task" save_images:=false fake_tts:=false synthetic_camera:=false
 fi
 printf '%s 感知已派发；N10P=%s，底盘串口=%s，直接跟随=%s，语音=%s，配准确认=%s\n' \
   "$PERCEPTION_ROUTE" "${WITH_RADAR:-false}" \
