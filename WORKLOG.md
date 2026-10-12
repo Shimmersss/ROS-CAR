@@ -1387,3 +1387,8 @@
 - 合并：《连续语音控制与回退》与《离线语音部署与回退》→ `docs/语音入口与回退.md`（当前入口在前，历史部署在后）。改名：`跌倒检测优化20261009.md` → `跌倒检测评估记录.md`，与《跌倒检测整体逻辑》互链。《重拍视频要求20261010》并入原 10-08 安排的交付格式与“能与不能证明”（§9），不再依赖已归档文档。
 - 改写 AGENTS.md（168→69 行：协作约定、项目概况、当前状态、C/B/云台/语音/CI 约定）、README（C 为主线、当前状态表、入口、目录与文档索引；去掉重复的 V5.1 行和“未配置远端”）、architecture、roadmap（C1 离线评估/C2 现场实测/C3 云台）、development；更新 vendor_inventory、人体跟随感知方案顶部、interfaces、perception_bringup/red_object_tracker README、deploy 与 foxglove README 的过时句子。
 - 全仓库相对链接与 `docs/` 路径引用已同步（含 pose.yaml 注释、label_recording/record_gemini_mac 注释；本文件历史条目只替换路径）。PR #17 审查意见修正：首轮链接检查漏扫厂商目录，`chassis_vendor/README.md` 仍指向旧路径，已改；归档文档中指向未入库 artifacts 图片的链接改为文字说明；README 与 foxglove/README 原沿用“start_robot.sh 不启动跟随/运动始终关闭”的过时说法，实为底盘+语音+经 motion_guard 的自动跟随（MOTION_ENABLED、auto-arm，不启 N10P），已改正并写入 AGENTS 约定。扩展后的链接检查（含厂商目录）除一处外部 GitHub 路径外全部有效；`check_project.py` 结构检查、录像工具 22 项测试、pose.yaml 解析和 `git diff --check` 通过。仅文档与注释改动，未改代码逻辑、未部署。
+
+## 2026-10-12：云端拍照任务 P0 / 分支起点
+
+- 从 main@62a7c59 创建 codex/cloud-capture-tasks；原样登记用户提供的执行方案。只做本地提交，不 push、不 SSH、不改车端服务。
+- 本机为 x86_64 / Ubuntu 22.04 / ROS 2 Humble；colcon、usb_cam、image_publisher、v4l-utils 已安装，无 /dev/video*。软件联调使用隔离域 187/190 + ROS_LOCALHOST_ONLY=1；真实 Gemini 相机与扬声器验收待设备到位。
