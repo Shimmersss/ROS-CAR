@@ -44,7 +44,8 @@ setsid ros2 launch astra_camera gemini.launch.xml camera_name:=camera \
   depth_width:=640 depth_height:=400 depth_fps:=30 &
 PIDS+=("$!")
 setsid ros2 run yolo_person_tracker gemini_registration --ros-args \
-  -p calibration_file:="$GEMINI_CALIBRATION" -p expected_serial:="$GEMINI_SERIAL" &
+  -p calibration_file:="$GEMINI_CALIBRATION" -p expected_serial:="$GEMINI_SERIAL" \
+  -p output_depth_encoding:="${GEMINI_DEPTH_ENCODING:-32FC1}" &
 PIDS+=("$!")
 wait -n "${PIDS[@]}" || true
 exit 1

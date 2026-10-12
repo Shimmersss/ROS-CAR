@@ -80,3 +80,17 @@ class UntrackedSelectionTest(unittest.TestCase):
         self.assertTrue(selection.lock(now=1.01)[0])
         selection.update([Detection(7, (150, 20, 190, 120), .8)], 200, 1.2)
         self.assertEqual(selection.target_id, (0, 1))
+
+
+class EvidenceHandoverTests(unittest.TestCase):
+    def test_nearest_reacquire_can_be_disabled_and_handover_is_explicit(self):
+        from types import SimpleNamespace as NS
+        sel = Selection(hold_s=0., reacquire_s=1., nearest_reacquire=False)
+        sel.update([NS(track_id=7, box=(10, 10, 50, 90))], 100, 1.)
+        sel.lock(now=1.)
+        sel.update([NS(track_id=8, box=(12, 10, 52, 90))], 100, 1.1)
+        self.assertEqual(sel.target_id, (0, 7))  # no automatic nearest-box switch
+        self.assertFalse(sel.handover(9, 1.1))  # unknown candidate
+        self.assertTrue(sel.handover(8, 1.1))
+        self.assertEqual(sel.target_id, (0, 8)); self.assertEqual(sel.selected(now=1.1).track_id, 8)
+        sel.release(); self.assertFalse(sel.handover(8, 1.2))

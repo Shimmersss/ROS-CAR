@@ -61,19 +61,20 @@ def main():
      detections=[Detection(int(q['id'].split(':')[1]) if q['id'] is not None else None,tuple(q['box']),q['confidence'],tuple(map(tuple,q['keypoints']))) for q in cached['people']];ms=cached['inference_ms']
     people=[]
     observations={};qualities={};identities=[]
-    proxies=[NS(box=d.box,confidence=d.confidence,keypoints_2d=[NS(x=x,y=y) for x,y,c in d.keypoints],keypoint_confidences=[c for x,y,c in d.keypoints]) for d in detections]
+    deps=[fuse_depth(aligned,d.box,d.keypoints,intr,other_boxes=[x.box for n,x in enumerate(detections) if n!=index]) for index,d in enumerate(detections)]
+    proxies=[NS(box=d.box,confidence=d.confidence,keypoints_2d=[NS(x=x,y=y) for x,y,c in d.keypoints],keypoint_confidences=[c for x,y,c in d.keypoints],keypoints_3d=[NS(x=float(j[0]),y=float(j[1]),z=float(j[2])) for j in dep.joints],keypoints_3d_valid=list(np.isfinite(dep.joints).all(axis=1))) for d,dep in zip(detections,deps)]
     if reid is not None:
      for d,proxy in zip(detections,proxies):
       if d.track_id is None:continue
       ident=f'{epoch}:{d.track_id}'
-      crop,quality=appearance_crop(image,proxy,[p for d,p in zip(detections,proxies) if d.track_id is not None],min_height=reid_values.get('min_crop_height',80),min_width=reid_values.get('min_crop_width',32),blur_min=reid_values.get('blur_min',20.))
+      crop,quality=appearance_crop(image,proxy,[p for d,p in zip(detections,proxies) if d.track_id is not None],min_height=reid_values.get('min_crop_height',80),min_width=reid_values.get('min_crop_width',32),blur_min=reid_values.get('blur_min',20.),mask_overlap=reid_values.get('mask_overlap',False))
       qualities[ident]=quality
       observations[ident]=reid.extract([crop])[0] if crop is not None else None
-     identities=manager.update(stamp,observations)
+     identities=manager.update(stamp,observations,{k for k,v in qualities.items() if v=='overlapping people'})
     for index,d in enumerate(detections):
      ident=f'{epoch}:{d.track_id}' if d.track_id is not None else None
      state,phase,reason=tracker.update(ident,stamp,d.box,d.keypoints) if ident is not None else (0,0,'untracked')
-     dep=fuse_depth(aligned,d.box,d.keypoints,intr,other_boxes=[x.box for n,x in enumerate(detections) if n!=index])
+     dep=deps[index]
      pts,valid=points2d(d.keypoints);jvalid=np.isfinite(dep.joints).all(axis=1)
      person=dict(id=ident,confidence=d.confidence,box=d.box,keypoints=d.keypoints,state=LABELS[state],phase=phase,reason=reason,depth_source=dep.source,depth_reason=dep.reason,target=dep.target,valid_joints=int(jvalid.sum()),joints3d=[[float(v) if np.isfinite(v) else None for v in point] for point in dep.joints],complete_torso=bool(jvalid[[5,6,11,12]].all()),plausible_torso=bool(plausible_torso3d(dep.joints)),reid_quality=qualities.get(ident,'not evaluated'))
      people.append(person);x1,y1,x2,y2=map(int,d.box);cv2.rectangle(image,(x1,y1),(x2,y2),(30,220,50),2)

@@ -12,14 +12,14 @@ from sensor_msgs.msg import Image, CameraInfo
 from yolo_person_tracker.gemini_registration import GeminiRegistration
 
 
-def main():
+def main(encoding='32FC1'):
     rclpy.init()
     with tempfile.TemporaryDirectory() as folder:
         intrinsic=dict(width=4,height=3,fx=2.,fy=2.,cx=1.5,cy=1.)
         data=dict(serial='synthetic-fixture',color_intrinsic=intrinsic,depth_intrinsic=intrinsic,
                   color_distortion=[0.]*8,depth_distortion=[0.]*8,depth_to_color_rotation=np.eye(3).reshape(-1).tolist(),depth_to_color_translation_mm=[0.]*3)
         path=Path(folder)/'calibration.json';path.write_text(json.dumps(data))
-        node=GeminiRegistration(parameter_overrides=[Parameter('calibration_file',value=str(path)),Parameter('expected_serial',value=data['serial'])])
+        node=GeminiRegistration(parameter_overrides=[Parameter('calibration_file',value=str(path)),Parameter('expected_serial',value=data['serial']),Parameter('output_depth_encoding',value=encoding)])
         ex=SingleThreadedExecutor();ex.add_node(node)
         colors=[];depths=[];infos=[]
         node.create_subscription(Image,'/camera/color/image_rect',colors.append,10)
@@ -41,13 +41,15 @@ def main():
             assert colors[-1].header==c.header
             assert depths[-1].header.stamp==d.header.stamp and depths[-1].header.frame_id==c.header.frame_id
             assert infos[-1].p[0]==2. and infos[-1].p[5]==2. and infos[-1].width==4
-            np.testing.assert_allclose(node.bridge.imgmsg_to_cv2(depths[-1]),2.)
+            assert depths[-1].encoding==encoding
+            np.testing.assert_allclose(node.bridge.imgmsg_to_cv2(depths[-1]),2000 if encoding=='16UC1' else 2.)
             count=len(depths)
             send(bad_frame=True);send(old=True);send(bad_size=True)
             assert len(depths)==count
             send();assert len(depths)>count
-            print('PASS Gemini ROS explicit projection, metre units, original timestamps, native-frame/age/size rejection (synthetic)')
+            print(f'PASS Gemini ROS explicit projection, {encoding} units, original timestamps, native-frame/age/size rejection (synthetic)')
         finally:ex.shutdown();node.destroy_node();rclpy.shutdown()
 
 
-if __name__=='__main__':main()
+if __name__=='__main__':
+    for encoding in ('32FC1', '16UC1'): main(encoding)

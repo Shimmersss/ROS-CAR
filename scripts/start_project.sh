@@ -9,6 +9,7 @@ export PERCEPTION_ROUTE="${PERCEPTION_ROUTE:-b}"
 case "$PERCEPTION_ROUTE" in
   b) camera_script=run_astra_camera.sh; model_name=yolo26s; layout=b-radar-layout.json ;;
   c) camera_script=run_gemini_camera.sh; model_name=yolo26s-pose; layout=c-layout.json
+     export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
      if [[ "${1:-}" != --help && "${1:-}" != -h ]]; then
        : "${GEMINI_SERIAL:?C 需要 GEMINI_SERIAL}"
        : "${GEMINI_CALIBRATION:?C 需要 GEMINI_CALIBRATION}"
@@ -38,6 +39,10 @@ else
   TONGUE_CAMERA_PROFILE="${TONGUE_CAMERA_PROFILE:-astra_rgb_tongue_v1}"
 fi
 MOTION_ENABLED="${MOTION_ENABLED:-false}"
+# Follow entry: auto-arm and target auto-recover default on only when motion is enabled.
+FOLLOW_AUTO_ARM="${FOLLOW_AUTO_ARM:-$MOTION_ENABLED}"
+FOLLOW_TARGET_AUTO_RECOVER="${FOLLOW_TARGET_AUTO_RECOVER:-$MOTION_ENABLED}"
+FOLLOW_EMERGENCY_KWS_REQUIRED="${FOLLOW_EMERGENCY_KWS_REQUIRED:-true}"
 export MODEL_PATH="${MODEL_PATH:-$ROOT/models/weights/$model_name-fp16.engine}"
 YOLO_PYTHON="${YOLO_PYTHON:-$ROOT/.venv-yolo/bin/python3}"
 case "${1:-}" in
@@ -47,12 +52,18 @@ case "${1:-}" in
     默认启动 B；PERCEPTION_ROUTE=c 或 scripts/start_c.sh 启动 Gemini/Pose。
 C 必须指定 GEMINI_SERIAL 和 GEMINI_CALIBRATION；相机/配准实测后才设 DEPTH_REGISTERED=true。
 WITH_VOICE=false 关闭语音；VOICE_BACKEND=offline，ASR_BACKEND=xfyun 可回退云端识别。
+启用语音及 TTS 时同时提供 /voice/say，复用唯一 TTS 队列。
 WITH_CHASSIS=true 开启底盘串口收发。
 WITH_TONGUE_MODE=true 将舌苔流程接入现有语音，要求 WITH_VOICE/WITH_FOLLOWER=true。
 TONGUE_SAFETY_PROFILE=robot 要求底盘回传；bench 仅允许运动关闭的台架。
 TONGUE_CAMERA_TOPIC 默认原始 RGB；C 的拍照元数据默认为 gemini_rgb_tongue_v1。
 底盘要求 SERIAL_PORT 和 CAR_MODE；WITH_FOLLOWER=true 时跟随器通过 motion_guard 受保护输出。
 DEPTH_REGISTERED=true 使用驱动当前 RGB-D 配准；坐标精度仍须现场量距验证。
+FOLLOW_TARGET_DISTANCE_M 跟随距离（米，默认 1.0，按相机测得水平距离）；
+FOLLOW_TARGET_GRACE_S 目标短时缺失宽限（默认 0.6）；FOLLOW_TARGET_AUTO_RECOVER=false
+关闭"目标恢复后自动续跟"；FOLLOW_AUTO_ARM=false 改为显式 /control/authorize。
+两者默认随 MOTION_ENABLED；STOP 回到 IDLE，自动授权不会撤销停车。
+FOLLOW_EMERGENCY_KWS_REQUIRED（默认 true）要求语音急停心跳；无语音时须显式 false。
 MODEL_PATH、YOLO_PYTHON、YOLO_DEVICE 可覆盖模型和推理环境。
 Ctrl-C 或任一子模块退出时停止本入口启动的全部模块。
 HELP
@@ -61,7 +72,7 @@ HELP
   *) echo '未知参数，使用 --help 查看用法。' >&2; exit 2;;
 esac
 set -u
-for value in "$WITH_VOICE" "$WITH_CHASSIS" "$WITH_RADAR" "$WITH_FOLLOWER" "$WITH_TONGUE_MODE" "$MOTION_ENABLED" "${DEPTH_REGISTERED:-false}" "$AUTO_LOCK_SINGLE"; do
+for value in "$WITH_VOICE" "$WITH_CHASSIS" "$WITH_RADAR" "$WITH_FOLLOWER" "$WITH_TONGUE_MODE" "$MOTION_ENABLED" "${DEPTH_REGISTERED:-false}" "$AUTO_LOCK_SINGLE" "$FOLLOW_AUTO_ARM" "$FOLLOW_TARGET_AUTO_RECOVER" "$FOLLOW_EMERGENCY_KWS_REQUIRED"; do
   [[ "$value" == true || "$value" == false ]] || { echo '开关必须为 true/false' >&2; exit 2; }
 done
 if [[ "$WITH_TONGUE_MODE" == true ]]; then
@@ -73,6 +84,13 @@ if [[ "$WITH_TONGUE_MODE" == true ]]; then
     bench) [[ "$MOTION_ENABLED" == false ]] || { echo 'bench 舌苔模式要求 MOTION_ENABLED=false。' >&2; exit 2; };;
     *) echo 'TONGUE_SAFETY_PROFILE 必须为 robot 或 bench。' >&2; exit 2;;
   esac
+fi
+[[ "${FOLLOW_TARGET_DISTANCE_M:-1.0}" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo 'FOLLOW_TARGET_DISTANCE_M 必须为非负米数' >&2; exit 2; }
+if [[ "$WITH_FOLLOWER" == true && ( "$FOLLOW_AUTO_ARM" == true || "$FOLLOW_TARGET_AUTO_RECOVER" == true ) && "$MOTION_ENABLED" != true ]]; then
+  echo '自动授权/自动续跟只能在 MOTION_ENABLED=true 时开启。' >&2; exit 2
+fi
+if [[ "$WITH_FOLLOWER" == true && "$FOLLOW_EMERGENCY_KWS_REQUIRED" == true && "$WITH_VOICE" != true ]]; then
+  echo 'guard 默认要求语音急停心跳：请 WITH_VOICE=true，或显式 FOLLOW_EMERGENCY_KWS_REQUIRED=false 并由现场人员手动急停。' >&2; exit 2
 fi
 [[ -f "$MODEL_PATH" && -x "$YOLO_PYTHON" ]] || { echo "缺少 $PERCEPTION_ROUTE 模型或 Python 环境。" >&2; exit 1; }
 for file in /opt/ros/humble/setup.bash /home/wheeltec/wheeltec_ros2/install/setup.bash \
@@ -133,11 +151,12 @@ if [[ "$WITH_CHASSIS" == true ]]; then
   # shellcheck disable=SC1091
   source "$ROOT/ros2_ws/chassis_install/setup.bash"
 fi
-set -u
 if [[ "$PERCEPTION_ROUTE" == c ]]; then
+  # Colcon setup scripts read unset variables (COLCON_TRACE); source before set -u.
   # shellcheck disable=SC1091
   source "$ROOT/ros2_ws/gemini_driver/install/setup.bash"
 fi
+set -u
 packages=(astra_camera yolo_person_tracker perception_bringup)
 [[ "$WITH_TONGUE_MODE" == true ]] && packages+=(execution_mode_interfaces execution_mode_manager tongue_mode)
 [[ "$WITH_RADAR" == true ]] && packages+=(lslidar_driver)
@@ -146,6 +165,9 @@ for package in "${packages[@]}"; do
 done
 if [[ "$WITH_VOICE" == true && "${VOICE_BACKEND:-offline}" == offline ]]; then
   ros2 pkg prefix offline_voice >/dev/null || { echo '未构建 ROS 包：offline_voice' >&2; exit 1; }
+  if [[ "${VOICE_TTS_ENABLED:-true}" == true ]]; then
+    ros2 pkg prefix roscar_api >/dev/null || { echo '未构建 ROS 包：roscar_api' >&2; exit 1; }
+  fi
 fi
 if [[ "$WITH_TONGUE_MODE" == true ]]; then
   tongue_catalog="${TONGUE_CATALOG:-$ROOT/install/execution_mode_manager/share/execution_mode_manager/config/modes.yaml}"
@@ -178,21 +200,27 @@ start_module() {
 start_module camera bash "$ROOT/scripts/$camera_script"
 start_module perception bash "$ROOT/scripts/run_b_radar_foxglove.sh"
 if [[ "$WITH_FOLLOWER" == true ]]; then
-  start_module follower bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch motion_guard follow.launch.py motion_enabled:='$MOTION_ENABLED' expected_source:=yolo target_frame:=camera_color_optical_frame radar_required:=false auto_arm:=false geometry_confirmed:='${FOLLOW_GEOMETRY_CONFIRMED:-false}' mount_calibrated:='${FOLLOW_MOUNT_CALIBRATED:-false}' stopping_model_confirmed:='${FOLLOW_STOPPING_MODEL_CONFIRMED:-false}' target_distance_m:=1.0"
+  start_module follower bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch motion_guard follow.launch.py motion_enabled:='$MOTION_ENABLED' expected_source:=yolo target_frame:=camera_color_optical_frame radar_required:=false auto_arm:='$FOLLOW_AUTO_ARM' target_grace_s:='${FOLLOW_TARGET_GRACE_S:-0.6}' target_auto_recover:='$FOLLOW_TARGET_AUTO_RECOVER' emergency_kws_required:='$FOLLOW_EMERGENCY_KWS_REQUIRED' geometry_confirmed:='${FOLLOW_GEOMETRY_CONFIRMED:-false}' mount_calibrated:='${FOLLOW_MOUNT_CALIBRATED:-false}' stopping_model_confirmed:='${FOLLOW_STOPPING_MODEL_CONFIRMED:-false}' target_distance_m:='${FOLLOW_TARGET_DISTANCE_M:-1.0}'"
 fi
 if [[ "$WITH_CHASSIS" == true ]]; then
   start_module chassis bash "$ROOT/scripts/run_chassis_io.sh"
 fi
 if [[ "$WITH_VOICE" == true ]]; then
   voice_args=()
+  if [[ "${VOICE_TTS_ENABLED:-true}" == true ]]; then
+    voice_args+=(enable_speech_action:=true)
+  fi
   if [[ "$WITH_TONGUE_MODE" == true ]]; then
     start_module tongue bash "$ROOT/scripts/run_tongue_mode.sh" \
       catalog:="$tongue_catalog" safety_profile:="$TONGUE_SAFETY_PROFILE" \
       camera_topic:="$TONGUE_CAMERA_TOPIC" camera_profile:="$TONGUE_CAMERA_PROFILE" \
       server_url:="${TONGUE_SERVER_URL:-http://172.19.128.171:8096}"
-    voice_args+=(execution_modes_config:="$tongue_catalog" enable_speech_action:=true)
+    voice_args+=(execution_modes_config:="$tongue_catalog")
   fi
   start_module voice bash "$ROOT/scripts/run_voice_assistant.sh" "${voice_args[@]}"
+  if [[ "${VOICE_TTS_ENABLED:-true}" == true ]]; then
+    start_module speech_api bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch roscar_api speech_api.launch.py"
+  fi
 fi
 printf '%s 感知已派发；N10P=%s，底盘串口=%s，直接跟随=%s，语音=%s，配准确认=%s\n' \
   "$PERCEPTION_ROUTE" "${WITH_RADAR:-false}" \

@@ -27,7 +27,11 @@ class Entrypoints(unittest.TestCase):
 
     def test_configuration_and_layout(self):
         layout=json.loads((ROOT/'foxglove/c-layout.json').read_text())
-        self.assertEqual(layout['configById']['RawMessages!persons']['topicPath'],'/perception/person_states')
+        panels=layout['configById']
+        self.assertEqual(panels['Image!detections']['topic'],'/perception/detections_preview/compressed')
+        self.assertEqual(panels['RawMessages!target']['topicPath'],'/perception/target_state.detail')
+        self.assertEqual(panels['RawMessages!guard']['topicPath'],'/control/state.data')
+        self.assertEqual(panels['Plot!cmd']['paths'][0]['value'],'/cmd_vel.linear.x')
         calibration=json.loads((ROOT/'ros2_ws/src/perception_bringup/config/gemini_AY2755200PW.json').read_text())
         self.assertFalse(calibration['registration_verified'])
         self.assertEqual(calibration['depth_intrinsic']['height'],400)

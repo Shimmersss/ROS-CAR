@@ -53,6 +53,9 @@ setsid ros2 launch perception_bringup perception.launch.py \
   reid_lock_enabled:="${REID_LOCK_ENABLED:-false}" \
   reid_model_path:="${REID_MODEL_PATH:-$ROOT/models/weights/osnet_x0_25_msmt17.onnx}" \
   reid_config:="${REID_CONFIG:-$ROOT/ros2_ws/src/perception_bringup/config/reid.yaml}" \
+  sot_enabled:="${SOT_ENABLED:-false}" \
+  reid_reacquire_enabled:="${REID_REACQUIRE_ENABLED:-false}" \
+  sot_model_path:="${SOT_MODEL_PATH:-$ROOT/models/weights/object_tracking_vittrack_2023sep.onnx}" \
   pose_config:="${POSE_CONFIG:-$ROOT/ros2_ws/src/perception_bringup/config/pose.yaml}" \
   camera_mount_config:="${CAMERA_MOUNT_CONFIG:-$ROOT/ros2_ws/src/perception_bringup/config/camera_mount.yaml}" \
   kalman_measurement_std_m:="${KALMAN_MEASUREMENT_STD_M:-0.08}" \

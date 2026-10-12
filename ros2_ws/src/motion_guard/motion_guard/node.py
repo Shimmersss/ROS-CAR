@@ -1,4 +1,14 @@
-"""Only this node publishes final velocity. Faults require explicit re-arming."""
+"""Only this node publishes final velocity. Faults require explicit re-arming.
+
+Follow-only options for an unattended follow entry (all default off):
+- command_mode:=FOLLOW selects FOLLOW at startup (a persisted ESTOP still keeps it IDLE).
+- auto_arm arms from DISARMED in FOLLOW once every check passes, like the Route A follower.
+  STOP returns to IDLE, so a stop is never undone by auto_arm.
+- target_grace_s (<= 1 s): a briefly invalid or late target keeps the vehicle armed while the last
+  command decays to zero; a longer gap is a FAULT. Zero output when radar_required.
+- target_auto_recover: a FAULT caused only by the target re-arms once every check passes again.
+ESTOP, emergency-channel and every other fault stay latched and need the explicit reset.
+"""
 import json
 import math
 import os
@@ -26,6 +36,8 @@ from .safety import SafetyConfig, clearance
 from .authority import MotionAuthority, AuthorityError
 from .task_hold import StationaryLease
 
+TARGET_REASONS = ('target_timeout', 'target_timestamp', 'target_invalid')
+
 
 def seconds(stamp):
     return stamp.sec+stamp.nanosec*1e-9
@@ -38,7 +50,8 @@ class MotionGuard(Node):
                         base_frame='base_link', scan_frame='laser', expected_source='astra',
                         target_frame='astra_depth_optical_frame', request_topic='/control/cmd_vel_request',
                         scan_topic='/scan', target_topic='/perception/target_state',
-                        radar_required=False, auto_arm=False, emergency_kws_required=True,
+                        radar_required=False, auto_arm=False, target_grace_s=0., target_auto_recover=False,
+                        emergency_kws_required=True,
                         emergency_health_timeout_s=0.5, allow_legacy_arm=False, estop_latch_path=str(Path(
                             os.environ.get('XDG_STATE_HOME', str(Path.home() / '.local/state'))) / 'roscar/estop.json'))
         defaults.update(vars(SafetyConfig()))
@@ -54,13 +67,24 @@ class MotionGuard(Node):
             raise ValueError('Use distinct laser/base frames and a calibrated mount')
         if self.cfg['request_topic'] in ('/chassis/cmd_vel', '/cmd_vel'):
             raise ValueError('Follow request topic must be distinct from external and output topics')
-        if self.cfg['auto_arm']:
-            raise ValueError('auto_arm is forbidden; use epoch-bound /control/authorize')
-        if self.cfg['command_mode'] != 'IDLE':
-            raise ValueError('Startup command_mode must be IDLE')
+        grace = self.cfg['target_grace_s']
+        if isinstance(grace, bool) or not isinstance(grace, (int, float)) or not 0 <= grace <= 1.:
+            raise ValueError('target_grace_s must be within [0, 1] seconds')
+        if self.cfg['command_mode'] not in ('IDLE', 'FOLLOW'):
+            raise ValueError('Startup command_mode must be IDLE or FOLLOW')
+        follow_only = ('auto_arm', 'target_auto_recover')
+        if any(self.cfg[k] for k in follow_only) and (self.cfg['command_mode'] != 'FOLLOW' or not self.cfg['motion_enabled']):
+            raise ValueError('auto_arm/target_auto_recover require command_mode=FOLLOW and motion_enabled')
         if not math.isfinite(self.cfg['emergency_health_timeout_s']) or not 0.1 <= self.cfg['emergency_health_timeout_s'] <= 0.5:
             raise ValueError('Emergency health timeout must be 0.1..0.5 seconds')
         self.authority = MotionAuthority(self.cfg['estop_latch_path'])
+        if self.cfg['command_mode'] == 'FOLLOW':
+            try:
+                self.authority.select_mode('FOLLOW')
+            except AuthorityError as exc:  # persisted ESTOP: stay IDLE until an explicit reset
+                self.get_logger().warning('Startup FOLLOW not selected: '+str(exc))
+        self.last_ok_at = -math.inf  # last tick that was armed and ready (monotonic)
+        self.last_cmd = (0., 0.)
         self._emergency_ok = False
         self._emergency_at = -math.inf
         self.mode_since = self.get_clock().now().nanoseconds*1e-9
@@ -135,6 +159,7 @@ class MotionGuard(Node):
         self._emergency_at = time.monotonic()
         if not self._emergency_ok and self.authority.armed:
             self.authority.fault('emergency_channel_unhealthy')
+            self.last_fault = 'emergency_channel_unhealthy'
             self.publish(0., 0.)
 
     def on_estop(self, message):
@@ -328,11 +353,33 @@ class MotionGuard(Node):
             ready, reason, v, w = self.check()
         except Exception as exc:
             ready, reason, v, w = False, 'guard_exception:' + type(exc).__name__, 0., 0.
-        if self.authority.armed and not ready:
+        now = time.monotonic()
+        follow = self.command_mode == 'FOLLOW' and self.cfg['motion_enabled']
+        if follow and ready and self.cfg['auto_arm'] and self.authority.state == 'DISARMED':
+            self.authority.arm(True, True)
+            self.reason, self.last_ok_at, self.last_cmd = 'auto_armed', -math.inf, (0., 0.)
+        if (follow and ready and self.cfg['target_auto_recover'] and self.authority.state == 'FAULT'
+                and self.authority.reason in TARGET_REASONS):
+            # Only a target loss recovers by itself; gate on the authority's current fault, not a past one.
+            # The fresh target passed every check this tick.
+            self.authority.recover_follow()
+            self.last_ok_at, self.last_cmd = -math.inf, (0., 0.)
+            self.get_logger().info('Target valid again after '+self.last_fault+'; re-armed')
+        grace = self.cfg['target_grace_s']
+        in_grace = (self.authority.armed and not ready and self.command_mode == 'FOLLOW' and grace > 0
+                    and reason in TARGET_REASONS and 0 <= now-self.last_ok_at <= grace)
+        if in_grace:
+            # Brief target gap: stay armed and decay the last command; never extend it.
+            k = 0. if self.cfg['radar_required'] else max(0., 1.-(now-self.last_ok_at)/grace)
+            v, w = self.last_cmd[0]*k, self.last_cmd[1]*k
+            reason = 'target_grace:'+reason
+        elif self.authority.armed and not ready:
             self.authority.fault(reason)
             self.last_fault = reason
+        if self.authority.armed and ready:
+            self.last_ok_at, self.last_cmd = now, (v, w)
         self.reason = reason
-        allowed = self.authority.armed and ready and self.cfg['motion_enabled']
+        allowed = self.authority.armed and (ready or in_grace) and self.cfg['motion_enabled']
         self.publish(v if allowed else 0., w if allowed else 0.)
         self.status_pub.publish(String(data=json.dumps(dict(
             mode=self.mode, authority_state=self.authority.state,
@@ -350,11 +397,14 @@ class MotionGuard(Node):
 
 
 def main(args=None):
+    stopping = []
+
     def terminate(signum, frame):
         # ros2 launch may forward a second signal after the process group received
         # the first one. Do not interrupt final zero publication or ROS cleanup.
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        stopping.append(signum)
         raise KeyboardInterrupt
     signal.signal(signal.SIGINT, terminate)
     signal.signal(signal.SIGTERM, terminate)
@@ -363,6 +413,11 @@ def main(args=None):
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
+    except RuntimeError:
+        # A stop signal landing inside rclpy's take_message surfaces as RuntimeError, not
+        # KeyboardInterrupt. Treat it as the requested stop; any other RuntimeError is real.
+        if not stopping:
+            raise
     finally:
         node.destroy_node()
         if rclpy.ok(): rclpy.shutdown()

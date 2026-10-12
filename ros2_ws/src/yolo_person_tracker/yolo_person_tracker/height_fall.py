@@ -45,16 +45,25 @@ class HeightFallConfig:
     # (someone leaving the view past the camera shows only a leg, 2026-10-10 A5); its top still
     # counts as measured, since lying people often reach the side edge too. 0 = off.
     side_edge_px: float = 0.
+    # continue_s: after the detector loses a person who is falling or down (2026-10-10: lying
+    # feet-first towards a low camera, 3-5 s without any box), the caller keeps measuring the top
+    # inside a continuation box (the last box, or a single-object tracker box) for up to this long
+    # after the last detection; see continuable(). Only a top between continue_min_m and
+    # low_max_m (a lying body) counts; anything else is unmeasured, since a tracker left on the
+    # background still scores (2026-10-10 exits: 0.4-0.6 on lockers and walls). 0 = off.
+    continue_s: float = 0.
+    continue_min_m: float = .12
 
     def __post_init__(self):
         for name, value in vars(self).items():
-            if name in ('lost_hold_s', 'sit_hold_s', 'side_edge_px') and math.isfinite(value) and value >= 0:
+            if name in ('lost_hold_s', 'sit_hold_s', 'side_edge_px', 'continue_s') and math.isfinite(value) and value >= 0:
                 continue
             if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f'height fall {name} must be finite and positive')
         if (not self.low_max_m < self.hint_upright_min_m <= self.upright_min_m or not self.top_percentile <= 100
-                or not self.head_percentile <= 100):
-            raise ValueError('height fall requires low_max_m < hint_upright_min_m <= upright_min_m and percentile <= 100')
+                or not self.head_percentile <= 100 or not self.continue_min_m < self.low_max_m):
+            raise ValueError('height fall requires continue_min_m < low_max_m < hint_upright_min_m <= upright_min_m '
+                             'and percentile <= 100')
 
 
 def body_heights(depth_m, box, intrinsics, up, camera_height_m, config=None, extent=False, head=False):
@@ -142,7 +151,7 @@ class HeightFallTracker:
             state['stamp'] = stamp-1e-6
         if state is None or stamp <= state['stamp'] or stamp-state['stamp'] > self.cfg.max_gap_s*4:
             state = dict(stamp=stamp, first=stamp, upright=deque(), baseline=None, pending=None, fallen=False,
-                         recovery=None, drop=None)
+                         recovery=None, drop=None, seen=stamp, measured=None, top=None)
             self.tracks[identity] = state
         return state
 
@@ -199,7 +208,45 @@ class HeightFallTracker:
                 moved[news[0]] = old
         return moved
 
-    def update(self, identity, stamp, top, upright_hint=False, posture_upright=False, clipped=False, side=False):
+    def continuable(self, stamp, present):
+        """Identities to measure in a continuation box this frame (continue_s > 0).
+
+        Missing from present (the detector's identities), detected within continue_s and measured
+        within 4 max_gap_s, and either down (suspected, confirmed, or held after a drop) or caught
+        mid-drop: below upright_min_m and half drop_min_m under a live baseline. A track the
+        handover moved to a new identity no longer exists under its old one."""
+        cfg, out = self.cfg, []
+        if cfg.continue_s <= 0:
+            return out
+        for identity, state in self.tracks.items():
+            if identity in present or stamp <= state['stamp'] or stamp-state['seen'] > cfg.continue_s:
+                continue
+            if state['measured'] is None or stamp-state['measured'] > cfg.max_gap_s*4:
+                continue
+            down = state['pending'] is not None or state['fallen'] or state['drop'] is not None
+            top, baseline = state['top'], state['baseline']
+            falling = (baseline is not None and top is not None and top < cfg.upright_min_m
+                       and baseline[1]-top >= cfg.drop_min_m/2)
+            if down or falling:
+                out.append(identity)
+        return out
+
+    def yields(self, identity, box, present):
+        """End the continuation for good when a detected box covers half of the continuation box:
+        the detector sees someone there again, and only handover() may carry the state over
+        (2026-10-09 A2a: a person getting up kept the old lying identity alarmed for 2 s)."""
+        x1, y1, x2, y2 = map(float, box)
+        area = max(x2-x1, 0.)*max(y2-y1, 0.)
+        for other in present.values():
+            ox1, oy1, ox2, oy2 = map(float, other)
+            inter = max(0., min(x2, ox2)-max(x1, ox1))*max(0., min(y2, oy2)-max(y1, oy1))
+            if area > 0 and inter >= .5*min(area, max(ox2-ox1, 0.)*max(oy2-oy1, 0.)):
+                self.tracks[identity]['seen'] = -math.inf
+                return True
+        return False
+
+    def update(self, identity, stamp, top, upright_hint=False, posture_upright=False, clipped=False, side=False,
+               continued=False):
         """top: body top height in metres, or None when unmeasured. Returns (phase, reason).
 
         upright_hint: the skeleton shows standing or sitting/crouching in a tall box this frame
@@ -207,10 +254,20 @@ class HeightFallTracker:
         suspected fall. posture_upright: the skeleton says standing (any box shape); a top above
         hint_upright_min_m then counts as upright, and above low_max_m as recovery. clipped: the
         body reaches the image top (clipped_at_top); a top below upright_min_m is then unmeasured.
-        side: the box reaches a side edge (at_side_edge); it may not start a suspected fall."""
+        side: the box reaches a side edge (at_side_edge); it may not start a suspected fall.
+        continued: top was measured in a continuation box (see continuable()); only a lying-body
+        top counts, and the frame does not count as a detection."""
         cfg, state = self.cfg, self._state(identity, stamp)
         if clipped and top is not None and top < cfg.upright_min_m:
             top = None
+        if continued:
+            upright_hint = posture_upright = False
+            if top is not None and not cfg.continue_min_m <= top <= cfg.low_max_m:
+                top = None
+        else:
+            state['seen'] = stamp
+        if top is not None and math.isfinite(top):
+            state['measured'], state['top'] = stamp, float(top)
         gap = stamp-state['stamp']
         state['stamp'] = stamp
         if top is None or not math.isfinite(top):

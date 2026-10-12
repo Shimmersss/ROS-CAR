@@ -91,7 +91,7 @@ base 话题的 `header.frame_id=base_link`（可配置），position 为 X 前�
 未标定时默认不发布安装 TF，占位单位矩阵仅存于 camera_mount.yaml；原光学话题、检测图、锁定服务与 Marker 继续可用。**旧 person_follower 使用光学坐标语义，不能直接接 base 话题。** TF 节点仅接受真实 yolo 来源，不将 demo 当实际校准观测。整个 TF 节点退出时，新话题消费者仍需自行检测断流。
 ## C 路线新增接口
 
-显式 `route:=yolo_pose` 使用 Pose 模型；继承原 `TargetState`（source 仍为 yolo）、检测框及锁定服务。新增 `/perception/person_states`（person_interfaces/PersonStateArray），采集时间和逐人轨迹、COCO17 2D/3D 关键点及有效位、姿态/跌倒阶段/原因；无效坐标 NaN。姿态枚举 0未知/1站立/2坐蹲/3躺卧/4跌倒，跌倒阶段 0无/1疑似/2确认。失效时 valid=false，人体列表为空。
+显式 `route:=yolo_pose` 使用 Pose 模型；继承原 `TargetState`（source 仍为 yolo）、检测框及锁定服务。新增 `/perception/person_states`（person_interfaces/PersonStateArray），采集时间和逐人轨迹、COCO17 2D/3D 关键点及有效位、姿态/跌倒阶段/原因；无效坐标 NaN。姿态枚举 0未知/1站立/2坐蹲/3躺卧/4跌倒，跌倒阶段 0无/1疑似/2确认。失效时 valid=false，人体列表为空。可选 `height_continue_s>0`（需 `height_fall_enabled`）时另发 `/perception/person_states_continued`（同类型）：倒地后被检测器丢失、仍在原位测身体顶的人，框为最后检出框、置信度 0、关键点无效，只携带跌倒阶段与原因；不进入 `person_states`，重新检出并交接后回到 `person_states`。`/perception/fall_alarm`（person_interfaces/FallAlarm）每帧汇总上述两个话题：同一 header，`stage` 为本帧最高跌倒阶段（0 无/1 疑似/2 确认），并给出对应 `track_id`、框、是否来自延续（`continued`）、疑似/确认人数和 `geometry_confirmed`（仅表示三维/高度几何的 `pose3d_gravity_confirmed` 与 `pose3d_ground_confirmed` 均已确认；它不是 stage 的总上限，二维路径在 `pose_upright_confirmed=true` 时即使本字段为 false 也可达到 2，下游不应据此丢弃确认）；同阶段优先取有检测的人。失效时 valid=false。延续中的人交接回真实检测时 stage 不回落，下游按 stage 上升沿提醒即可，不必自行合并两个话题。首版只发布状态，未接语音或运动。
 
 C 另提供独立单目地面定位（需确认安装外参和地面，默认未确认）：`/perception/person_ground_states`（PersonGroundArray，base 坐标接地点、`std_m`、`method`、真实测量龄，偏角左正）和锁定目标的 `/perception/target_state_ground`（TargetState，`source=yolo_ground`，不与 `yolo` 的相机光学目标混用）。
 

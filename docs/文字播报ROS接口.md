@@ -111,4 +111,6 @@ ros2 launch roscar_api speech_api.launch.py with_tts:=true
 
 电脑直接走 ROS 2 调用时，要安装/构建相同版本的 `roscar_interfaces` 和 `execution_mode_interfaces`，保持同一局域网、域 182、`ROS_LOCALHOST_ONLY=0`，并允许 DDS 发现通信。Windows 上没有 ROS 环境时，通过 SSH 在小车执行调用即可；Foxglove WebSocket 连接不能代替 ROS service 客户端。
 
+B/C 总入口 `scripts/start_project.sh` 在 `WITH_VOICE=true` 且 `VOICE_TTS_ENABLED=true`（默认）时也自动提供 `/voice/say`，复用同一个 TTS action；不要再叠加启动桥接或第二个 TTS。C 板端工作区使用 `/home/wheeltec/ROSCAR-c/install/setup.bash`，ROS 域必须与启动入口一致（现场调试使用 183）。
+
 整车语音链路正在运行时，播放仍会暂停普通 ASR、保持紧急关键词监听；独立 `with_tts:=true` 入口本身不启动录音或 KWS。正文不会进入运动解析，但扬声器声音可能被麦克风再次收录；包含“停止、停下、急停、别动”等词的播报可能触发紧急监听，现有声学漏检/回声限制仍需现场验证。
