@@ -1439,3 +1439,13 @@
 - 更新协议/实现验收文档，无新增文档。最小审查核对所有CloudClient生产路径、参数上下限/真实socket超时、过期优先级及finally通知/租约顺序；protected十包相对main仍零改动。不push、不SSH、不部署，模拟数据不作为实车或识别准确率验收。
 
 - 最终统一检查：整仓纯Python CI通过（capture_task 74项、录像工具22项；沿用原有ROS依赖排除口径）；结构21包/358个Python文件、shell语法、git diff --check main..HEAD及工作区通过。最终子集重建18包通过，日志final-build.log。无shellcheck可执行文件。所有联调子进程已清理，保护包diff为空。
+
+
+## 2026-10-13：云端拍照 ROS 服务门面
+
+### 分支与方案登记
+
+- 从已验收的codex/cloud-capture-tasks@08464e1新建codex/capture-ros-api，原样登记用户方案及README索引；基线分支不变。仅本地提交，不push、不SSH、不部署。
+- 已阅读方案规定的六份入口文档。复用capture_task两包，不增加包；保护十包、既有action和bridge保持不变。执行器只允许source白名单和X-Task-Source头两处增量。
+- 方案中的超时用例需分层：真实执行器的TTL会先于“TTL+speech_timeout+5”门面时限结束，因此慢上传首先验证failed；门面整体超时另用停滞action结果的故障注入验证，避免误报为真实执行器行为。
+- 最小审查：当前仅方案/索引/工作记录，git diff --check通过；后续编译与运行时证据单独记录。
