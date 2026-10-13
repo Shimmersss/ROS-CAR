@@ -12,6 +12,14 @@ class FollowControlTest(unittest.TestCase):
     def setUp(self):
         self.config = FollowConfig(target_distance_m=2.0, distance_deadband_m=0.15)
 
+    def test_faster_profile_response_and_limits(self):
+        c=FollowConfig(target_distance_m=1.3,max_linear_mps=.5,distance_gain=1.,bearing_gain=1.6)
+        self.assertAlmostEqual(compute_command(1.4,0.,True,c)[0],.1)
+        self.assertAlmostEqual(compute_command(2.,0.,True,c)[0],.5)
+        self.assertAlmostEqual(compute_command(1.4,.2,True,c)[1],-.32)
+        self.assertEqual(compute_command(2.,.7,True,c),(0.,-.5))
+        self.assertEqual(compute_command(2.,0.,False,c),(0.,0.))
+
     def test_default_thirty_centimetre_trigger(self):
         for distance in (.25, .3):
             self.assertEqual(compute_command(distance, 0., True), (0., 0.))

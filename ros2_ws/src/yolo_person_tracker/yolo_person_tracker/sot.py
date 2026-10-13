@@ -54,7 +54,14 @@ def hann2d(n=16):
 class _OnnxRuntime:
     def __init__(self, path):
         import onnxruntime
-        self.session = onnxruntime.InferenceSession(path, providers=['CPUExecutionProvider'])
+        # This small tracker shares the Jetson with pose, ASR and always-on KWS.
+        # ORT's default pool otherwise allocates/spins workers across all cores.
+        options = onnxruntime.SessionOptions()
+        options.intra_op_num_threads = 1
+        options.inter_op_num_threads = 1
+        options.add_session_config_entry('session.intra_op.allow_spinning', '0')
+        self.session = onnxruntime.InferenceSession(
+            path, sess_options=options, providers=['CPUExecutionProvider'])
 
     def __call__(self, template, search):
         return self.session.run(['output1', 'output2', 'output3'], {'template': template, 'search': search})

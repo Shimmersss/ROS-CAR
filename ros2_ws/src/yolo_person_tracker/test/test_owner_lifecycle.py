@@ -56,3 +56,29 @@ def test_release_clears_owner_and_pending_reid_evidence():
     selection.release()
     assert not selection.owner_id and not selection.searching and not selection.frames
     assert selection.last_evidence == 0
+
+
+def test_two_second_reset_preserves_original_five_second_deadline():
+    owner = OwnerLifecycle(5., 2.); owner.claim(); owner.update(False, 10.)
+    assert not owner.reset_continuity_due(11.999)
+    assert owner.reset_continuity_due(12.)
+    assert not owner.reset_continuity_due(12.1)
+    assert owner.state == 'LOST' and owner.lost_at == 10.
+    assert not owner.update(False, 14.999)
+    assert owner.update(True, 15.) and owner.event == 'expired'
+
+
+def test_return_cancels_both_deadlines_and_next_loss_starts_fresh():
+    owner = OwnerLifecycle(5., 2.); owner.claim(); owner.update(False, 10.)
+    assert not owner.update(True, 11.9)
+    assert not owner.reset_continuity_due(12.)
+    owner.update(False, 20.); assert owner.reset_continuity_due(22.)
+    assert not owner.update(True, 24.9) and owner.event == 'returned'
+    owner.update(False, 30.)
+    assert not owner.reset_continuity_due(31.99)
+    assert owner.reset_continuity_due(32.)
+
+
+@pytest.mark.parametrize('reset', [-1, math.nan, math.inf, 5., 6.])
+def test_invalid_continuity_deadline(reset):
+    with pytest.raises(ValueError): OwnerLifecycle(5., reset)

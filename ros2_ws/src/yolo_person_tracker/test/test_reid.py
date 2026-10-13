@@ -14,6 +14,16 @@ class ReIDTests(unittest.TestCase):
         for _ in range(3):r=self.frame({track:feature})
         self.assertEqual(r[0].state,'REGISTERED');return r[0].person_id
 
+    def test_forget_owner_removes_gallery_and_pending_links(self):
+        old=self.register();self.m.pin(old)
+        self.m.pending['0:99']=(old,1)
+        self.m.forget(old)
+        self.assertNotIn(old,self.m.galleries)
+        self.assertFalse(self.m.pinned or self.m.bindings or self.m.pending)
+        self.assertFalse(self.m.excluded or self.m.last_identity or self.m.swap_votes)
+        new=self.register('0:8')
+        self.assertNotEqual(old,new)
+
     def test_registration_needs_distinct_consistent_observations(self):
         self.assertEqual(self.frame({'0:7':A})[0].state,'PENDING')
         self.assertEqual(self.frame({'0:7':B})[0].state,'PENDING')

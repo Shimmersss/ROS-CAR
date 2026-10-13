@@ -27,4 +27,5 @@ done
 echo "== recording tools"
 "$PY" tests/test_recording_tools.py || status=1
 "$PY" tests/test_entry_paths.py || status=1
+"$PY" -m pytest -q -p no:cacheprovider tests/test_robot_cpu_layout.py || status=1
 exit $status

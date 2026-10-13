@@ -4,7 +4,7 @@ import message_filters
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSProfile, qos_profile_sensor_data
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, CameraInfo
 from .registration import depth_millimetres, load_registration, rectified_camera_info
@@ -27,8 +27,12 @@ class GeminiRegistration(Node):
         self.color_pub=self.create_publisher(Image,'/camera/color/image_rect',2)
         self.depth_pub=self.create_publisher(Image,'/camera/aligned_depth_to_color/image_raw',2)
         self.info_pub=self.create_publisher(CameraInfo,'/camera/color/camera_info_rect',10)
-        self.color=message_filters.Subscriber(self,Image,'/camera/color/image_raw',qos_profile=qos_profile_sensor_data)
-        self.depth=message_filters.Subscriber(self,Image,'/camera/depth/image_raw',qos_profile=qos_profile_sensor_data)
+        # Registration runs synchronously. Keep only the newest unread image per
+        # stream so load cannot turn the DDS queue into stale RGB-D work.
+        image_qos=QoSProfile(depth=1, reliability=qos_profile_sensor_data.reliability,
+                             durability=qos_profile_sensor_data.durability)
+        self.color=message_filters.Subscriber(self,Image,'/camera/color/image_raw',qos_profile=image_qos)
+        self.depth=message_filters.Subscriber(self,Image,'/camera/depth/image_raw',qos_profile=image_qos)
         self.sync=message_filters.ApproximateTimeSynchronizer([self.color,self.depth],5,self.cfg['sync_slop_s'])
         self.sync.registerCallback(self.on_pair)
         self.last_error=''

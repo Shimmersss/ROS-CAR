@@ -48,3 +48,8 @@ N10P 本机验证运行 `bash scripts/test_radar_container.sh`；Linux/Jetson �
 ## 对外 API 构建清单
 
 主动工作区新增 `roscar_interfaces`（SetControlMode）和 `roscar_api`（统一入口与示例），当时总计 13 个主动包（2026-10-11 为 16 个，另有 5 个默认 COLCON_IGNORE 的厂商包）。`build_ros.sh` 使用 colcon 自动扫描；Humble 系统依赖新增 `ros-humble-vision-msgs`。`sync_to_jetson.py` 的 `ros2_ws/src`、`scripts`、`tests`、`docs` 白名单已覆盖新增包与手册，不新增权重/录像或代理配置同步。本轮仅本机验证，没有执行同步或部署。使用方法见 [ROS 接口使用文档](../docs/ROS接口使用文档.md)。
+
+
+## 固定机位开机跟随入口
+
+用户服务模板为 `systemd/roscar-robot.service`，启动 `scripts/run_robot_onboard.sh`；配置为板端权限 0600 的 `~/.config/roscar/robot.env`。当前安装路径、自动 FOLLOW 的运动门禁、linger、停止/禁用方法和验证边界见 [10-13 板端联调记录](../docs/2026-10-13板端联调与开机跟随.md)。入口不自动解除 ESTOP 或通过进程故障自动重启 FOLLOW。

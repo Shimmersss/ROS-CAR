@@ -59,7 +59,11 @@ class EmergencyKwsNode(Node):
             age = self.get_clock().now().nanoseconds * 1e-9 - (message.stamp.sec + message.stamp.nanosec * 1e-9)
             if (message.sample_rate != 16000 or message.channels != 1 or len(message.pcm_s16le) != 1280
                     or not 0 <= age <= .2 or (self.sequence is not None and message.sequence != self.sequence + 1)):
-                raise ValueError('Invalid/stale/gapped emergency audio')
+                raise ValueError(
+                    f'Invalid/stale/gapped emergency audio: age_s={age:.6f}, '
+                    f'sequence={message.sequence}, previous={self.sequence}, '
+                    f'rate={message.sample_rate}, channels={message.channels}, '
+                    f'bytes={len(message.pcm_s16le)}')
             keyword = self.engine.accept(np.frombuffer(bytes(message.pcm_s16le), dtype='<i2').astype(np.float32) / 32768.)
             self.sequence, self.last_audio = message.sequence, time.monotonic()
             if keyword:

@@ -127,6 +127,14 @@ class IdentityManager:
             self.galleries[self.pinned].views.clear()
         self.pinned = ''
 
+    def forget(self, person_id):
+        """Remove the released owner gallery and invalidate all current links."""
+        self.galleries.pop(person_id, None)
+        if self.pinned == person_id:
+            self.unpin()
+        # Pending confirmations/exclusions may refer to this identity too.
+        self.suspend()
+
     def update(self, stamp, observations, overlapped=(), focus=None):
         """observations: {epoch:track_id: unit descriptor or None (bad crop)}.
 

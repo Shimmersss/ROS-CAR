@@ -122,6 +122,7 @@ docs/      方案、接口、计划；docs/archive/ 为历史文档
 - [云端拍照任务执行方案](docs/云端拍照任务执行方案.md)（本机独立链路实施入口）
 
 **C 路线（主线）**
+- [10-13 板端联调与开机跟随](docs/2026-10-13板端联调与开机跟随.md)：当前部署、负载优化、固定机位跌倒与开机服务
 - [方案 C 实现与验收](docs/方案C实现与验收.md)：入口、模型、参数、骨架与跌倒首版
 - [跌倒检测整体逻辑](docs/跌倒检测整体逻辑.md) · [跌倒检测评估记录](docs/跌倒检测评估记录.md)
 - [统一定位与三维姿态](docs/方案C统一定位与三维姿态.md) · [单目地面定位独立验收](docs/方案C单目地面定位独立验收.md) · [身份 ReID](docs/方案C身份ReID接入与验收.md) · [单目标跟踪联动](docs/方案C单目标跟踪联动.md)
@@ -137,7 +138,7 @@ docs/      方案、接口、计划；docs/archive/ 为历史文档
 
 **公共与其他模块**
 - [完整方案](人体跟随感知方案.md) · [架构](docs/architecture.md) · [分阶段计划](docs/roadmap.md) · [开发工作流](docs/development.md)
-- 接口：[TargetState / OwnerState](docs/interfaces.md) · [ROS 接口使用手册](docs/ROS接口使用文档.md)（先选接口；拍照上传、播报、epoch 授权、感知与反馈）
+- 接口：[TargetState / OwnerState](docs/interfaces.md) · [ROS 接口使用手册](docs/ROS接口使用文档.md)（拍照上传、播报、停车租约、epoch 授权、主人认领、跌倒字段与 CLI/Python 订阅）
 - [方案 B 实现与验收](docs/方案B实现与验收.md) · [语音入口与回退](docs/语音入口与回退.md) · [端侧 ASR 候选实测](docs/端侧ASR候选实测.md)
 - [motion_guard](ros2_ws/src/motion_guard/README.md) · [导航与自动绕障](docs/导航与自动绕障.md) · [N10P 雷达接入](docs/N10P雷达接入.md) · [底盘物理串口协议](docs/物理串口协议说明.md)
 - [构建与部署](deploy/README.md) · [Foxglove](foxglove/README.md) · [原厂代码索引](docs/vendor_inventory.md) · [工作记录](WORKLOG.md) · [归档](docs/archive/README.md)

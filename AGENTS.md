@@ -47,16 +47,16 @@
 ## 文字播报接口约定
 
 - 文字播报公共服务为 `/voice/say`（`SayText`），独立入口 `ros2 launch roscar_api speech_api.launch.py` 默认仅复用现有 `/voice/speak` action。正文只交给唯一 TTS 队列，不经过意图/运动解析；超时仅取消本次 goal。只有没有现有 TTS 时才使用 `with_tts:=true`，避免重复播放所有者。B/C 总入口 `start_project.sh` 在语音与 TTS 启用时自动开启 SpeakText action 和 `/voice/say` 桥接，复用唯一队列。调用说明见 `docs/文字播报ROS接口.md`。
-- B/C 总入口同时启动主人/跟随阶段观察器，按状态变化调用 `/voice/say`，心跳不重复播；舌苔阶段使用同一队列的 `/voice/speak` 完成确认，READY 提示播放完成后才开放续聊。阶段播报仍不包含跌倒告警。
+- B/C 总入口同时启动主人/跟随阶段观察器，按状态变化调用 `/voice/say`，心跳不重复播；舌苔阶段使用同一队列的 `/voice/speak` 完成确认，READY 提示播放完成后才开放续聊。跌倒播报消费新鲜 `/perception/fall_alarm` 上升沿，疑似/确认分别简短提醒；无效帧与编号交接不重播，新鲜 NONE 持续 2 秒才重新开放。不由播报器控制运动。
 
 ## C 路线入口约定
 
 - C 显式 `route:=yolo_pose` / `scripts/start_c.sh`，默认项目仍为 B。C 复用 B 的跟踪/测距/选人契约，使用官方 YOLO26s-pose；禁止静默回退 detect。`TargetState.source=yolo` 保留消费者兼容。
 - Gemini 使用独立固定版本驱动及设备自身标定，不继承 Astra S 临时内参。要求明确序列号与标定文件，物理配准和安装外参分别确认；不能只改 frame_id。
-- C 可选 `GEMINI_INPROCESS_REGISTRATION=true` 把 Gemini 配准并入 Pose 进程（默认 false，与 `REID_ENABLED` 互斥）；板上帧率用只读 `scripts/measure_c_rates.py` 测量，未经对比不得设为默认。
+- C 可选 `GEMINI_INPROCESS_REGISTRATION=true` 把 Gemini 配准并入 Pose 进程（默认 false）；按已完成推理发布同帧校正 RGB 到 `/camera/color/image_rect`，保留原采集时间戳，供 ReID 精确配对，不受可视化帧率开关影响。可与 `REID_ENABLED` 同用，不能同时启动独立配准发布者；显式 `GEMINI_REGISTRATION_BACKEND=cuda` 可用 Pose Python 的 PyTorch/CUDA 做 float64 投影与 z-buffer，默认 numpy，缺 CUDA 拒绝。`PERCEPTION_AUXILIARY=false` 可移出地面/统一定位及坐标转换（默认 true），ReID 已启用时仍保留。板上帧率用只读 `scripts/measure_c_rates.py` 测量，未经对比不得设为默认。
 - C 单目地面定位为独立 `ground_localizer`：输出脚下接地点，`target_state_ground.source=yolo_ground`，不混入 `yolo` 光学目标或卡尔曼；安装外参与地面平面须分别确认，默认 NOT_READY；身高先验不是实测个体身高。设计和边界见 `docs/方案C实现与验收.md`。
-- 骨架/跌倒首版只发布人体状态与可视化，不接语音或运动。相机直立未确认最多疑似；静态躺卧不补报跌倒。新增入口及边界见 `docs/方案C实现与验收.md`。
-- 跌倒鲁棒开关 `pose_gap_pause`/`pose_handover_s`/`pose_confirm_lying_only`/`pose3d_knee_fallback` 与无骨架高度线索 `height_fall_enabled`（及其可选项 `height_lost_hold_s`/`height_sit_hold_s`/`height_side_edge_px`，0 为关）默认全关；丢人后继续测量 `height_continue_s` 的延续中人员只发布到单独话题 `person_states_continued`，不得混入 `person_states`（ReID/地面定位只消费真实检测），节点只用最后检出框，VitTrack 延续仅离线回放 `sot`；下游跌倒告警统一读每帧汇总的 `fall_alarm`（FallAlarm），首版仍不接语音/运动；高度线索需重力与地面均确认才可确认，否则最多疑似，只写 detail。默认值须经标注录像 `scripts/evaluate_falls.py` 复评后再定，见 `docs/跌倒检测评估记录.md`。离线回放的相机几何用 `scripts/estimate_camera_geometry.py`（消失点重力 + 站立双踝高度，反光地面不能用深度地面拟合），结果仅诊断，不得据此置任何 `*_confirmed`。
+- 骨架/跌倒发布人体状态与可视化，独立阶段观察器接语音，不由跌倒模块输出运动。相机直立未确认最多疑似；静态躺卧不补报跌倒。新增入口及边界见 `docs/方案C实现与验收.md`。
+- 跌倒鲁棒开关 `pose_gap_pause`/`pose_handover_s`/`pose_confirm_lying_only`/`pose3d_knee_fallback` 与无骨架高度线索 `height_fall_enabled`（及其可选项 `height_lost_hold_s`/`height_sit_hold_s`/`height_side_edge_px`，0 为关）默认全关；丢人后继续测量 `height_continue_s` 的延续中人员只发布到单独话题 `person_states_continued`，不得混入 `person_states`（ReID/地面定位只消费真实检测），节点只用最后检出框，VitTrack 延续仅离线回放 `sot`；下游跌倒告警统一读每帧汇总的 `fall_alarm`（FallAlarm），阶段观察器可接语音，不接运动；高度线索需重力与地面均确认才可确认，否则最多疑似，只写 detail。默认值须经标注录像 `scripts/evaluate_falls.py` 复评后再定，见 `docs/跌倒检测评估记录.md`。离线回放的相机几何用 `scripts/estimate_camera_geometry.py`（消失点重力 + 站立双踝高度，反光地面不能用深度地面拟合），结果仅诊断，不得据此置任何 `*_confirmed`。
 
 ## C 深度融合、定位与三维姿态
 
@@ -67,7 +67,7 @@
 - C三维姿态仅使用真实有效关节；`pose3d_gravity_confirmed` / `pose3d_ground_confirmed` 默认false，依据不足降级二维并标注basis，异常几何未知。二维时序持续更新，三维时序独立保存，短时缺深度暂停确认计时、超时仅清三维候选；不跨像素/米搬用基线。已确认三维事件需三维直立证据恢复。参数及边界见 `docs/方案C统一定位与三维姿态.md`。
 - C深度地面拟合（`floor_fit_enabled`，发布`floor_plane`）与动态重力（`pose3d_up_source=floor|tf`）、统一定位实测地面（`floor_plane_enabled`）默认全部关闭；实测地面只作逐帧证据，替代而非叠加标定平面上的单目双踝，按完全相同时间戳匹配，永不自动置任何`*_confirmed`。动态来源缺失时本帧退二维且不复用旧值，横滚超限二维未知，相机转动重置二维像素下坠参考。见`docs/方案C统一定位与三维姿态.md`。
 
-- 单目标跟踪联动（VitTrack + `BridgeArbiter`）默认关闭，`sot_enabled`/`SOT_ENABLED` 显式开启并需本地模型与校验文件；仲裁器只能保持、确认接续或释放目标，不得自行挑人，曾与目标同框的轨迹不得接续，冲突帧暂停输出；与 ReID 锁定合用时只在跟踪器连续一致、无反证、身份可信（用户锁定或 ReID 持续确认 2 秒）且目标未与别人重叠时延续身份（`reid_lock_bridge_carry_s`），冲突只作废授权、由 ReID 自动重新确认。以跟随稳定为目标时用 `reid_reacquire_enabled`（`OwnerSelection`，需 `sot_enabled`，与 ReID 锁定互斥）：联动负责连续性，ReID 只否决和丢失后找回主人；主人身份经 `owner_focus` 固定在 ReID 节点并补充多视角。Jetson 自带 OpenCV 4.5.4 无法加载该模型，需 onnxruntime 或 TensorRT，尚未在板上安装和测速。见 `docs/方案C单目标跟踪联动.md`。
+- 单目标跟踪联动（VitTrack + `BridgeArbiter`）默认关闭，`sot_enabled`/`SOT_ENABLED` 显式开启并需本地模型与校验文件；仲裁器只能保持、确认接续或释放目标，不得自行挑人，曾与目标同框的轨迹不得接续，冲突帧暂停输出；与 ReID 锁定合用时只在跟踪器连续一致、无反证、身份可信（用户锁定或 ReID 持续确认 2 秒）且目标未与别人重叠时延续身份（`reid_lock_bridge_carry_s`），冲突只作废授权、由 ReID 自动重新确认。以跟随稳定为目标时用 `reid_reacquire_enabled`（`OwnerSelection`，需 `sot_enabled`，与 ReID 锁定互斥）：联动负责连续性，ReID 只否决和丢失后找回主人；主人身份经 `owner_focus` 固定在 ReID 节点并补充多视角。Jetson 自带 OpenCV 4.5.4 无法加载该模型，需 onnxruntime 或 TensorRT；板端显式复用 Pose Python 并安装 onnxruntime，ReID 可用目标板构建且验证来源清单的 OSNet TensorRT engine，不能静默回退。见 `docs/方案C单目标跟踪联动.md`。
 
 - 跟随运动：`motion_guard` 的 `target_grace_s`（默认 0）只对 FOLLOW 中目标短暂无效/超时生效，宽限内衰减到零并可自动恢复，超时仍 FAULT 锁存，其他故障不享受宽限；`start_project.sh` 跟随入口按用户确认设 0.6 s（`FOLLOW_TARGET_GRACE_S`）。`target_auto_recover`（默认 false）只让目标类 FAULT 经 `MotionAuthority.recover_follow()` 在目标重新有效后自动回 ARMED_FOLLOW（同方案 A 跟随器），其他故障仍锁存；跟随入口 `FOLLOW_AUTO_ARM`/`FOLLOW_TARGET_AUTO_RECOVER` 默认随 `MOTION_ENABLED`（用户 10-12 确认）。`FOLLOW_EMERGENCY_KWS_REQUIRED` 默认 true，无语音运行跟随须显式置 false。跟随距离 `FOLLOW_TARGET_DISTANCE_M`（默认 1.0）。控制律仍为 A 实测过的 `follow_control.compute_command`。不得扩大宽限或自动恢复范围、延长上限而不经用户确认。
 
@@ -96,7 +96,7 @@
 - 主动构建和 B/C 运行统一使用仓库根目录 `install/`；API 可选启动语音、舌苔及云台，导航保留独立且互斥的 guard 入口。`roscar_api interfaces` 枚举运行中接口，`target claim --id epoch:track_id` 和 `mode` 提供认领与模式调用。
 - 主人生命周期由 `/perception/owner_state` 发布，`/perception/claim_owner` 支持中央/精确轨迹认领。丢失默认等待 10 秒，期限内找回保留主人，到期清除旧绑定和联动代次并开放重新认领；仅原先启用的单人自动认领策略恢复三帧确认，主动释放仍抑制自动认领。这个窗口不得延长 motion_guard 的目标运动宽限或直接授予运动权限。主选择 LOST/陈旧/冲突时，地面及统一定位的选中输出也必须无效。
 - V5.1 语音入口保留 V5 的本地控制与 DeepSeek 结构化控制工具，但不再声明或接受蜂鸣器动作；`voice_assistant.launch.py` 不启动蜂鸣器适配节点。独立 `voice_command_router` 包内的蜂鸣器解析与 GPIO 源码保留，历史条目中关于语音蜂鸣器的描述不代表当前入口行为。
-- 本地合并主线采用共享录音 + Qwen3-ASR / Silero VAD + 固定语义规则 + 常开 KWS + 唯一 MeloTTS；8 秒有界续聊，运动显式绑定 epoch 授权，不能由方向口令自动授权。ASR_BACKEND=xfyun 只替换识别，仍消费共享音频。远端旧 continuous_asr 实现不合入，CONTINUOUS_ASR 不切换录音方案。云端 C 跌倒状态仍不触发语音或底盘动作。
+- 本地合并主线采用共享录音 + Qwen3-ASR / Silero VAD + 固定语义规则 + 常开 KWS + 唯一 MeloTTS；8 秒有界续聊，运动显式绑定 epoch 授权，不能由方向口令自动授权。ASR_BACKEND=xfyun 只替换识别，仍消费共享音频。远端旧 continuous_asr 实现不合入，CONTINUOUS_ASR 不切换录音方案。本地 C 新鲜 FallAlarm 可触发阶段语音，不触发底盘动作。
 
 ## 测试与 CI
 
@@ -114,3 +114,13 @@
 - ROS拍照门面只转发给 `/capture_task/run`，`with_ros_api=false` / `CAPTURE_ROS_API=false` 默认关闭，不改既有action、bridge及HTTP字段；取消仅针对门面自身goal。ROS任务上传带 `X-Task-Source=ros_api`，不经bridge产生云端ack/events；`/capture/tongue`只拍照上传，与语音tongue_mode独立。
 
 - 拍照整机兼容约定：`WITH_CAPTURE_TASKS=true` 时强制 `FOLLOW_AUTO_ARM=false`、`FOLLOW_TARGET_AUTO_RECOVER=false`、`FOLLOW_EMERGENCY_KWS_REQUIRED=true`，任务释放租约不自动续跟；拍照关闭时保留远端 C 跟随入口配置。
+
+## 固定机位开机入口
+
+- 正式板端入口 `/home/wheeltec/ROSCAR-current` 指向本次验证的部署目录；切换前 current 保留备份。用户服务从 current 启动，底盘使用该部署独立重编译的 overlay。串口显式上限可至 0.5 m/s、默认仍 0.2；跟随器/guard/串口三层同限，角速度仍 0.5。速度和增益配置不放宽感知龄期、运动宽限或急停。
+
+- `scripts/run_robot_onboard.sh` / `deploy/systemd/roscar-robot.service` 是显式板端 C 入口，默认参数仍运动关闭。板端私有 env 按用户授权开机 FOLLOW 自动授权，并沿用 1.3 m、无避障；用户最新明确选择最高 0.5 m/s（私有 FOLLOW_MAX_LINEAR_MPS），距离/转向增益 1.0/1.6；三项确认仅表示本次临时授权，不作为正式标定验收。启动器不清 ESTOP，进程故障不自动重启授权。见 `docs/2026-10-13板端联调与开机跟随.md`。
+- 当前固定机位入口按用户最新确认重新开启 ReID 找回（REID_ENABLED / REID_REACQUIRE_ENABLED=true，锁定 false）：首次连续丢失 2 秒清轨迹/VitTrack，保留主人身份至同一次丢失 5 秒；期限内通过新鲜身份确认返回，5 秒到期清主人及该身份外观库并开放单人三帧新认领。通用默认仍十秒、连续性定时重置关闭；不改 0.6 秒运动宽限或非目标故障锁存。
+- 固定 27 cm / 上仰 15.1° / 横滚 0.5° 使用显式 `pose_fixed_27cm.yaml`；通用 pose.yaml 默认不变。身体高度线索无需头脚全入画；运动时关闭旧像素框延续。安装变化或非平坦地面须重新确认；已有标注录像复评不等于现场跌倒验收。
+
+- 用户在当前固定机位主链明确关闭语音自动急停：VOICE_ESTOP_ENABLED=false，不启动独立 KWS，FOLLOW_EMERGENCY_KWS_REQUIRED 随此开关关闭；ASR/VoiceCommand 的 ESTOP 转普通 STOP，不写急停锁存。通用语音入口默认仍开启；显式 /control/estop 接口保留，目标/测距/请求时效与串口看门狗仍停车。

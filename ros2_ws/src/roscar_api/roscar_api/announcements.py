@@ -6,16 +6,18 @@ import time
 import rclpy
 from rclpy.clock import Clock, ClockType
 from rclpy.node import Node
-from person_interfaces.msg import OwnerState
+from person_interfaces.msg import OwnerState, FallAlarm
 from roscar_interfaces.srv import SayText
 from std_msgs.msg import String
-from .phases import PhaseTransitions
+from .phases import PhaseTransitions, FallTransitions
 
 
 class PhaseAnnouncements(Node):
     def __init__(self, **kwargs):
         super().__init__('phase_announcements', **kwargs)
         self.transitions = PhaseTransitions()
+        self.falls = FallTransitions()
+        self.fall_stamp = 0
         self.pending = OrderedDict()
         self.current = {}
         self.inflight = None
@@ -25,6 +27,7 @@ class PhaseAnnouncements(Node):
         self.events = self.create_publisher(String, '/system/phase', 10)
         self.create_subscription(OwnerState, '/perception/owner_state', self.on_owner, 10)
         self.create_subscription(String, '/control/state', self.on_control, 10)
+        self.create_subscription(FallAlarm, '/perception/fall_alarm', self.on_fall, 10)
         self.create_timer(.1, self.tick, clock=Clock(clock_type=ClockType.STEADY_TIME))
 
     def enqueue(self, source, phase, text):
@@ -56,6 +59,19 @@ class PhaseAnnouncements(Node):
                 self.enqueue('control', phase, self.transitions.control(state))
         except (ValueError, TypeError):
             return
+
+    def on_fall(self, msg):
+        stamp_ns = msg.header.stamp.sec*10**9+msg.header.stamp.nanosec
+        age = (self.get_clock().now().nanoseconds-stamp_ns)*1e-9
+        if stamp_ns <= 0 or not 0 <= age <= .5 or stamp_ns <= self.fall_stamp:
+            # Stale traffic cannot sustain an unsent warning or count as recovery.
+            self.falls.update(False, 0)
+            self.enqueue('fall', 'INVALID', None)
+            return
+        self.fall_stamp = stamp_ns
+        text = self.falls.update(msg.valid, msg.stage)
+        phase = str(msg.stage) if msg.valid else 'INVALID'
+        self.enqueue('fall', phase, text)
 
     def tick(self):
         # At most one own service request. Coalesce unsent transitions per source;

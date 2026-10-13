@@ -126,13 +126,28 @@ ARCHITECTURES = ('osnet_x0_25_msmt17', 'osnet_x1_0_msmt17')
 class OSNetBackend:
     def __init__(self, model_path):
         path = Path(model_path)
-        if not model_path or path.suffix != '.onnx' or not path.is_file():
-            raise ValueError('Configure a local OSNet ONNX; no automatic downloads/fallback')
+        if not model_path or path.suffix not in ('.onnx', '.engine') or not path.is_file():
+            raise ValueError('Configure a local OSNet ONNX/engine; no automatic downloads/fallback')
         metadata = json.loads(Path(str(path)+'.json').read_text())
         if (metadata.get('architecture') not in ARCHITECTURES
                 or metadata.get('preprocessing') != 'rgb_256x128_imagenet'
                 or metadata.get('sha256') != hashlib.sha256(path.read_bytes()).hexdigest()):
             raise ValueError('OSNet metadata/hash mismatch')
+        self.engine_backend = None
+        if path.suffix == '.engine':
+            source_name = metadata.get('source_onnx', '')
+            if not source_name or Path(source_name).name != source_name or Path(source_name).suffix != '.onnx':
+                raise ValueError('OSNet engine requires a local source ONNX filename')
+            source = path.parent / source_name
+            original = json.loads(Path(str(source)+'.json').read_text())
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            if (metadata.get('source_onnx_sha256') != digest or original.get('sha256') != digest
+                    or original.get('architecture') != metadata['architecture']
+                    or original.get('preprocessing') != metadata['preprocessing']):
+                raise ValueError('OSNet engine source metadata/hash mismatch')
+            from .reid_tensorrt import OSNetTensorRT
+            self.engine_backend = OSNetTensorRT(path)
+            return
         self.net = cv2.dnn.readNetFromONNX(str(path))
         self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
         self.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
@@ -146,8 +161,11 @@ class OSNetBackend:
     def extract(self, crops):
         outputs=[]
         for crop in crops:
-            self.net.setInput(self.tensor(crop))
-            feature=self.net.forward().reshape(-1)
+            if self.engine_backend is not None:
+                feature = self.engine_backend.run(self.tensor(crop))
+            else:
+                self.net.setInput(self.tensor(crop))
+                feature=self.net.forward().reshape(-1)
             if feature.shape != (512,):
                 raise ValueError('OSNet must return 512-D descriptors')
             outputs.append(unit(feature))

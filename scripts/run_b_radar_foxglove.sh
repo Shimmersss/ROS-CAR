@@ -48,6 +48,7 @@ if [[ "${PERCEPTION_ROUTE:-b}" == c && "${GEMINI_INPROCESS_REGISTRATION:-false}"
 fi
 setsid ros2 launch perception_bringup perception.launch.py \
   route:="$route" with_radar:="${WITH_RADAR:-false}" with_foxglove:=false \
+  with_auxiliary:="${PERCEPTION_AUXILIARY:-true}" \
   yolo_python:="$YOLO_PYTHON" model_path:="$MODEL_PATH" device:="${YOLO_DEVICE:-0}" \
   depth_registered:="${DEPTH_REGISTERED:-false}" \
   auto_lock_single:="${AUTO_LOCK_SINGLE:-false}" \
@@ -56,6 +57,7 @@ setsid ros2 launch perception_bringup perception.launch.py \
   depth_topic:="${DEPTH_TOPIC:-/camera/depth/image_raw}" \
   camera_info_topic:="${CAMERA_INFO_TOPIC:-/camera/color/camera_info}" \
   "${registration_args[@]}" \
+  registration_backend:="${GEMINI_REGISTRATION_BACKEND:-numpy}" \
   reid_enabled:="${REID_ENABLED:-false}" \
   reid_lock_enabled:="${REID_LOCK_ENABLED:-false}" \
   reid_model_path:="${REID_MODEL_PATH:-$ROOT/models/weights/osnet_x0_25_msmt17.onnx}" \

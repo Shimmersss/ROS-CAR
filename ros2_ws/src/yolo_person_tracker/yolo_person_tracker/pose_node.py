@@ -48,7 +48,7 @@ class PoseTrackerNode(TrackerNode):
         if self.reid_reacquire_enabled:
             if self.reid_lock_enabled or not self.cfg['sot_enabled']:
                 raise ValueError('reid_reacquire_enabled requires sot_enabled and excludes reid_lock_enabled')
-            self.selection = OwnerSelection()
+            self.selection = OwnerSelection(lose_after_s=self.cfg['owner_continuity_reset_s'] or 1.)
             self.create_subscription(PersonIdentityArray, 'person_identities',
                                      self.on_identities, 10, callback_group=self.state_group)
             self.owner_pub = self.create_publisher(PersonIdentity, 'owner_focus', 10)

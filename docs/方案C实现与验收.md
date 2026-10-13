@@ -70,6 +70,12 @@ Jetson 使用官方 [ros2_astra_camera](https://github.com/orbbec/ros2_astra_cam
 
 序列号、标定尺寸、矩阵、原始 frame、编码和时间检查失败时拒绝输出；不加载 Astra S 临时内参。`DEPTH_REGISTERED=false` 仍是默认值，转换程序运行不等于物理配准验收通过。实物边缘、已知距离、同步时差及像素对应关系留待现场验证。
 
+`GEMINI_INPROCESS_REGISTRATION=true` 可把同一配准移入 Pose 工作线程，默认关闭。每次已完成推理仍发布对应的 `/camera/color/image_rect` 与原始采集时间戳，ReID 订阅该校正图而非原始 RGB；关闭可视化不影响此接口。此时不要另起独立配准发布者。图像订阅只保留最新未读帧，忙时跳过的有效 RGB-D 仍参与输入连续性判断；推理超时保持失效，真实断流/时间倒退/输入变化仍作废旧轨迹。
+
+进程内配准可显式设 `GEMINI_REGISTRATION_BACKEND=cuda`（launch `registration_backend:=cuda`）；默认 `numpy`。CUDA 路径需要当前 Pose Python 的 PyTorch/CUDA，缺环境直接拒绝，不回退。保持 float64 几何、原彩色去畸变和最近表面 z-buffer；GPU 只加速投影与深度聚合，不改变设备标定或确认开关。`tests/test_registration_cuda.py` 必须在实际 CUDA 环境运行，核对随机深度/NaN/量程/遮挡输出逐像素一致及测速；纯 Python CI 不代表该硬件后端通过。
+
+只测试人体/主人跟踪时，可显式使用 `PERCEPTION_AUXILIARY=false`（ROS launch 参数 `with_auxiliary:=false`），移出 `target_transform`、`ground_localizer`、`unified_localizer`；ReID 已启用时仍保留身份观察器。默认 true 保留既有接口集合。舌苔、捕获任务和雷达由各自开关控制，验证它们时再启用；不能关闭录音/KWS 或唯一运动保护来提高可运动入口的帧率。
+
 换相机后使用独立 `gemini_mount.yaml`，安装外参默认未确认，不发布占位 TF。原光学输出和新车体 TF 失效边界与 B 一致。
 
 ## 模型与人体接口

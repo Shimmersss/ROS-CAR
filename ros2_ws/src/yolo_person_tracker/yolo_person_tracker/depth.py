@@ -192,12 +192,16 @@ def _measure_region(depth, bounds, intrinsics, min_fraction, repair_small_holes=
         count = np.isfinite(neighbours).sum(axis=0)
         fill = (~valid) & (count >= 5)
         if fill.any():
-            filled = np.full(roi.shape, np.nan, dtype=np.float32)
-            has_neighbour = count > 0
-            filled[has_neighbour] = np.nanmedian(neighbours[:, has_neighbour], axis=0)
+            # Only missing pixels need a median. Computing it for every valid
+            # pixel in a large bridge box dominated the Jetson tracking path.
+            samples = np.sort(neighbours[:, fill], axis=0)  # NaNs sort after real depths.
+            sizes = count[fill]
+            columns = np.arange(len(sizes))
+            filled = np.asarray((samples[(sizes-1)//2, columns]
+                                 + samples[sizes//2, columns])*.5, dtype=np.float32)
             roi = roi.copy()
-            roi[fill] = filled[fill]
-            valid[fill] = np.isfinite(filled[fill])
+            roi[fill] = filled
+            valid[fill] = np.isfinite(filled)
     if valid.sum() < max(12, roi.size * min_fraction):
         return None
     values = roi[valid]

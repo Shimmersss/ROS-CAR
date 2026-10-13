@@ -16,14 +16,17 @@ def start(context):
     target_frame=LaunchConfiguration('target_frame').perform(context) or c['target_frame']
     auto=LaunchConfiguration('auto_arm').perform(context)=='true'
     recover=LaunchConfiguration('target_auto_recover').perform(context)=='true'
+    linear=float(LaunchConfiguration('max_linear_mps').perform(context) or c['max_linear_mps'])
     return [Node(package='astra_body_adapter',executable='person_follower',output='screen',
                  parameters=[{'enabled':True,'expected_source':source,'base_frame':c['base_frame'],
                     'performance_enabled':LaunchConfiguration('performance_enabled').perform(context)=='true',
-                    'max_linear_mps':float(c['max_linear_mps']),
+                    'max_linear_mps':linear,
+                    'distance_gain':float(LaunchConfiguration('distance_gain').perform(context)),
+                    'bearing_gain':float(LaunchConfiguration('bearing_gain').perform(context)),
                     'max_angular_rps':float(c['max_angular_rps']),
                     'target_distance_m':float(LaunchConfiguration('target_distance_m').perform(context))}]),
             Node(package='motion_guard',executable='guard',output='screen',
-                 parameters=[path,{'motion_enabled':motion,'expected_source':source,'target_frame':target_frame,
+                 parameters=[path,{'max_linear_mps':linear,'motion_enabled':motion,'expected_source':source,'target_frame':target_frame,
                     'radar_required':LaunchConfiguration('radar_required').perform(context)=='true',
                     'auto_arm':auto,
                     # An auto-arming follow entry must start in FOLLOW; otherwise the guard starts IDLE.
@@ -57,4 +60,7 @@ def generate_launch_description():
         DeclareLaunchArgument('target_frame',default_value=''),
         DeclareLaunchArgument('performance_enabled',default_value='true',choices=['true','false']),
         DeclareLaunchArgument('target_distance_m',default_value='1.0'),
+        DeclareLaunchArgument('max_linear_mps',default_value=''),
+        DeclareLaunchArgument('distance_gain',default_value='0.6'),
+        DeclareLaunchArgument('bearing_gain',default_value='1.2'),
         OpaqueFunction(function=start)])

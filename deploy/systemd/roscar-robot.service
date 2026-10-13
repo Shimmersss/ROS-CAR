@@ -1,0 +1,18 @@
+[Unit]
+Description=ROSCAR fixed-camera guarded follow, voice and fall announcements
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/roscar/robot.env
+# Installer replaces this with the selected deployment's absolute script path.
+ExecStart=/bin/bash /home/wheeltec/ROSCAR-current/scripts/run_robot_onboard.sh
+KillMode=control-group
+TimeoutStopSec=15
+SendSIGKILL=yes
+# Boot starts once. A process failure must not silently undo STOP/fault by restarting FOLLOW.
+Restart=no
+StandardOutput=append:/home/wheeltec/ROSCAR-current/artifacts/project/boot.log
+StandardError=inherit
+
+[Install]
+WantedBy=default.target

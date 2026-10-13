@@ -19,6 +19,7 @@ def generate_launch_description():
         DeclareLaunchArgument('use_xfyun_asr', default_value='false'),
         DeclareLaunchArgument('enable_wake_driver', default_value='true'),
         DeclareLaunchArgument('voice_control_enabled', default_value='true'),
+        DeclareLaunchArgument('voice_estop_enabled', default_value='true', choices=['true','false']),
         DeclareLaunchArgument('execution_modes_config', default_value=''),
         DeclareLaunchArgument('enable_speech_action', default_value='false'),
         Node(
@@ -31,7 +32,8 @@ def generate_launch_description():
         Node(package='offline_voice', executable='audio_node',
              name='voice_audio_capture', output='screen', parameters=[config]),
         Node(package='offline_voice', executable='emergency_node',
-             name='emergency_kws', output='screen', parameters=[config]),
+             name='emergency_kws', output='screen', parameters=[config],
+             condition=IfCondition(LaunchConfiguration('voice_estop_enabled'))),
         Node(package='voice_command_router', executable='motion_adapter',
              name='chassis_motion_adapter', output='screen', parameters=[config]),
         Node(
@@ -50,6 +52,7 @@ def generate_launch_description():
             package='voice_command_router', executable='router_node',
             name='voice_command_router', output='screen',
             parameters=[config, {'enabled': LaunchConfiguration('voice_control_enabled'),
+                                'voice_estop_enabled': ParameterValue(LaunchConfiguration('voice_estop_enabled'), value_type=bool),
                                 'execution_modes_config': LaunchConfiguration('execution_modes_config')}],
         ),
         Node(

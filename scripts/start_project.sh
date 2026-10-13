@@ -80,7 +80,8 @@ FOLLOW_TARGET_GRACE_S 目标短时缺失宽限（默认 0.6）；FOLLOW_TARGET_A
 两者默认随 MOTION_ENABLED；STOP 回到 IDLE，自动授权不会撤销停车。
 FOLLOW_EMERGENCY_KWS_REQUIRED（默认 true）要求语音急停心跳；无语音时须显式 false。
 MODEL_PATH、YOLO_PYTHON、YOLO_DEVICE 可覆盖模型和推理环境。
-C 可选 GEMINI_INPROCESS_REGISTRATION=true：配准并入 Pose 进程（默认 false，不能与 REID_ENABLED 同用）。
+C 可选 GEMINI_INPROCESS_REGISTRATION=true：配准并入 Pose 进程（默认 false，发布同帧校正 RGB 供 ReID 使用）。
+PERCEPTION_AUXILIARY=false 可移出地面/统一定位和目标坐标转换；启用的 ReID 找回仍保留。
 Ctrl-C 或任一子模块退出时停止本入口启动的全部模块。
 HELP
     exit 0;;
@@ -113,9 +114,6 @@ if [[ "$WITH_CAPTURE_TASKS" == true ]]; then
       echo '无底盘云端拍照 bench 要求无 /cmd_vel 发布者：WITH_FOLLOWER=false / MOTION_ENABLED=false。' >&2; exit 2;
     }
   fi
-fi
-if [[ "${GEMINI_INPROCESS_REGISTRATION:-false}" == true && "${REID_ENABLED:-false}" == true ]]; then
-  echo '进程内配准不发布校正彩色图，ReID 需要独立配准节点；二者不能同时开启。' >&2; exit 2
 fi
 if [[ "$WITH_TONGUE_MODE" == true ]]; then
   [[ "$WITH_VOICE" == true && "$WITH_FOLLOWER" == true && "${VOICE_TTS_ENABLED:-true}" == true ]] || {
@@ -243,13 +241,16 @@ start_module() {
 start_module camera bash "$ROOT/scripts/$camera_script"
 start_module perception bash "$ROOT/scripts/run_b_radar_foxglove.sh"
 if [[ "$WITH_FOLLOWER" == true ]]; then
-  start_module follower bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch motion_guard follow.launch.py motion_enabled:='$MOTION_ENABLED' expected_source:=yolo target_frame:=camera_color_optical_frame radar_required:=false auto_arm:='$FOLLOW_AUTO_ARM' target_grace_s:='${FOLLOW_TARGET_GRACE_S:-0.6}' target_auto_recover:='$FOLLOW_TARGET_AUTO_RECOVER' emergency_kws_required:='$FOLLOW_EMERGENCY_KWS_REQUIRED' geometry_confirmed:='${FOLLOW_GEOMETRY_CONFIRMED:-false}' mount_calibrated:='${FOLLOW_MOUNT_CALIBRATED:-false}' stopping_model_confirmed:='${FOLLOW_STOPPING_MODEL_CONFIRMED:-false}' target_distance_m:='${FOLLOW_TARGET_DISTANCE_M:-1.0}'"
+  start_module follower bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch motion_guard follow.launch.py motion_enabled:='$MOTION_ENABLED' expected_source:=yolo target_frame:=camera_color_optical_frame radar_required:=false auto_arm:='$FOLLOW_AUTO_ARM' target_grace_s:='${FOLLOW_TARGET_GRACE_S:-0.6}' target_auto_recover:='$FOLLOW_TARGET_AUTO_RECOVER' emergency_kws_required:='$FOLLOW_EMERGENCY_KWS_REQUIRED' geometry_confirmed:='${FOLLOW_GEOMETRY_CONFIRMED:-false}' mount_calibrated:='${FOLLOW_MOUNT_CALIBRATED:-false}' stopping_model_confirmed:='${FOLLOW_STOPPING_MODEL_CONFIRMED:-false}' target_distance_m:='${FOLLOW_TARGET_DISTANCE_M:-1.0}' max_linear_mps:='${FOLLOW_MAX_LINEAR_MPS:-}' distance_gain:='${FOLLOW_DISTANCE_GAIN:-0.6}' bearing_gain:='${FOLLOW_BEARING_GAIN:-1.2}'"
 fi
 if [[ "$WITH_CHASSIS" == true ]]; then
   start_module chassis bash "$ROOT/scripts/run_chassis_io.sh"
 fi
 if [[ "$WITH_VOICE" == true ]]; then
   voice_args=()
+  if [[ "${VOICE_BACKEND:-offline}" == offline ]]; then
+    voice_args+=(voice_estop_enabled:="${VOICE_ESTOP_ENABLED:-true}")
+  fi
   if [[ "${VOICE_TTS_ENABLED:-true}" == true ]]; then
     voice_args+=(enable_speech_action:=true)
   fi
