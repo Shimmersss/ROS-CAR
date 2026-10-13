@@ -1,0 +1,12 @@
+# Request one capture job through the existing executor. Never moves the vehicle.
+string task_id        # Empty: generate ros-<32 hex>; otherwise [A-Za-z0-9_-]{1,64}.
+string announce       # Empty: catalog default; otherwise validated safe speech.
+float64 prepare_sec   # Negative: catalog default; otherwise 0..30 seconds.
+float64 timeout_sec   # Zero: catalog default; otherwise (0,600] seconds.
+---
+bool success          # True only for uploaded.
+string status         # uploaded|failed|cancelled|rejected|busy|unavailable|invalid|timeout
+string detail
+string task_id
+string capture_id
+string upload_json    # Same validated receipt array as CaptureTask result.

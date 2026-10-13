@@ -1445,6 +1445,113 @@
 - 改写 AGENTS.md（168→69 行：协作约定、项目概况、当前状态、C/B/云台/语音/CI 约定）、README（C 为主线、当前状态表、入口、目录与文档索引；去掉重复的 V5.1 行和“未配置远端”）、architecture、roadmap（C1 离线评估/C2 现场实测/C3 云台）、development；更新 vendor_inventory、人体跟随感知方案顶部、interfaces、perception_bringup/red_object_tracker README、deploy 与 foxglove README 的过时句子。
 - 全仓库相对链接与 `docs/` 路径引用已同步（含 pose.yaml 注释、label_recording/record_gemini_mac 注释；本文件历史条目只替换路径）。PR #17 审查意见修正：首轮链接检查漏扫厂商目录，`chassis_vendor/README.md` 仍指向旧路径，已改；归档文档中指向未入库 artifacts 图片的链接改为文字说明；README 与 foxglove/README 原沿用“start_robot.sh 不启动跟随/运动始终关闭”的过时说法，实为底盘+语音+经 motion_guard 的自动跟随（MOTION_ENABLED、auto-arm，不启 N10P），已改正并写入 AGENTS 约定。扩展后的链接检查（含厂商目录）除一处外部 GitHub 路径外全部有效；`check_project.py` 结构检查、录像工具 22 项测试、pose.yaml 解析和 `git diff --check` 通过。仅文档与注释改动，未改代码逻辑、未部署。
 
+## 2026-10-12：云端拍照任务 P0 / 分支起点
+
+- 从 main@62a7c59 创建 codex/cloud-capture-tasks；原样登记用户提供的执行方案。只做本地提交，不 push、不 SSH、不改车端服务。
+- 本机为 x86_64 / Ubuntu 22.04 / ROS 2 Humble；colcon、usb_cam、image_publisher、v4l-utils 已安装，无 /dev/video*。软件联调使用隔离域 187/190 + ROS_LOCALHOST_ONLY=1；真实 Gemini 相机与扬声器验收待设备到位。
+
+### 云端拍照 P1：接口、目录、协议与 mock
+
+- 新增两个独立包骨架、CaptureTask action、严格指令/回执与目录校验、播报禁用词、0600 凭据加载、可取消标准库 HTTP、10 分钟有界去重及 mock 云端/CLI。JPEG 路径不依赖 Pillow。结构检查登记 21 个包；未改原语音/舌苔/guard 包。
+- 本阶段检查为纯 Python 单测、原有 CI、结构与 diff 检查；ROS 执行器和编译在 P2 后验收。
+
+### 云端拍照 P2 / P3：执行器与桥接联调
+
+- 实现完成确认播报、准备、新帧连拍、清晰度选优、质检、JPEG 编码、带取消上传和本地元数据记录；bridge 负责长轮询、ack、事件、心跳、10 分钟去重、TTL、匹配取消、网络/鉴权退避。假 TTS 和合成图像仅显式 bench/隔离域启用；speak 指令本轮返回 unsupported（方案可选项）。
+- 本机 Humble x86_64 子集 colcon：18 包通过；27 项纯 Python 测试通过。原生 ROS 运行时 10 个场景通过，包含四任务 JPEG/SHA、新鲜帧、忙时/语音模式互斥、bench 速度发布者与相机发布者门控、播报迟到取消、上传取消/409、bridge 去重/过期/匹配取消/断网与401恢复、20 次任务资源检查（线程增量0、FD增量0）。robot 场景使用现有 motion_guard + 假 odom/KWS，验证申请/续租/释放及 ESTOP 拒绝，非实车。日志 artifacts/capture-validation。
+- 用户已接入 Gemini 彩色 UVC，/dev/video0 有 ACL；用户选择只做采集测试，不做真人/PCB人工验收。真实图像采集另记，不混入模拟结果。
+
+### 云端拍照 P4采集 / P5接入准备与审查
+
+- 用户接入Gemini UVC后先测到1920×1080约14.1Hz，但首任务fresh_frame_timeout。定位本机usb_cam0.8.1的get_epoch_time_shift_us将tv_usec再除1000，造成约0.95秒时间戳偏差；未放宽新鲜度。新增本机独立构建脚本，固定官方提交cb2ae6b，只修微秒单位，源码/overlay在artifacts，不改系统或车端驱动。修正后采集14.75Hz；并行回归时13.66Hz，ROS帧龄0.070–0.094秒，R/B1.0112；1个相机发布者、0个速度发布者。
+- 真实相机四任务均上传且SHA一致，仍用假播报；用户选择不做人工摆拍，PCB当前场景清晰度31.78低于门槛80，按warn如实上报。图片仅在忽略的artifacts。真人/舌体/安全帽/PCB内容与真实TTS未验收。
+- 整机入口新增默认关闭WITH_CAPTURE_TASKS；开时复用Speech action，接底盘强制robot与唯一guard，无底盘bench禁止跟随/运动。两流程robot可共用停车租约；两个bench因guard要求冲突明确拒绝并记文档。补README/AGENTS长期约定、接口和实现验收文档。
+- 最小审查补强：SIGINT/SIGTERM保持ROS运行以释放自身资源；取消/失败不保留显式调试图片；401/403非JSON响应也进入鉴权失败；修复上传鉴权失败与在途轮询的状态竞争。补TTL/入口门控/迟到租约释放与stop清理测试。受保护的7个旧包diff为零。
+- 本机整仓21包Humble编译通过；运行时10场景含20任务资源增量0/0、原文字播报8项回归通过。最终纯Python/结构/diff与构建日志均在artifacts/capture-validation，均非Jetson或实车验收。
+
+- 最终验收：新增37项纯Python测试通过，整仓CI通过（录像工具22项）；结构21包/355个Python文件、Shell语法、diff检查通过。复核版ROS运行时10场景通过，文字播报8项通过；真实采集任务PREPARE阶段SIGTERM返回CANCELLED并送达mock，入口进程已清理。迟到租约用短于原租约超时的断言确认主动释放。
+
+- 去重复核：bridge保留完整10分钟原ack，不因超过2048条提前淘汰；新增跨容量原结果回放测试，缓存仍随时间到期清理。
+
+
+## 2026-10-12：云端拍照验收修复
+
+### 编号1–3：入口、失败通知、本机保护
+
+- 原样登记用户的《云端拍照任务修复说明》及README索引。接底盘拍照须显式WITH_FOLLOWER=true，缺失退出2；保留robot和唯一guard，提示同时启动跟随器，更新入口帮助/AGENTS/实现文档。
+- 上传内部中止改用upload_cancel；失败通知独立于任务TTL/安全检查，只有关闭、外部取消和TTS自身失败抑制。失败通知异常只附加事件，原始结果不变；robot仍先通知后释放租约，迟到语音接受仍取消。
+- 本机脚本用grep完成时间戳和唯一TTS检查，ROS图查询失败明确退出；头文件/overlay可注入。增加CAPTURE_MOCK_FAIL_UPLOAD便于可重复的本机故障验收；mock请求计数按有效请求到达计，避免迟到的取消请求污染重试统计。
+- 本机43项纯Python通过；Humble x86_64子集18包编译通过。ROS新增500三次/401、TTL、质检失败通知，TTS失败、ROS/cloud取消和SIGTERM抑制，robot假odom异常期间持有租约至通知完成。多线程测试替换节点前停止executor，避免rclpy销毁竞争；播报测试时限1.5秒覆盖CI调度抖动。本组完整ROS运行时13/13通过，20任务线程/FD增量0/0；标准PATH无rg时，真实独占假TTS及注入坏头文件均被入口拒绝。
+- 真实Gemini本机入口（假TTS）500故障：三次请求后FAILED upload_http_500，日志收到安全失败原文。54帧1920×1080，13.67Hz，ROS帧龄0.086–0.114秒，1相机发布者/0速度发布者。没有扬声器听感、真人摆拍、Jetson或实车验收。日志 artifacts/capture-validation/repairs/，不提交图像或凭据。
+- 最小审查：bash语法、结构与diff检查通过；protected十包不改。scripts中WITH_FOLLOWER=true仅剩start_robot.sh的既有显式整机配置，没有新增自动赋值；shellcheck本机未安装。
+
+
+### 编号4–7：帧容差、可配置轮询、状态期限、URL前缀
+
+- 编号4：ROS帧龄容许最多50ms超前（MAX_FUTURE_STAMP=0.05，与舌苔一致）；monotonic非负接收龄及采集窗口后条件保留。覆盖+30ms接受/+80ms拒绝、落后400ms接受/600ms拒绝、窗口前和负接收龄拒绝。
+- 编号5：poll_wait_sec默认1、仅整数0–20，launch和CAPTURE_POLL_WAIT_SEC透传，outbox待发时0。GET总时限和实际socket预算同步wait+2（避免只改deadline而socket仍固定2秒）。协议说明默认约1Hz、目标10秒心跳和单线程调大wait的延迟；未重构线程。
+- 编号6：执行器/bridge的模式状态按monotonic接收时刻6.5秒过期，注释注明manager失联6秒后的舌苔清理依据；解析失败active同样过期。bridge执行器状态1.5秒过期，ack unavailable优先于busy，心跳unknown/健康false，bridge_state含executor_stale。
+- 编号7：CloudClient规范安全路径前缀并同时用于bridge与上传，拒绝空段/点段/编码/凭据（含空用户名）/query/fragment；生产request断言/v1/，mock工具独立admin_request。mock/CLI支持serve --prefix，CLI带前缀status/send通过，未改变生产接口范围。
+- 本机ROS运行时14/14通过：一次active消息6.5秒后恢复、执行器停止后的unavailable与unknown心跳、/roscar前缀上传JPEG/SHA一致、poll_wait_sec=5取消约0.047秒、原13场景回归；20任务线程增量2、FD增量0（仍在既定上限内）。文字播报原8/8通过；Humble x86_64子集18包编译通过。
+- 更新协议/实现验收文档，无新增文档。最小审查核对所有CloudClient生产路径、参数上下限/真实socket超时、过期优先级及finally通知/租约顺序；protected十包相对main仍零改动。不push、不SSH、不部署，模拟数据不作为实车或识别准确率验收。
+
+- 最终统一检查：整仓纯Python CI通过（capture_task 74项、录像工具22项；沿用原有ROS依赖排除口径）；结构21包/358个Python文件、shell语法、git diff --check main..HEAD及工作区通过。最终子集重建18包通过，日志final-build.log。无shellcheck可执行文件。所有联调子进程已清理，保护包diff为空。
+
+
+## 2026-10-13：云端拍照 ROS 服务门面
+
+### 分支与方案登记
+
+- 从已验收的codex/cloud-capture-tasks@08464e1新建codex/capture-ros-api，原样登记用户方案及README索引；基线分支不变。仅本地提交，不push、不SSH、不部署。
+- 已阅读方案规定的六份入口文档。复用capture_task两包，不增加包；保护十包、既有action和bridge保持不变。执行器只允许source白名单和X-Task-Source头两处增量。
+- 方案中的超时用例需分层：真实执行器的TTL会先于“TTL+speech_timeout+5”门面时限结束，因此慢上传首先验证failed；门面整体超时另用停滞action结果的故障注入验证，避免误报为真实执行器行为。
+- 最小审查：当前仅方案/索引/工作记录，git diff --check通过；后续编译与运行时证据单独记录。
+
+
+### 服务接口、门面与启动实现
+
+- 新增capture_task_interfaces/RunCapture、CancelCapture srv及CMake登记，capture_task的api_logic/api_node和entry point。按tasks.yaml自动生成四服务，含请求/禁用词/有限数字校验、自动ros-UUID、原样结果映射及整体时限；门面不拥有TTS/相机/HTTP/guard。
+- 门面单个在途服务、ReentrantCallbackGroup+多线程；0.2秒按task_id和本次接收时刻关联拒绝。取消仅作用于自身handle，外部任务返回not_owner；关闭/超时/取消-before-accept补挂回调处理迟到接受，覆盖接受回调与服务赋handle之间的竞争。已接受任务取消等待执行器结果，保留原detail。
+- with_ros_api/CAPTURE_ROS_API均默认false；显式打开需拍照模块开启，非法布尔/组合退出2。执行器相对08464e1仅source白名单和X-Task-Source头两处。mock可选reject-unknown-task默认为关，接受带/不带新头的旧客户端；严格云端仅认可自己下发过的ID。
+- 同步ROS接口手册（字段、CLI/Python、互斥/归属、超时两层、与tongue_mode区分）、HTTP增量/待云端确认、实现文档、README目录和AGENTS长期入口约定。显式task_id按srv定义原样保留，仅自动ID强制ros-；建议自定义ID也用ros-且每次唯一。
+- 本机纯Python110项通过（本次新增36项）；原生Humble x86_64子集18包编译通过。新ROS运行时14/14、原拍照14/14、文字播报8/8通过。新场景含四任务JPEG/SHA+来源头、覆盖播报、无效请求未发goal、门面/云端并发与取消归属、语音模式拒绝、取消不补播、无执行器约2秒、严格云端404、慢上传TTL失败、停滞结果及迟到accept的门面timeout、SIGTERM、默认/显式launch服务集合。全是合成RGB/假TTS/mock，没有实车或真实云端/相机/扬声器验收。
+- 最小审查：修正Node的services保留属性冲突；取消测试等待0.25秒状态刷新再断言空闲，未放宽取消完成。核对action/bridge/十个保护包零改动，执行器恰好两处增量。进一步统一检查及日志在artifacts/capture-validation/ros-api，图片不入库。
+
+- CLI额外检查发现基线capture_task_interfaces未export build_type，colcon误识别为ros.catkin：Python加载虽可用，但source install后AMENT_PREFIX_PATH没有它，ros2 interface show报Unknown package。为实现标准srv/CLI交付，本轮补其package.xml的ament_cmake声明（无字段/行为变更）；这是方案列出的srv/CMake之外的必要构建元数据修正，不修改同样缺声明但受保护的execution_mode_interfaces。将复核重新配置、原接口回归和CLI，不把此前仅Python导入成功当成CLI可用。
+
+- 最终统一验收：接口声明修正后重新配置/编译18包通过（execution_mode_interfaces仅有基线CATKIN变量未使用警告）；ros2 pkg prefix与两个srv的interface show可用，公开service call实际模拟上传成功。新ROS14/14、原拍照14/14、文字播报8/8再次通过；launch默认只含原executor/bridge，显式开启多一个api且只有预期五个/capture服务。
+- 启动集合测试曾发现FakeTTS的ActionServer持有node handle，Node.destroy_node不能单独清理它；测试夹具显式destroy server后，跨context重新发现不再有遗留节点。此修正仅在新增测试，不改基线fake或protected包。
+- 整仓CI通过（capture_task110项、录像工具22项，沿用ROS依赖排除口径）；结构21包/362个Python文件、Shell语法、文档目标与Python示例语法、diff检查通过。证据在artifacts/capture-validation/ros-api；没有实车或正式云端验收。准备本地提交及带08464e1前置提交的git bundle，基线分支保留原指针。
+
+### 接口文档发布到 wlcb
+
+- 用户授权通过 MeatShell 的 wlcb 会话发布接口文档；首次主机密钥由用户在 MeatShell 确认后连接成功。复用服务器已有 Nginx `/d/` 静态下载配置，文件位于 `/var/www/download/roscar/20261013-c6d23f1/`，没有修改 Nginx 配置或重启服务。
+- 发布代码版本 c6d23f1 的文档快照：ROS接口使用文档、云端拍照任务接口协议、文字播报ROS接口，以及包含背景文档和五个自定义接口包字段定义的 ZIP（34 个文件，62427 字节）。打包产物只在忽略的 artifacts/interface-docs，不含凭据、图像、权重或构建产物。
+- 下载前缀 `http://8.130.12.77/d/roscar/20261013-c6d23f1/`；文件为 `roscar-interface-docs-20261013-c6d23f1.zip`、`ros-api.md`、`capture-http-api.md`、`speech-api.md`。ZIP SHA256：`659dac7d5648be254e496a2d3787c1003009a0ec47c99c76d7d5e93657f5c574`。
+- 最小审查：ZIP 结构与 CRC、包内逐文件 SHA256 通过；本机直连公网下载四个文件均返回 HTTP 200、Content-Disposition: attachment，内容与本地原文逐字节一致。此次只发布文档，没有部署小车程序、推送 Git 或进行实车验收。
+
+## 2026-10-13：拍照 ROS 分支合并本地主线与接口手册重写
+
+- 用户要求把添加 ROS 接口的分支合并回本地主线。先提交上一轮 wlcb 文档发布记录（a3a39ad），再将 main 从 62a7c59 快进到 codex/capture-ros-api@a3a39ad；没有冲突，原功能分支保留。云端拍照实现、七项修复和可选 ROS 门面均纳入 main，默认关闭参数不变。
+- 对照实际 launch、srv/action、motion_guard、拍照门面/执行器/bridge 和 TTS 源码，重写 ROS接口使用文档、文字播报ROS接口、云端拍照任务接口协议；README 索引同步说明使用入口。按“选接口→构建/启动→调用→读结果→取消→排查”组织，不把历史试运行目录当新部署位置。
+- 清除旧文档中的无 epoch arm 操作、缺失 SetControlMode.authority_epoch、DeepSeek 控车描述及雷达检查固定关闭的过时结论；补齐当前 STOP/ESTOP/FAULT 与复位语义、固定规则链路、B/C 感知接口和坐标区分。明确 prepare_sec 负数采用目录默认、ROS 字段省略为 0、bench 与 guard 入口不能并开、取消归属及两层时限。
+- 拍照质检对照代码说明：宽度也是质量警告之一，默认 warn 可上传，fail 才拒绝；上传回执不是图片 URL 或推理结果，ROS 自建 task_id 仍须正式云端确认。HTTP 文档分开两种任务来源，列出方法方向、必填字段、回执/幂等与事件可靠性边界。
+- 最小审查：三个文档的 3 个 Python 块 AST、22 个 Bash 块语法、7 个 JSON 块和 21 个本地链接通过；请求/结果与 srv/action 原文核对，git diff --check 通过。拍照纯 Python 回归 110/110 通过（从包目录使用 PYTHONPATH=.；首次从仓库根调用未设置路径造成导入失败，已纠正）。合并后语音、guard、tongue_mode 和 YOLO 包相对原 main@62a7c59 无改动。未重新编译或进行 ROS 运行时/实车验收，没有 push 或更新小车。
+
+### 重写版文档下载同步
+
+- 延续用户已授权的 wlcb 文档托管，发布 main@dab98ed 快照到 `/var/www/download/roscar/20261013-dab98ed/`，旧 c6d23f1 下载路径保留，Nginx 配置和其他服务不变。
+- 新下载前缀 `http://8.130.12.77/d/roscar/20261013-dab98ed/`；ZIP 为 `roscar-interface-docs-20261013-dab98ed.zip`（38 文件、96695 字节），另有 `ros-api.md`、`capture-http-api.md`、`speech-api.md`。ZIP SHA256：`0b67707f026fe06af48d6ff92e8a47336a750d78e2a7055b0867417bbbf0de79`。
+- ZIP CRC 和逐文件 SHA256 检查通过；本机无代理直连公网，四个文件均 HTTP 200、attachment，逐字节匹配本地。只发布文档，未更新小车程序或正式拍照云端业务实现。
+
+## 2026-10-13：同步本地主线到 5060wsl
+
+- 用户授权通过 MeatShell 的 5060wsl 会话，将仓库同步回 E 盘 works/newcar。现场发现 ROS-CAR、ROS-CAR-voice-tongue、ROS-CAR-cloud-capture、ROS-CAR-capture-ros-api 为同一 Git 仓库的 worktree；main 实际检出于 `/mnt/e/works/newcar/ROS-CAR-voice-tongue`，该工作区干净。ROS-CAR 仍在旧固定规则分支并有未提交修改，因此更新现有 main 工作区，保留其他工作区和本地数据。
+- 通过增量 Git bundle 将 main 从 62a7c59 快进到 c43864e，带回独立云端拍照模块、七项修复、拍照 ROS 门面和重写接口手册；没有覆盖整个目录或复制构建产物、权重、图像、厂商原包与私有凭据。转移前保留 `codex/backup-main-before-wsl-sync-20261013`，指向 62a7c59。
+- 最小审查：传输 bundle SHA256 与前置提交校验通过；目标 main 的 58 个变更路径逐一匹配本机 SHA256，工作区干净；其余三个 worktree 的 HEAD、分支、索引、未提交状态以及修改文件内容校验一致。三份接口文档的 Python 语法和本地链接在 WSL 检查通过，git diff --check 通过。
+- 这次只同步源码、文档与 Git 历史，不构建、不启动 ROS 或硬件服务，也不推送 GitHub。随后将本条同步记录提交并增量同步到同一个 main 工作区，最终以两端 HEAD 一致为完成条件。
+
+
 ## 2026-10-11：ReID 双人录像离线评估
 
 - 用 `analyze_gemini_recording.py --reid`（`reid.yaml` 默认值，主结果 stride 6 约 4–5 Hz 对齐 `sample_hz`，Pose 复用 stride 2 缓存）回放 10-10 B 与 10-09 B2。无身份标注：10-10 以衣着颜色作弱参考并人工看事件帧，10-09 人工逐张看全部确认输出裁剪。
@@ -1493,3 +1600,21 @@
 - 2026-10-12 Codex 续接：分支已推送，创建 PR #19（未合并）；通过 Wi-Fi 白名单 dry-run 后同步到 ROSCAR-c，19 包原生构建通过。纯感知探测未发现已连接的 Orbbec，相机等待设备，不能复测 FPS，随后停止本次临时服务。新增最终分辨率两行底色标签；C 默认 OMP_NUM_THREADS=1；16UC1 毫米深度作为显式试验选项保留 32FC1 默认；总入口语音/TTS 开启 SpeakText 与 /voice/say 单队列桥接。本机纯 Python 回归通过（tracker 278 项）；深度量化边界/精度测试通过，320×240 标签合成图人工目视检查通过。板端后续运行时与语音检查进行中，未启动底盘或授权运动。
 - 本轮板端验证补充：19 包原生构建及 tracker 增量构建通过；双深度格式、FOLLOW 宽限/恢复、TaskHold 合成 ROS 测试通过。speech API 测试首次误用域 184 被前置检查拒绝，改为要求的域 186 后 8 项通过；入口测试旧 Foxglove persons 面板断言已随现有布局修正，5 项通过。实际语音总入口无底盘/运动关闭：Qwen3-ASR/MeloTTS 加载成功，共享录音及 KWS 心跳正常，guard IDLE/DISARMED、唯一 cmd_vel 且全零；/voice/say 返回 completed（可听性待用户确认）。相机仍未枚举，网口 DOWN，未做 FPS 或实车复验。AGENTS 仅更新总入口播报规则及修正旧验收状态矛盾。
 - 本轮收尾：Pose 合成 ROS 集成与板端入口 5 项通过，27e0068 的 GitHub unit-tests 通过；临时感知/语音服务均已停止并核查，无本轮 guard/语音/感知残留进程。验证日志已取回本机 artifacts；保留运行所需 symlink-install 构建依赖，无新增环境/镜像。当前仍待现场可听性反馈、相机枚举/网线连接及实车复验。
+
+
+## 2026-10-13：WSL PR 与远端 C 主线兼容合并
+
+- 在 5060wsl 的独立工作区 `ROS-CAR-pr-capture-api`、分支 `codex/capture-ros-api-pr` 整合本地主线 c97ed0e 与远端 main 64a48f7；保留原 WSL 主线与其他工作区。保留远端 Gemini/C 感知、目标恢复与共有文字播报入口，加入独立云端拍照与可选 ROS 服务门面。
+- 解决启动脚本、两份接口手册及工作记录冲突；拍照开启时强制关闭跟随自动授权/自动续跟并要求紧急 KWS 心跳，拍照关闭时保留远端原跟随选项。该限制不修改 motion_guard 实现。
+- 新增启动入口回归，验证运动许可打开或显式传入自动恢复选项时，拍照入口仍要求逐次授权。验证结果及 PR 链接在完成后补记；本轮未部署小车，未做 WSL ROS 编译或实车验证。
+
+- 5060wsl 本机验证：拍照包 113 项纯 Python 回归、完整 CI 脚本 2063 项 pytest 与 22 项录像工具测试、6 项 C 入口测试均通过；启动脚本 bash 语法、文档相对链接与 diff 空白检查通过。合并后的 C 感知、motion_guard、offline_voice、voice_command_router、roscar_api 源码与远端 main 一致；这些软件检查不代表 ROS 编译或实机验收。
+
+- 已从 WSL 推送分支并创建 PR #22：https://github.com/Shimmersss/ROS-CAR/pull/22 ，目标 main，未合并。原 WSL main 工作区仍保持 c97ed0e，本次远端兼容合并仅位于 PR 工作区。
+
+
+### PR #22 跟进远端同日更新
+
+- 创建 PR 后远端合并了 #21（主人 10 秒重认领、阶段播报和公共 API），再次合并 ca34985 并保留全部新功能；更新接口手册的根目录 install、主人认领、阶段播报、舌苔及云台/导航章节。拍照与原语音入口限制继续保留。本次再做软件回归，不将其描述为 ROS 编译或实机验证。
+
+- ca34985 合并后完整 CI 再次通过：2073 项 pytest、22 项录像工具测试及 1 项构建入口路径测试，另有 6 项 C 入口测试通过；文档链接、冲突标记、bash 语法和 diff 空白检查通过。原 WSL 其他三个工作区的分支、HEAD、状态与已修改文件哈希均保持；原 main 工作区保持 c97ed0e。最终核心源码（含舌苔）与远端 main 一致，拍照入口额外限制仅在显式开启时生效。
