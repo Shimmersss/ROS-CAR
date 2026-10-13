@@ -75,11 +75,14 @@ class Selection:
         self.last_box = tuple(candidate.box)
         return True
 
-    def lock(self, now=None, max_age=.5):
+    def lock(self, now=None, max_age=.5, track_id=None):
         now = time.monotonic() if now is None else now
         if now-self.received_at > max_age or not self.candidates:
             return False, 'No fresh tracked candidates'
-        candidate = min(self.candidates,
+        candidates = self.candidates if track_id is None else [d for d in self.candidates if d.track_id == track_id]
+        if not candidates:
+            return False, 'Requested track is not a fresh candidate'
+        candidate = min(candidates,
                         key=lambda d: (abs((d.box[0]+d.box[2])/2-self.width/2), d.track_id))
         self.target_id = (self.epoch, candidate.track_id)
         self.last_selected = candidate
@@ -97,9 +100,7 @@ class Selection:
     def auto_lock_single(self, now=None, max_age=.5, confirm_frames=3):
         """Opt-in display mode: acquire one stable track, never choose among people."""
         now = time.monotonic() if now is None else now
-        if self.target_id is not None and self.target_id[0] != self.epoch:
-            self.target_id = None
-        if (self.selected() is not None or now-self.received_at > max_age
+        if (self.target_id is not None or now-self.received_at > max_age
                 or self.detection_count != 1 or len(self.candidates) != 1):
             self.auto_candidate, self.auto_count = None, 0
             return False

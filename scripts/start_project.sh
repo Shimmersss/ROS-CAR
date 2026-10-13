@@ -6,6 +6,7 @@ export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-182}"
 export ROS_LOCALHOST_ONLY=0
 export ROSCAR_WS="$ROOT/ros2_ws"
 export PERCEPTION_ROUTE="${PERCEPTION_ROUTE:-b}"
+export PERCEPTION_INSTALL="${PERCEPTION_INSTALL:-$ROOT/install}"
 case "$PERCEPTION_ROUTE" in
   b) camera_script=run_astra_camera.sh; model_name=yolo26s; layout=b-radar-layout.json ;;
   c) camera_script=run_gemini_camera.sh; model_name=yolo26s-pose; layout=c-layout.json
@@ -24,7 +25,6 @@ case "$PERCEPTION_ROUTE" in
      export DEPTH_TOPIC="${DEPTH_TOPIC:-/camera/aligned_depth_to_color/image_raw}"
      export CAMERA_INFO_TOPIC="${CAMERA_INFO_TOPIC:-/camera/color/camera_info_rect}"
      export CAMERA_MOUNT_CONFIG="${CAMERA_MOUNT_CONFIG:-$ROOT/ros2_ws/src/perception_bringup/config/gemini_mount.yaml}"
-     export PERCEPTION_INSTALL="${PERCEPTION_INSTALL:-$ROOT/install}"
      ;;
   *) echo "PERCEPTION_ROUTE 必须为 b 或 c" >&2; exit 2 ;;
 esac
@@ -60,7 +60,9 @@ case "${1:-}" in
     默认启动 B；PERCEPTION_ROUTE=c 或 scripts/start_c.sh 启动 Gemini/Pose。
 C 必须指定 GEMINI_SERIAL 和 GEMINI_CALIBRATION；相机/配准实测后才设 DEPTH_REGISTERED=true。
 WITH_VOICE=false 关闭语音；VOICE_BACKEND=offline，ASR_BACKEND=xfyun 可回退云端识别。
-启用语音及 TTS 时同时提供 /voice/say，复用唯一 TTS 队列。
+启用语音及 TTS 时同时提供 /voice/say 和主人/跟随阶段播报，复用唯一 TTS 队列。
+OWNER_LOST_TIMEOUT_S 默认 10 秒，主人未返回则释放并允许重新认领，不延长运动宽限。
+PERCEPTION_INSTALL 默认仓库根目录 install，B/C 使用同一构建位置。
 WITH_CHASSIS=true 开启底盘串口收发。
 WITH_TONGUE_MODE=true 将舌苔流程接入现有语音，要求 WITH_VOICE/WITH_FOLLOWER=true。
 WITH_CAPTURE_TASKS=true 启用独立云端拍照；要求语音/TTS；接底盘使用 robot，须显式 WITH_FOLLOWER=true。
@@ -260,7 +262,7 @@ if [[ "$WITH_VOICE" == true ]]; then
   fi
   start_module voice bash "$ROOT/scripts/run_voice_assistant.sh" "${voice_args[@]}"
   if [[ "${VOICE_TTS_ENABLED:-true}" == true ]]; then
-    start_module speech_api bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch roscar_api speech_api.launch.py"
+    start_module speech_api bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch roscar_api speech_api.launch.py with_announcements:=true"
   fi
 fi
 if [[ "$WITH_CAPTURE_TASKS" == true ]]; then

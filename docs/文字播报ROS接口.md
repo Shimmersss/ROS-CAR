@@ -19,7 +19,7 @@
 ```bash
 source /opt/ros/humble/setup.bash
 bash scripts/build_ros.sh --packages-up-to roscar_api
-source ros2_ws/install/setup.bash
+source install/setup.bash
 export ROS_DOMAIN_ID=182 ROS_LOCALHOST_ONLY=1
 ```
 
@@ -163,3 +163,16 @@ topic 不返回播放确认，超过配置长度会截断，队列满时会丢�
 本地模拟运行时回归已通过，真实小车历史播报记录见[实机记录](2026-10-12语音舌苔实机试运行.md)。本轮文档更新与本地主线合并没有重新部署或验证实际扬声器。
 
 更多接口见[ROS 接口使用手册](ROS接口使用文档.md)。
+
+## 8. 自动阶段播报
+
+
+B/C 的 `start_project.sh` 在语音及 TTS 开启时自动接入；已启动的旧组合入口可以单独补桥：
+
+```bash
+ros2 launch roscar_api speech_api.launch.py with_announcements:=true
+```
+
+`phase_announcements` 订阅 `/perception/owner_state` 和 `/control/state`，通过 `/voice/say` 播报“已认领主人”“开始跟随”“主人丢失，等待返回”“主人已返回”“主人未返回，可重新认领”等。相同状态心跳只维持待播状态的新鲜度，不重复提交。语音暂不可用时等待当前状态；同来源新阶段替换未发送的旧阶段，心跳中断超过 4 秒丢弃待播内容。`/system/phase` 的 JSON 是阶段请求记录，不是播放成功证明。运动和感知不等待音频完成。
+
+舌苔通过原 `/voice/speak` action 顺序播报检查、提示、准备、拍摄、分析、结果及 READY 提示，等待每次播放完成；拍摄阶段播报完成后才接收新的 RGB 帧。最后一句“可重拍或退出”播放完成后才进入 READY；超时后晚到的语音 goal 仅取消自身。完整启动参数和接口见 [ROS 接口调用文档](ROS接口使用文档.md)。

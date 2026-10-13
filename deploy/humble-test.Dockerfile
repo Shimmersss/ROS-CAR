@@ -6,7 +6,7 @@ RUN sed -i -E '/^deb-src /d; s/ restricted//g; s/ multiverse//g; /^deb .* jammy(
     && apt-get update && apt-get install -y --no-install-recommends \
     alsa-utils python3-colcon-common-extensions python3-pytest python3-websocket \
     ros-humble-rosidl-default-generators ros-humble-geometry-msgs \
-    python3-numpy python3-opencv ros-humble-cv-bridge ros-humble-message-filters \
+    python3-numpy python3-pil python3-opencv ros-humble-cv-bridge ros-humble-message-filters \
     ros-humble-nav-msgs ros-humble-nav2-msgs ros-humble-turtlesim \
     ros-humble-tf2-geometry-msgs ros-humble-tf2-ros ros-humble-tf2-ros-py \
     ros-humble-sensor-msgs ros-humble-visualization-msgs ros-humble-vision-msgs \

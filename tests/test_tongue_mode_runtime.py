@@ -156,7 +156,7 @@ def main():
         data = yaml.safe_load(share.read_text())
         data['modes'].append(dict(id='other', action='/modes/other/run', enter=['其他模式']))
         catalog.write_text(yaml.safe_dump(data, allow_unicode=True))
-        rclpy.init(args=['--ros-args', '-p', 'catalog:='+str(catalog), '-p', 'execution_modes_config:='+str(catalog),
+        rclpy.init(args=['--ros-args', '-p', 'use_sim_time:=true', '-p', 'catalog:='+str(catalog), '-p', 'execution_modes_config:='+str(catalog),
                         '-p', 'server_url:=http://127.0.0.1:'+str(cloud.server_port),
                         '-p', 'camera_topic:='+CAMERA_TOPIC, '-p', 'camera_profile:='+CAMERA_PROFILE,
                         '-p', 'storage_dir:='+temp+'/results', '-p', 'enable_speech_action:=true',
@@ -171,6 +171,20 @@ def main():
         nodes = [io, guard, tts, router, manager, tongue, other]
         executor = MultiThreadedExecutor(num_threads=10)
         for node in nodes: executor.add_node(node)
+        # Test-only shared monotonic ROS clock: retain all production age checks.
+        from monotonic_ros_clock import MonotonicRosClock
+        test_clocks = [MonotonicRosClock(node) for node in nodes]
+        shared_clock = test_clocks[0].clock
+        for node in nodes:
+            node.get_clock = lambda: shared_clock
+        clock_stop = threading.Event()
+        def tick_test_clocks():
+            while not clock_stop.is_set():
+                for clock in test_clocks: clock.tick()
+                clock_stop.wait(.002)
+        clock_thread = threading.Thread(target=tick_test_clocks, daemon=True)
+        clock_thread.start()
+        print('TEST CLOCK: shared monotonic ROS time; use_sim_time=true; production freshness guards unchanged', flush=True)
         spinning = threading.Thread(target=executor.spin, daemon=True); spinning.start()
         cases=[]
         def mark(name): cases.append(name); print('PASS:', name, flush=True)
@@ -190,6 +204,11 @@ def main():
             assert io.results[0]['response']['labels']['FurYellow']['decision']=='positive'
             assert not any('没有识别到控制指令' in s for s in tts.spoken)
             assert manager.active['mode_id']=='tongue'
+            phrases = ['检查检测服务', '请正对相机，伸舌保持不动。', '准备拍摄', '正在拍摄',
+                       '正在分析', '本次识别到黄苔。', '可重拍或退出']
+            indices = [tts.spoken.index(text) for text in phrases]
+            assert indices == sorted(indices) and all(tts.spoken.count(text) == 1 for text in phrases)
+            assert any(s['phase'] == 'READY_PROMPT' for s in io.states)
             mark('voice entry -> hold -> prompt completion -> fresh JPEG -> validated response -> speech -> persistent READY')
 
             assert not call(io.set_mode, SetControlMode.Request(mode='FOLLOW')).success
@@ -302,6 +321,7 @@ def main():
             tts._worker.join(timeout=1.)
             time.sleep(.1)
             executor.shutdown(timeout_sec=3.)
+            clock_stop.set(); clock_thread.join(timeout=1.)
             for node in nodes: node.destroy_node()
             rclpy.shutdown()
             spinning.join(timeout=3.)

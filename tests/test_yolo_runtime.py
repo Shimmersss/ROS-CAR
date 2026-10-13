@@ -160,6 +160,8 @@ def main():
         assert send().status == TargetState.LOST  # reset epoch prevents ID reuse
         assert backend.resets > 0
         assert detections[-1].detections[0].id == f'{node.selection.epoch}:7'
+        assert not call('lock_target').success  # Old-epoch owner is still reserved.
+        assert call('release_target').success
         assert call('lock_target').success
         spin()
         assert states[-1].position_valid

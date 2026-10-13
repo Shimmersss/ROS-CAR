@@ -1,5 +1,38 @@
 # 工作记录
 
+## 2026-10-13：PR #21 审查修复与合并前补验
+
+- 核对 PR #21 全部审查意见，唯一意见为 `claim_owner` 忽略主人预留，允许 TRACKING/LOST 时直接换人。扩展真实 ROS 回归后，在原实现上复现 `TRACKING owner replaced by a premature claim`，确认问题成立；证据 `artifacts/pr21-review-20261013-before.log`。
+- 在现有 `serialized` 锁内先检查主人为 UNCLAIMED，才允许认领；指定其他 ID、同 ID 重复认领、空参数中央认领及兼容 `lock_target` 都遵守同一门禁。拒绝不改主人绑定、丢失时间、选择代次或播报次数；主动换人须先 release，丢失满十秒后仍开放认领。同步流重置/SOT 冲突后的提示及两份接口文档，未新增文档入口或长期规则。
+- 扩展 `test_owner_announcements_runtime.py` 覆盖 TRACKING/LOST 各四种拒绝请求、无副作用、主动释放后通过新/旧接口换人、两个实际完整十秒窗口后的自动/显式重认领；B 流重置、SOT 冲突回归验证旧主人仍被预留，并在显式 release 后继续原用例。
+- 首次全套在既有 guard 回归中断言失败，诊断重跑记录 `request_timestamp` 锁存；该合成测试改用项目已有 MonotonicRosClock/use_sim_time 驱动 probe 和 guard，并新增显式回拨 0.5 秒导致时间戳故障、恢复时钟后仍不自动授权的检查。生产时间验证未改，原请求/健康超时检查保留。另一次并发测试收尾等待超时，增加诊断的单独复验及最终全套通过，未据此反推该次失败的具体原因；中间日志和探针均保留。
+- 最终验证：ARM64 Humble 主动 **19 包 colcon 构建**及 tracker 增量构建通过；纯 Python CI **1960 passed / 2 skipped**，录像工具 22 项与 B 入口 1 项通过；`scripts/test_flow_regressions.sh` **18 次合成 ROS 脚本调用全部通过**，包含上述新用例、舌苔 17 场景和 SayText 8 项，入口前置方法回归 8 项、舌苔逻辑 34 项也通过。结构检查（19 包/354 Python 文件）、Python 语法、`git diff --check` 通过；最小审查覆盖原子门禁、拒绝无副作用、显式释放/超时、旧接口兼容及文档一致性。
+- 验证证据位于 `artifacts/pr21-review-20261013-*.log`，最终全套为 `full-ros`、纯单测为 `unit`；本轮只做合成 ROS 与软件验证，未连接或部署 Jetson、未启动实物硬件。创建前检查本机约 12 GiB 可用，复用已有 Humble 镜像并仅在临时容器补 Pillow；结束已删除本轮容器与约 50 MB 可重建构建输出，无新增镜像/卷，保留源码和全部验证证据。
+
+## 2026-10-13：修复五项流程问题、主人十秒重认领与阶段语音、公共 ROS API
+
+- 基于已同步的 `main@64a48f7`，在本地 `codex/fix-flow-owner-api` 实施；保留此前同步/审查记录。用户确认播报范围为认领、开始跟随、丢失、找回、十秒后重认领及舌苔各阶段，状态心跳不重复播报。未连接、同步或部署到 Jetson，未触发真实运动。
+- 五项修复及对应回归：① guard 已处于目标 FAULT 时，急停健康 false/心跳超时及随后出现的非目标故障升级锁存，输入恢复仍不自动授权（`test_motion_guard_grace_runtime.py`）；② 讯飞识别必须收到最终包，超时临时文本、达到录音上限的截断文本和已取消结果不发布（`test_voice_flow_regressions.py`）；③ build/B/C 及主动辅助脚本统一根 `install/`，保留 PERCEPTION_INSTALL 覆盖，执行真实 B 脚本验证不会加载旧 overlay（`test_entry_paths.py`）；④ ground/unified 无条件遵守主目标 LOST/来源/非模拟/新鲜度门禁，光学深度无效不妨碍独立有效地面定位（`test_selection_gate_runtime.py`）；⑤ 舌苔等待 SpeakText 接受超时后，即使会话/拍摄代次未变也取消晚到的自身 goal（`test_voice_flow_regressions.py`）。
+- 主人生命周期：新增 `OwnerState`、`ClaimOwner` 与默认 10 秒的单调时钟等待；精确认领支持当前 epoch:track_id，兼容中央 lock/release。到期清除主人身份/找回证据，切换选择代次，禁止旧异步 SOT 结果影响重新认领的同 ID；此前启用的单人自动认领重新等待三帧，多人仍需显式选择。主动 release 仍抑制自动认领。真实 ROS 合成测试实际等待完整十秒，覆盖期限内返回、到期、新主人自动认领和主动释放，另测旧代次联动结果丢弃。该窗口未扩大 motion_guard 的 0.6 秒跟随宽限，也不授予运动权限。
+- 阶段播报：新增独立观察器，经 `/voice/say` 复用唯一 TTS，发布 `/system/phase`；简短提示按阶段去重。语音启动慢时保留仍有心跳的当前阶段，合并未发送旧阶段，心跳断开超过四秒丢弃；请求响应也有有界等待。舌苔通过 `/voice/speak` 逐阶段完成确认，拍摄播报完成后才取新帧；最后提示用 READY_PROMPT，完成后才进入 READY，失败记录 detail 并保持可操作。没有接入跌倒告警或 LLM 运动。
+- 公共 API：增加语音/播报/舌苔/云台可选启动及 C 的 ReID/SOT/配准/主人参数；默认仍只启一个 IDLE、运动关闭的 guard。拒绝重复 TTS 组合，导航保留独立互斥入口。新增 `roscar_api interfaces` 运行图枚举、`target claim --id`、`mode` 命令；旧 `scripts/mode_command.py` 调用同一实现。C/B 舌苔 camera_profile 正确分开。重写 `docs/ROS接口使用文档.md`，补全服务字段、epoch 授权、全部模块 topic/action、调用例子、时效与错误语义；同步文字播报/消息契约、README 索引、构建说明和 AGENTS 长期入口规则。
+- 验证：复用已有 ARM64 Humble 镜像，实际 **19 包 colcon 构建通过**，API 增量构建通过；本机纯 Python CI **1960 passed / 2 skipped**，另有录像工具 22 项、B 入口 1 项及 C 入口 6 项通过；舌苔逻辑 34 项、可控语音/ASR/阶段投递 8 项通过。新增可重复入口 `scripts/test_flow_regressions.sh` 的 **18 次合成 ROS 脚本调用通过**，其中舌苔 17 个完整场景（12 次假云端上传、9 条结果）及 SayText 8 项均通过；最后新增/调整的 API CLI、SOT 代次、自动重认领、播报启动慢场景又分别通过针对性验证。结构检查、改动脚本 ShellCheck warning/error 级、`git diff --check` 通过；已最小审查故障锁存、身份清理/并发、唯一 guard/TTS、播报顺序及文档与类型一致性。
+- 验证中间失败保留：新增 READY 播报暴露原测试可在提示尚未完成时发起下一操作，已通过 READY_PROMPT 修正生产时序并完整重跑；API CLI 探针原先用阻塞 subprocess.run 导致观察节点未 spin，已改为 Popen 并持续 spin，运输断言通过。舌苔测试正式采用已有 MonotonicRosClock/use_sim_time，消除本机 VM 时间回拨对合成输入的扰动，生产新鲜度、未来/过期输入保护保持不变。编译有既有 CMake 提示及 VM 文件时间略超前警告，最终返回成功；TTS 故意失败日志属于回归注入。
+- 日志保留于 `artifacts/flow-fix-20261013-*.log`，关键为 `build`、`api-build`、`unit`、`full-ros`、`final-focused`、`final-api-owner`；未将注入的语音回执、假云端模型、PTY 云台或 RGB-D 合成输入描述为实机验证。沿用已检查的磁盘空间与现有镜像，仅临时容器补 Pillow（Dockerfile 也补依赖），无新数据卷或新镜像；结束时删除本轮容器及约 50 MB 构建/日志输出，保留源码与验证证据，不动其他服务容器。
+- 提交前复核：按用户要求准备推送 `codex/fix-flow-owner-api` 并向 `main` 创建 PR；再次 fetch 确认远端基线仍为 `64a48f7`，逐项核对构建/单测/ROS 日志与发布说明，差异空白检查通过。提交仅含源码、回归测试和文档，验证日志保留在本地忽略目录，不含模型、音视频或凭据。
+
+## 2026-10-13：同步远端 main 并审查现有流程
+
+- 同步前工作区干净，当前分支为 `claude/c-onboard-follow@57a6fb7`。成功 fetch 后确认该分支已合入远端，切换本地 `main` 并快进到 `origin/main@64a48f7`（含 PR #19/#20）；没有合并冲突。本轮检查启动、C 感知/定位、跟随授权、语音/舌苔/播报；只记录问题，未修改业务实现、提交或推送，未连接/部署/操作小车。
+- **P1，运动故障锁存遗漏**：`motion_guard/node.py:160,376` 仅在已授权时写入新故障。若先因目标丢失进入 `FAULT(target_invalid)`，等待期间再收到急停健康 false，authority 原因不会升级；健康与目标恢复后 `target_auto_recover` 会自动重新授权。真实 ROS 节点合成复现中，未经操作员复位恢复 `ARMED_FOLLOW`，最终输出 `0.1 m/s`，应保持 FAULT/零速的断言失败。`5dd75b1` 的既有回归覆盖的是目标先恢复、再健康失效，未覆盖此顺序。证据：`artifacts/sync-flow-review-20261013-health-fault-repro.py/.log`。应在再次开启实车跟随前修复，非目标故障必须覆盖可自动恢复的目标故障。
+- **P1，讯飞回退发布未完成识别**：`xfyun_speech/asr_node.py:318–334` 在等待 final 超时后先发布非空 partial，仅空文本才报超时。直接调用真实 `_listen_once`，受控输入只给 `status=1` 的“前进”、从未给 final，仍发布该文本；显式 `ASR_BACKEND=xfyun` 且已授权时可能被控制规则执行。应先确认 final，再发布识别结果。此证据为方法级接口桩，未访问云端或真实音频。
+- **P2，默认 B 入口构建目录不一致**：README 与 `start_project.sh` 要求根目录 `install/`，但只有 C 设置 `PERCEPTION_INSTALL`；B 子入口 `run_b_radar_foxglove.sh:13` 默认加载 `ros2_ws/install/`。在只存在根目录安装入口的隔离目录执行真实脚本，因另一目录缺文件以 1 退出；有旧安装时还可能加载旧代码。`build_ros.sh` 仍使用 `ros2_ws/install/`，建议统一构建与启动默认路径。证据：`artifacts/sync-flow-review-20261013-b-entry-repro.log`。
+- **P2，SOT 暂停未传递到下游目标定位**：`ground_node.py:284–286` 仅在 `reid_lock_enabled` 时门控主目标 TRACKING 状态；开启 SOT/主人找回且未开启 ReID lock、安装和地面已确认时，主目标因身份冲突发布 LOST，地面与统一定位仍可发布同一 ID 的 TRACKING/有效位置。真实 ROS 类回调合成复现两个定位器均成立，开启现有身份门控的对照能够阻断。应传递选人暂停状态，同时保留独立地面测距能力，不能简单要求主 RGB-D 位置有效。证据：`artifacts/sync-flow-review-20261013-localizer-repro.py/.log`；默认关闭相关可选能力/几何确认时不会触发该场景。
+- **P2，舌苔播报接受超时后遗留迟到 goal**：`tongue_mode/node.py:299–307` 的迟到取消只检查会话/取消标记/代次变化，不包含本次接受等待超时；检测失败后仍处同会话/代次时，原提示被迟到接受而没有取消，可能与失败提示交错。直接调用真实 `speak/wait_future` 的接口桩复现 `acceptance_wait_timed_out=true` 且 `cancel_called=false`。上述两项语音方法级证据：`artifacts/sync-flow-review-20261013-voice-repro.py/.log`；不等同于完整 ROS action/收音验收。
+- 常规验证：复用现有 `.venv`，纯 Python pytest **1950 通过、2 跳过**，录像工具 **22 项通过**；同步工具 5 项、C 入口 6 项、结构检查（19 包/342 Python 文件）通过；相关 Bash ShellCheck warning/error 级通过，info 级仍有外部 source/间接 trap/有意延迟展开提示。复用 `roscar-humble-test` ARM64 镜像，主动 **19 包 colcon 构建通过**；按 `test_c_container.sh` 执行完整 C 套件（含 20 次运行时脚本调用与相关单测）通过，包含进程内配准与既有急停恢复回归。额外 SayText 8 项及 TaskHold/epoch 合成 ROS 测试通过。日志：`artifacts/sync-flow-review-20261013-{unit,build,c-runtime,voice-runtime}.log`。
+- 舌苔完整测试原系统时钟两次分别在重新拍摄/取消后重进阶段超时；增加诊断的第三次在长请求中捕获“底盘速度反馈时间戳失效”并主动退出，不能把原脚本记为稳定通过。随后仅在证据脚本使用 `use_sim_time=true`、项目 `MonotonicRosClock` 与共享测试时钟，保留生产新鲜度检查，**17 个合成流程场景通过**（12 次模拟上传、9 条结果），支持存在环境时间扰动的判断，但不追溯认定前两次失败的具体原因。原始失败、诊断及单调时钟证据均保留在 `artifacts/sync-flow-review-20261013-tongue-*`；本轮没有更改正式时间倒退保护或测试源码。
+- 资源与边界：创建前检查本机约 12 GiB 可用空间；复用现有镜像，在本轮临时容器内补装 Pillow，无新镜像/数据卷。验证后删除本轮容器及其构建/依赖缓存，保留源码与复现/验证日志。此次不构成 Jetson 帧率、Gemini 物理配准/量距、真人语音/跌倒/舌苔或实车制动验收；未新增文档入口或长期规则，README/AGENTS 无需更新。
+
 ## 2026-10-13：无车准备——帧率选项、测速探针、同步路由检查
 
 - 本地 main 快进到 `3b40939`（PR #19 合并）。在本机 Linux ARM64 / ROS 2 Humble 容器补跑急停修复回归 `test_motion_guard_grace_runtime.py` 并通过（此前仅云端 x86 容器）。板端 `ROSCAR-c` 仍为 `57a6fb7`，不含该修复；小车关机，未同步或部署。
@@ -1569,3 +1602,10 @@
 - 5060wsl 本机验证：拍照包 113 项纯 Python 回归、完整 CI 脚本 2063 项 pytest 与 22 项录像工具测试、6 项 C 入口测试均通过；启动脚本 bash 语法、文档相对链接与 diff 空白检查通过。合并后的 C 感知、motion_guard、offline_voice、voice_command_router、roscar_api 源码与远端 main 一致；这些软件检查不代表 ROS 编译或实机验收。
 
 - 已从 WSL 推送分支并创建 PR #22：https://github.com/Shimmersss/ROS-CAR/pull/22 ，目标 main，未合并。原 WSL main 工作区仍保持 c97ed0e，本次远端兼容合并仅位于 PR 工作区。
+
+
+### PR #22 跟进远端同日更新
+
+- 创建 PR 后远端合并了 #21（主人 10 秒重认领、阶段播报和公共 API），再次合并 ca34985 并保留全部新功能；更新接口手册的根目录 install、主人认领、阶段播报、舌苔及云台/导航章节。拍照与原语音入口限制继续保留。本次再做软件回归，不将其描述为 ROS 编译或实机验证。
+
+- ca34985 合并后完整 CI 再次通过：2073 项 pytest、22 项录像工具测试及 1 项构建入口路径测试，另有 6 项 C 入口测试通过；文档链接、冲突标记、bash 语法和 diff 空白检查通过。原 WSL 其他三个工作区的分支、HEAD、状态与已修改文件哈希均保持；原 main 工作区保持 c97ed0e。最终核心源码（含舌苔）与远端 main 一致，拍照入口额外限制仅在显式开启时生效。

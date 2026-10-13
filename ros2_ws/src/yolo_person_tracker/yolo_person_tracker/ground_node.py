@@ -281,9 +281,9 @@ class GroundLocalizer(Node):
             msg.detail = out.detail
         elif not msg.target_id:
             msg.status, msg.detail = TargetState.SEARCHING, 'No locked target id'
-        elif c['reid_lock_enabled'] and (not self.identity_target_ok
+        elif (not self.identity_target_ok
                 or not 0 <= now.nanoseconds*1e-9-self.identity_target_stamp <= c['max_age_s']):
-            msg.status, msg.detail = TargetState.LOST, 'Waiting for confirmed identity lock'
+            msg.status, msg.detail = TargetState.LOST, 'Waiting for a fresh, unpaused target selection'
         else:
             person = next((p for p in out.persons if p.track_id == msg.target_id), None)
             if person is None or not person.valid:

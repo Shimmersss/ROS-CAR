@@ -47,6 +47,8 @@ bash scripts/start_project.sh
 
 **对外 ROS 2 接口**：`ros2 launch roscar_api api.launch.py` 默认 IDLE、运动关闭、不启动硬件。外部速度只发 `/chassis/cmd_vel`，由唯一的 motion_guard 输出 `/cmd_vel`。不要与已包含 motion_guard 的入口叠加启动。详见 [ROS 接口使用文档](docs/ROS接口使用文档.md)。
 
+主人认领使用 `ros2 run roscar_api target claim [--id epoch:track_id]`；丢失满 10 秒释放旧主人并允许重新认领，不延长运动保护宽限。启用语音/TTS 后，主人和跟随阶段自动简短播报，舌苔逐阶段播报并等待播放完成。`ros2 run roscar_api interfaces --json` 可枚举全部运行中接口；API 可选接入语音、舌苔和云台，参数及调用示例集中在上述手册。
+
 ## 构建与测试
 
 Jetson 或 Ubuntu（Humble）：
@@ -55,7 +57,7 @@ Jetson 或 Ubuntu（Humble）：
 source /opt/ros/humble/setup.bash
 rosdep install --from-paths ros2_ws/src --ignore-src -r -y
 # 从仓库根目录构建，匹配 start_project/start_c 的 install 路径
-colcon build --base-paths ros2_ws/src --event-handlers console_direct+
+bash scripts/build_ros.sh
 source install/setup.bash
 ```
 
@@ -66,6 +68,8 @@ PYTHON=.venv/bin/python scripts/ci_unit_tests.sh
 ```
 
 这与 GitHub Actions `unit-tests` 同口径：纯 Python 单测，不含 ROS、硬件、权重和录像。`python3 scripts/check_project.py` 做结构检查，`bash scripts/test_container.sh` 在 Linux ARM64 Humble 容器里编译并运行 ROS 测试。三者都不能代替 Jetson 验证。
+
+已构建的 Humble 环境运行 `bash scripts/test_flow_regressions.sh`，验证主人 10 秒生命周期、播报、运动/识别/定位/晚到语音五项回归及公共接口、舌苔整合。全部使用隔离 ROS 域和合成输入，不启动真实硬件。
 
 同步到 Jetson 默认只预览差异，核对后追加 `--apply`；不传厂商包、权重、录像和构建产物，也不做远端删除。已有整机目录为 `/home/wheeltec/ROSCAR-current`，另有语音舌苔隔离试运行副本；本轮未核对或修改设备服务。验证时优先同步到隔离目录，例如：
 
@@ -133,7 +137,7 @@ docs/      方案、接口、计划；docs/archive/ 为历史文档
 
 **公共与其他模块**
 - [完整方案](人体跟随感知方案.md) · [架构](docs/architecture.md) · [分阶段计划](docs/roadmap.md) · [开发工作流](docs/development.md)
-- 接口：[TargetState](docs/interfaces.md) · [ROS 接口使用手册](docs/ROS接口使用文档.md)（先选接口；拍照上传、播报、epoch 授权、感知与反馈）
+- 接口：[TargetState / OwnerState](docs/interfaces.md) · [ROS 接口使用手册](docs/ROS接口使用文档.md)（先选接口；拍照上传、播报、epoch 授权、感知与反馈）
 - [方案 B 实现与验收](docs/方案B实现与验收.md) · [语音入口与回退](docs/语音入口与回退.md) · [端侧 ASR 候选实测](docs/端侧ASR候选实测.md)
 - [motion_guard](ros2_ws/src/motion_guard/README.md) · [导航与自动绕障](docs/导航与自动绕障.md) · [N10P 雷达接入](docs/N10P雷达接入.md) · [底盘物理串口协议](docs/物理串口协议说明.md)
 - [构建与部署](deploy/README.md) · [Foxglove](foxglove/README.md) · [原厂代码索引](docs/vendor_inventory.md) · [工作记录](WORKLOG.md) · [归档](docs/archive/README.md)

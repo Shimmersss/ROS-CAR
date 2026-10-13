@@ -42,8 +42,8 @@ class OwnerSelection(Selection):
         self.found = ('', 0)
 
     # --- user actions -------------------------------------------------------------------------
-    def lock(self, now=None, max_age=.5):
-        ok, detail = super().lock(now, max_age)
+    def lock(self, now=None, max_age=.5, track_id=None):
+        ok, detail = super().lock(now, max_age, track_id)
         if ok:
             self.owner_id, self.searching, self.detail = '', False, ''
             self._clear_counts()
@@ -64,6 +64,8 @@ class OwnerSelection(Selection):
     def release(self):
         super().release()
         self.owner_id, self.searching, self.detail = '', False, ''
+        self.frames.clear()
+        self.latest_stamp = self.last_evidence = 0
         self._clear_counts()
 
     def reset_stream(self):

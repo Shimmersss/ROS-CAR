@@ -98,8 +98,8 @@ class IdentitySelection(Selection):
         while len(self.frames) > 64:
             self.frames.popitem(last=False)
 
-    def lock(self, now=None, max_age=.5):
-        ok, detail = super().lock(now, max_age)
+    def lock(self, now=None, max_age=.5, track_id=None):
+        ok, detail = super().lock(now, max_age, track_id)
         if ok:
             self.person_id = ''
             self.floor_stamp = self.latest_stamp

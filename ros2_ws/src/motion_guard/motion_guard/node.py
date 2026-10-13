@@ -157,10 +157,18 @@ class MotionGuard(Node):
     def on_emergency_health(self, message):
         self._emergency_ok = bool(message.data)
         self._emergency_at = time.monotonic()
-        if not self._emergency_ok and self.authority.armed:
-            self.authority.fault('emergency_channel_unhealthy')
-            self.last_fault = 'emergency_channel_unhealthy'
+        if not self._emergency_ok and self.latch_fault('emergency_channel_unhealthy'):
             self.publish(0., 0.)
+
+    def latch_fault(self, reason):
+        # A recoverable target fault must not hide a later non-target failure.
+        # Preserve an existing non-target latch (and ESTOP) until explicit reset.
+        if (self.authority.armed or (self.authority.state == 'FAULT'
+                and self.authority.reason in TARGET_REASONS and reason not in TARGET_REASONS)):
+            self.authority.fault(reason)
+            self.last_fault = reason
+            return True
+        return False
 
     def on_estop(self, message):
         if message.data:
@@ -373,9 +381,8 @@ class MotionGuard(Node):
             k = 0. if self.cfg['radar_required'] else max(0., 1.-(now-self.last_ok_at)/grace)
             v, w = self.last_cmd[0]*k, self.last_cmd[1]*k
             reason = 'target_grace:'+reason
-        elif self.authority.armed and not ready:
-            self.authority.fault(reason)
-            self.last_fault = reason
+        elif not ready:
+            self.latch_fault(reason)
         if self.authority.armed and ready:
             self.last_ok_at, self.last_cmd = now, (v, w)
         self.reason = reason
