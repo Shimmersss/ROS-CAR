@@ -39,6 +39,17 @@ class Entrypoints(unittest.TestCase):
         self.assertIn("'yolo_pose': ('yolo_person_tracker', 'pose_tracker')",launch)
         self.assertIn("default_value='yolo'",launch)
 
+    def test_inprocess_registration_switch(self):
+        env=dict(GEMINI_SERIAL='test', GEMINI_CALIBRATION='not-used.json')
+        r=self.run_script('start_c.sh', **env, GEMINI_INPROCESS_REGISTRATION='yes')
+        self.assertNotEqual(r.returncode,0);self.assertIn('true/false',r.stderr)
+        r=self.run_script('start_c.sh', **env, GEMINI_INPROCESS_REGISTRATION='true', REID_ENABLED='true')
+        self.assertNotEqual(r.returncode,0);self.assertIn('不能同时开启',r.stderr)
+        launch=(ROOT/'ros2_ws/src/perception_bringup/launch/perception.launch.py').read_text()
+        self.assertIn("DeclareLaunchArgument('registration_calibration_file', default_value='')",launch)
+        camera=(ROOT/'scripts/run_gemini_camera.sh').read_text()
+        self.assertIn('"${GEMINI_INPROCESS_REGISTRATION:-false}" != true',camera)
+
     def test_tongue_entry_rejects_missing_guard_or_unsafe_profile(self):
         env=dict(GEMINI_SERIAL='test', GEMINI_CALIBRATION='not-used.json', WITH_TONGUE_MODE='true')
         r=self.run_script('start_c.sh', **env, WITH_FOLLOWER='false')

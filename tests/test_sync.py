@@ -13,7 +13,8 @@ spec.loader.exec_module(sync)
 class SyncTests(unittest.TestCase):
     def invoke(self, extra):
         argv = ['sync', '--host', 'user@192.168.1.10', '--dest', '/home/user/ROSCAR'] + extra
-        with patch('sys.argv', argv), patch.object(sync.subprocess, 'run') as run:
+        with patch('sys.argv', argv), patch.object(sync.subprocess, 'run') as run, \
+                patch.object(sync, 'route_of', return_value=('en0', '192.168.1.1')):
             sync.main()
             return run.call_args.args[0]
 
@@ -35,6 +36,29 @@ class SyncTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 sync.main()
             run.assert_not_called()
+
+    def test_proxy_tunnel_route_stops_before_rsync(self):
+        argv = ['sync', '--host', 'user@192.168.1.10', '--dest', '/home/user/ROSCAR']
+        for route in (('utun6', '198.18.0.1'), ('en0', '198.18.0.1')):
+            with patch('sys.argv', argv), patch.object(sync.subprocess, 'run') as run, \
+                    patch.object(sync, 'route_of', return_value=route):
+                with self.assertRaises(SystemExit) as stop:
+                    sync.main()
+                self.assertIn('TUN', str(stop.exception.code))
+                run.assert_not_called()
+        with patch('sys.argv', argv + ['--allow-tunnel']), patch.object(sync.subprocess, 'run') as run, \
+                patch.object(sync, 'route_of', return_value=('utun6', '198.18.0.1')):
+            sync.main()
+            run.assert_called_once()
+
+    def test_rsync_failure_is_a_short_message(self):
+        argv = ['sync', '--host', 'user@192.168.1.10', '--dest', '/home/user/ROSCAR']
+        failure = sync.subprocess.CalledProcessError(255, ['rsync'])
+        with patch('sys.argv', argv), patch.object(sync.subprocess, 'run', side_effect=failure), \
+                patch.object(sync, 'route_of', return_value=('en0', '192.168.1.1')):
+            with self.assertRaises(SystemExit) as stop:
+                sync.main()
+            self.assertIn('255', str(stop.exception.code))
 
 
 if __name__ == '__main__':

@@ -21,6 +21,7 @@
 - B：Jetson 上 YOLO26s/ByteTrack 有真人在线检测；RGB-D 配准、安装外参和绝对测距精度待验收。
 - 语音：正式入口为本地 Qwen3-ASR + Silero VAD + 固定规则 + 本地 TTS，见 `docs/语音入口与回退.md`。
 - `scripts/start_robot.sh` 启动底盘、语音和受保护跟随器，默认 `MOTION_ENABLED=false`、`auto_arm:=false`，几何确认默认 false，不启 N10P。显式打开运动能力后仍须逐次授权；本轮仅本地合并，没有更新板端服务。
+- PR #19 已于 10-13 合并到 main（`3b40939`）。板端 `ROSCAR-c` 停在 `57a6fb7`，不含急停通道故障不被自动恢复的修复 `5dd75b1`；开运动跟随前必须先同步并重新构建。
 - 底盘串口已在 Jetson 收发里程计；N10P、motion_guard、导航和云台桥接有软件与本机测试，实车运动、避障和云台硬件均未验收。
 
 ## 当前语音开发约定（2026-10-12，运动关闭试运行）
@@ -51,6 +52,7 @@
 
 - C 显式 `route:=yolo_pose` / `scripts/start_c.sh`，默认项目仍为 B。C 复用 B 的跟踪/测距/选人契约，使用官方 YOLO26s-pose；禁止静默回退 detect。`TargetState.source=yolo` 保留消费者兼容。
 - Gemini 使用独立固定版本驱动及设备自身标定，不继承 Astra S 临时内参。要求明确序列号与标定文件，物理配准和安装外参分别确认；不能只改 frame_id。
+- C 可选 `GEMINI_INPROCESS_REGISTRATION=true` 把 Gemini 配准并入 Pose 进程（默认 false，与 `REID_ENABLED` 互斥）；板上帧率用只读 `scripts/measure_c_rates.py` 测量，未经对比不得设为默认。
 - C 单目地面定位为独立 `ground_localizer`：输出脚下接地点，`target_state_ground.source=yolo_ground`，不混入 `yolo` 光学目标或卡尔曼；安装外参与地面平面须分别确认，默认 NOT_READY；身高先验不是实测个体身高。设计和边界见 `docs/方案C实现与验收.md`。
 - 骨架/跌倒首版只发布人体状态与可视化，不接语音或运动。相机直立未确认最多疑似；静态躺卧不补报跌倒。新增入口及边界见 `docs/方案C实现与验收.md`。
 - 跌倒鲁棒开关 `pose_gap_pause`/`pose_handover_s`/`pose_confirm_lying_only`/`pose3d_knee_fallback` 与无骨架高度线索 `height_fall_enabled`（及其可选项 `height_lost_hold_s`/`height_sit_hold_s`/`height_side_edge_px`，0 为关）默认全关；丢人后继续测量 `height_continue_s` 的延续中人员只发布到单独话题 `person_states_continued`，不得混入 `person_states`（ReID/地面定位只消费真实检测），节点只用最后检出框，VitTrack 延续仅离线回放 `sot`；下游跌倒告警统一读每帧汇总的 `fall_alarm`（FallAlarm），首版仍不接语音/运动；高度线索需重力与地面均确认才可确认，否则最多疑似，只写 detail。默认值须经标注录像 `scripts/evaluate_falls.py` 复评后再定，见 `docs/跌倒检测评估记录.md`。离线回放的相机几何用 `scripts/estimate_camera_geometry.py`（消失点重力 + 站立双踝高度，反光地面不能用深度地面拟合），结果仅诊断，不得据此置任何 `*_confirmed`。

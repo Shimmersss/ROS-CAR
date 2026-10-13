@@ -1,7 +1,5 @@
 """ROS adapter for raw Gemini streams; no registration claim based on frame names."""
 import copy
-import json
-from pathlib import Path
 import message_filters
 import numpy as np
 import rclpy
@@ -9,7 +7,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, CameraInfo
-from .registration import Registration, depth_millimetres
+from .registration import depth_millimetres, load_registration, rectified_camera_info
 from .input_contract import stamp_seconds
 
 
@@ -24,10 +22,8 @@ class GeminiRegistration(Node):
             raise ValueError('output_depth_encoding must be 16UC1 or 32FC1')
         if not 0<self.cfg['sync_slop_s']<self.cfg['max_age_s']:
             raise ValueError('Invalid RGB-D timing bounds')
-        calibration=json.loads(Path(self.cfg['calibration_file']).read_text())
-        if not self.cfg['expected_serial'] or calibration['serial']!=self.cfg['expected_serial']:
-            raise ValueError('Calibration serial must match explicitly selected Gemini')
-        self.registration=Registration(calibration); self.bridge=CvBridge()
+        self.registration=load_registration(self.cfg['calibration_file'],self.cfg['expected_serial'])
+        self.bridge=CvBridge()
         self.color_pub=self.create_publisher(Image,'/camera/color/image_rect',2)
         self.depth_pub=self.create_publisher(Image,'/camera/aligned_depth_to_color/image_raw',2)
         self.info_pub=self.create_publisher(CameraInfo,'/camera/color/camera_info_rect',10)
@@ -59,10 +55,7 @@ class GeminiRegistration(Node):
             if encoding=='16UC1': aligned=depth_millimetres(aligned)
             d=self.bridge.cv2_to_imgmsg(aligned,encoding); d.header=copy.deepcopy(depth.header)
             d.header.frame_id=color.header.frame_id  # Actual transformed geometry, original depth time.
-            info=CameraInfo(); info.header=copy.deepcopy(color.header)
-            info.width=color.width; info.height=color.height; info.distortion_model='plumb_bob'; info.d=[0.]*5
-            k=self.registration.kc; info.k=list(map(float,k.reshape(-1))); info.r=list(map(float,np.eye(3).reshape(-1)))
-            info.p=list(map(float,np.column_stack((k,np.zeros(3))).reshape(-1)))
+            info=rectified_camera_info(self.registration,color.header)
             self.info_pub.publish(info); self.color_pub.publish(c); self.depth_pub.publish(d)
             self.last_error=''
         except Exception as exc:

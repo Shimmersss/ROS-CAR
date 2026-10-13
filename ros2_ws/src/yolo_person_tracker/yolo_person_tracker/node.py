@@ -26,6 +26,7 @@ from .depth import DepthGate, DepthTrackFilter, measure
 from .state import Selection
 from .sot import ArbiterConfig, BridgeArbiter, BridgeConfig, TargetBridge, VitTrack, overlaps_anyone
 from .input_contract import stamp_seconds, validate_pair
+from .registration import load_registration, rectified_camera_info, validate_raw_pair
 from .visualization import draw_labels
 
 
@@ -72,6 +73,11 @@ class TrackerNode(Node):
             'sot_conflict_frames': ArbiterConfig.conflict_frames,
             'sot_handover_frames': ArbiterConfig.handover_frames,
             'sot_mask_refresh': True,
+            # Opt-in in-process Gemini registration: subscribe native RGB-D, rectify/align in the
+            # worker and publish the rectified CameraInfo, replacing the gemini_registration node.
+            'registration_calibration_file': '', 'registration_expected_serial': '',
+            'registration_color_frame': 'camera_color_optical_frame',
+            'registration_depth_frame': 'camera_depth_optical_frame',
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -110,6 +116,10 @@ class TrackerNode(Node):
         if (not math.isfinite(self.cfg['visualization_scale'])
                 or not 0 < self.cfg['visualization_scale'] <= 1):
             raise ValueError('visualization_scale must be finite and in (0, 1]')
+        self.registration = None
+        if self.cfg['registration_calibration_file']:
+            self.registration = load_registration(self.cfg['registration_calibration_file'],
+                                                  self.cfg['registration_expected_serial'])
         self.state_lock = RLock()
         self.input_group = MutuallyExclusiveCallbackGroup()
         self.state_group = MutuallyExclusiveCallbackGroup()
@@ -166,8 +176,12 @@ class TrackerNode(Node):
             CompressedImage, 'detections_preview/compressed', 2)
         self.create_service(Trigger, 'lock_target', self.lock_target, callback_group=self.state_group)
         self.create_service(Trigger, 'release_target', self.release_target, callback_group=self.state_group)
-        self.create_subscription(CameraInfo, self.cfg['camera_info_topic'],
-                                 self.on_info, qos_profile_sensor_data, callback_group=self.input_group)
+        if self.registration is None:
+            self.create_subscription(CameraInfo, self.cfg['camera_info_topic'],
+                                     self.on_info, qos_profile_sensor_data, callback_group=self.input_group)
+        else:
+            # Same rectified CameraInfo the standalone node published, for the localizers.
+            self.info_pub = self.create_publisher(CameraInfo, self.cfg['camera_info_topic'], 10)
         self.color_sub = message_filters.Subscriber(
             self, Image, self.cfg['color_topic'], qos_profile=qos_profile_sensor_data, callback_group=self.input_group)
         self.depth_sub = message_filters.Subscriber(
@@ -225,10 +239,18 @@ class TrackerNode(Node):
             return
         received_at = time.monotonic()
         try:
-            info = self.info
-            intrinsics = validate_pair(
-                color, depth, info, self.get_clock().now().nanoseconds*1e-9,
-                self.cfg['max_age_s'], self.cfg['sync_slop_s'])
+            now = self.get_clock().now().nanoseconds*1e-9
+            if self.registration is None:
+                info = self.info
+                intrinsics = validate_pair(color, depth, info, now,
+                                           self.cfg['max_age_s'], self.cfg['sync_slop_s'])
+            else:
+                intrinsics = validate_raw_pair(
+                    color, depth, now, self.cfg['max_age_s'], self.cfg['sync_slop_s'],
+                    self.cfg['registration_color_frame'], self.cfg['registration_depth_frame'],
+                    self.registration)
+                info = rectified_camera_info(self.registration, color.header)
+                self.info_pub.publish(info)
             stamp = stamp_seconds(color.header.stamp)
             key = (color.header.frame_id, color.width, color.height, tuple(info.p))
             reset = self.last_key is not None and (
@@ -268,6 +290,9 @@ class TrackerNode(Node):
         metres = bridge.imgmsg_to_cv2(depth, desired_encoding='passthrough').astype(np.float32)
         if depth.encoding == '16UC1':
             metres *= .001
+        if self.registration is not None:
+            # Raw native pair: rectify color and project depth into it, as gemini_registration did.
+            image, metres = self.registration.apply(image, metres)
         if reset:
             self.backend.reset()
         detections = self.backend.infer(image)
