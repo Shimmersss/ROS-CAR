@@ -11,6 +11,7 @@ python3 tests/test_entry_paths.py
 python3 tests/test_voice_flow_regressions.py
 python3 -m pytest -q -p no:cacheprovider tests/test_tongue_logic.py
 tests=(test_motion_guard_grace_runtime test_selection_gate_runtime test_owner_announcements_runtime
+       test_gemini_registration_runtime test_inprocess_registration_runtime test_inprocess_reid_launch
        test_ground_runtime test_unified_runtime test_ground_prior_runtime test_yolo_runtime
        test_yolo_concurrency test_sot_runtime test_identity_lock_runtime test_pose_runtime
        test_c_api_launch test_api_modules_runtime test_api_control test_api_examples

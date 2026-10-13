@@ -2,7 +2,7 @@ from roscar_api.phases import PhaseTransitions, OWNER_TEXT
 
 
 def test_owner_announces_transitions_once_and_allows_new_owner():
-    phases = PhaseTransitions()
+    phases = PhaseTransitions(owner_loss_delay_s=0)
     sequence = [('UNCLAIMED', 'ready'), ('TRACKING', 'claimed'), ('LOST', 'lost'),
                 ('TRACKING', 'returned'), ('LOST', 'lost'), ('UNCLAIMED', 'expired'),
                 ('TRACKING', 'claimed')]
@@ -10,6 +10,32 @@ def test_owner_announces_transitions_once_and_allows_new_owner():
         assert phases.owner(state, event, number) == OWNER_TEXT[event]
         assert phases.owner(state, event, number) is None
     assert all(len(text) <= 14 for text in OWNER_TEXT.values())
+
+
+def test_brief_owner_loss_and_return_are_silent_but_sustained_loss_is_announced():
+    phases = PhaseTransitions()
+    assert phases.owner('TRACKING', 'claimed', 1, now=0) == OWNER_TEXT['claimed']
+    assert phases.owner('LOST', 'lost', 2, now=1) is None
+    assert phases.owner('LOST', 'lost', 2, now=1.49) is None
+    assert phases.owner('TRACKING', 'returned', 3, now=1.49) is None
+    assert phases.owner('LOST', 'lost', 4, now=2) is None
+    assert phases.owner('LOST', 'lost', 4, now=2.5) == OWNER_TEXT['lost']
+    assert phases.owner('LOST', 'lost', 4, now=3) is None
+    assert phases.owner('TRACKING', 'returned', 5, now=3.1) == OWNER_TEXT['returned']
+    assert phases.owner('TRACKING', 'returned', 5, now=3.2) is None
+
+
+def test_expiry_and_release_are_immediate_and_reset_loss_announcement():
+    phases = PhaseTransitions()
+    assert phases.owner('LOST', 'lost', 1, now=0) is None
+    assert phases.owner('LOST', 'lost', 1, now=.5) == OWNER_TEXT['lost']
+    assert phases.owner('UNCLAIMED', 'expired', 2, now=10) == OWNER_TEXT['expired']
+    assert phases.owner('TRACKING', 'claimed', 3, now=10.1) == OWNER_TEXT['claimed']
+    assert phases.owner('LOST', 'lost', 4, now=11) is None
+    assert phases.owner('UNCLAIMED', 'released', 5, now=11.1) == OWNER_TEXT['released']
+    assert phases.owner('LOST', 'lost', 6, now=12) is None
+    assert phases.owner('LOST', 'lost', 6, now=12.49) is None
+    assert phases.owner('LOST', 'lost', 6, now=12.5) == OWNER_TEXT['lost']
 
 
 def test_follow_does_not_repeat_during_target_recovery_and_stop_is_announced():

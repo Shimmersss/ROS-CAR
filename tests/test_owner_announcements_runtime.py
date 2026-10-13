@@ -124,6 +124,16 @@ def main():
         backend.people = [Detection(7, (10,5,90,95), .9), Detection(9, (55,5,95,95), .9)]
         wait(lambda: {d.track_id for d in tracker.selection.candidates} == {7,9}, 'second person missing')
         assert_reserved('TRACKING')
+        # Brief perception flicker still invalidates the target immediately, but
+        # must not flood real speech with a lost/returned pair.
+        before_flicker = list(spoken)
+        backend.people = []
+        wait(lambda: owners[-1].state == 'LOST', 'brief loss not exposed')
+        wait(lambda: not targets[-1].position_valid, 'brief loss retained motion target')
+        backend.people = [Detection(7, (10,5,90,95), .9)]
+        wait(lambda: owners[-1].state == 'TRACKING', 'brief loss did not recover')
+        spin(.6)
+        assert spoken == before_flicker, 'brief perception flicker was spoken'
         control.publish(String(data=json.dumps(dict(command_mode='FOLLOW', authority_state='ARMED_FOLLOW'))))
         wait(lambda: '开始跟随' in spoken, 'follow not announced')
         backend.people = []

@@ -43,8 +43,10 @@ class Entrypoints(unittest.TestCase):
         env=dict(GEMINI_SERIAL='test', GEMINI_CALIBRATION='not-used.json')
         r=self.run_script('start_c.sh', **env, GEMINI_INPROCESS_REGISTRATION='yes')
         self.assertNotEqual(r.returncode,0);self.assertIn('true/false',r.stderr)
-        r=self.run_script('start_c.sh', **env, GEMINI_INPROCESS_REGISTRATION='true', REID_ENABLED='true')
-        self.assertNotEqual(r.returncode,0);self.assertIn('不能同时开启',r.stderr)
+        r=self.run_script('start_c.sh', **env, GEMINI_INPROCESS_REGISTRATION='true', REID_ENABLED='true',
+                          WITH_TONGUE_MODE='true', WITH_VOICE='false')
+        self.assertNotEqual(r.returncode,0);self.assertIn('舌苔模式需要',r.stderr)
+        self.assertNotIn('不能同时开启',r.stderr)
         launch=(ROOT/'ros2_ws/src/perception_bringup/launch/perception.launch.py').read_text()
         self.assertIn("DeclareLaunchArgument('registration_calibration_file', default_value='')",launch)
         camera=(ROOT/'scripts/run_gemini_camera.sh').read_text()

@@ -29,12 +29,14 @@ def main(encoding='32FC1'):
         def spin(duration=.2):
             end=time.monotonic()+duration
             while time.monotonic()<end:ex.spin_once(timeout_sec=.01)
-        def send(bad_frame=False,old=False,bad_size=False):
+        def send(bad_frame=False,old=False,bad_size=False,spin_after=True):
             c=node.bridge.cv2_to_imgmsg(np.full((3,4,3),42,np.uint8),'bgr8');c.header.frame_id='camera_color_optical_frame';c.header.stamp=node.get_clock().now().to_msg()
             if old:c.header.stamp.sec-=2
             d=node.bridge.cv2_to_imgmsg(np.full((4 if bad_size else 3,4),2000,np.uint16),'16UC1');d.header=copy.deepcopy(c.header);d.header.frame_id='bad' if bad_frame else 'camera_depth_optical_frame'
             ns=d.header.stamp.sec*10**9+d.header.stamp.nanosec-20000000;d.header.stamp.sec,d.header.stamp.nanosec=divmod(ns,10**9)
-            cp.publish(c);dp.publish(d);spin();return c,d
+            cp.publish(c);dp.publish(d)
+            if spin_after:spin()
+            return c,d
         try:
             spin(.3);c,d=send()
             assert colors and depths and infos
@@ -47,7 +49,17 @@ def main(encoding='32FC1'):
             send(bad_frame=True);send(old=True);send(bad_size=True)
             assert len(depths)==count
             send();assert len(depths)>count
-            print(f'PASS Gemini ROS explicit projection, {encoding} units, original timestamps, native-frame/age/size rejection (synthetic)')
+            # Stop processing briefly while camera traffic continues. Resume with
+            # the newest unread pair, not an avoidable backlog of older images.
+            count=len(depths)
+            for _ in range(5):
+                c,d=send(spin_after=False)
+                time.sleep(.005)
+            time.sleep(.05)
+            spin()
+            assert len(depths)==count+1, 'registration processed queued old camera frames'
+            assert colors[-1].header==c.header and depths[-1].header.stamp==d.header.stamp
+            print(f'PASS Gemini ROS explicit projection, {encoding} units, original timestamps, native-frame/age/size rejection, newest-frame backlog handling (synthetic)')
         finally:ex.shutdown();node.destroy_node();rclpy.shutdown()
 
 

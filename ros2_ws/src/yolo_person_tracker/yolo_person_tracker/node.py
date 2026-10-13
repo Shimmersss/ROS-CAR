@@ -14,7 +14,7 @@ from cv_bridge import CvBridge, CvBridgeError
 from rclpy.node import Node
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import Image, CameraInfo, CompressedImage
 from std_srvs.srv import Trigger
 from visualization_msgs.msg import Marker
@@ -81,6 +81,7 @@ class TrackerNode(Node):
             'registration_calibration_file': '', 'registration_expected_serial': '',
             'registration_color_frame': 'camera_color_optical_frame',
             'registration_depth_frame': 'camera_depth_optical_frame',
+            'registration_rectified_color_topic': '/camera/color/image_rect',
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -183,16 +184,23 @@ class TrackerNode(Node):
         self.create_service(Trigger, 'lock_target', self.lock_target, callback_group=self.state_group)
         self.create_service(Trigger, 'release_target', self.release_target, callback_group=self.state_group)
         self.create_service(ClaimOwner, 'claim_owner', self.claim_owner, callback_group=self.state_group)
+        self.rectified_color_pub = None
         if self.registration is None:
             self.create_subscription(CameraInfo, self.cfg['camera_info_topic'],
                                      self.on_info, qos_profile_sensor_data, callback_group=self.input_group)
         else:
             # Same rectified CameraInfo the standalone node published, for the localizers.
             self.info_pub = self.create_publisher(CameraInfo, self.cfg['camera_info_topic'], 10)
+            rectified_topic = self.cfg['registration_rectified_color_topic']
+            if self.resolve_topic_name(rectified_topic) == self.resolve_topic_name(self.cfg['color_topic']):
+                raise ValueError('Rectified color output must differ from raw color input')
+            self.rectified_color_pub = self.create_publisher(Image, rectified_topic, 2)
+        image_qos = QoSProfile(depth=1, reliability=qos_profile_sensor_data.reliability,
+                               durability=qos_profile_sensor_data.durability)
         self.color_sub = message_filters.Subscriber(
-            self, Image, self.cfg['color_topic'], qos_profile=qos_profile_sensor_data, callback_group=self.input_group)
+            self, Image, self.cfg['color_topic'], qos_profile=image_qos, callback_group=self.input_group)
         self.depth_sub = message_filters.Subscriber(
-            self, Image, self.cfg['depth_topic'], qos_profile=qos_profile_sensor_data, callback_group=self.input_group)
+            self, Image, self.cfg['depth_topic'], qos_profile=image_qos, callback_group=self.input_group)
         self.sync = message_filters.ApproximateTimeSynchronizer(
             [self.color_sub, self.depth_sub], queue_size=5, slop=self.cfg['sync_slop_s'])
         self.sync.registerCallback(self.on_pair)
@@ -617,6 +625,12 @@ class TrackerNode(Node):
         self.marker_pub.publish(marker)
 
     def publish_image(self, color, image, detections, overlay_image=None, extra_labels=None):
+        if self.rectified_color_pub is not None:
+            # ReID must see exactly the rectified pixels used by this inference,
+            # with the same acquisition header, independent of visualization rate.
+            rectified = self.bridge.cv2_to_imgmsg(image, encoding='bgr8')
+            rectified.header = copy.deepcopy(color.header)
+            self.rectified_color_pub.publish(rectified)
         now = time.monotonic()
         fps = self.cfg['visualization_fps']
         if fps == 0 or now-self.last_visualization_at < 1.0/fps:

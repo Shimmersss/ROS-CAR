@@ -73,7 +73,7 @@ FOLLOW_TARGET_GRACE_S 目标短时缺失宽限（默认 0.6）；FOLLOW_TARGET_A
 两者默认随 MOTION_ENABLED；STOP 回到 IDLE，自动授权不会撤销停车。
 FOLLOW_EMERGENCY_KWS_REQUIRED（默认 true）要求语音急停心跳；无语音时须显式 false。
 MODEL_PATH、YOLO_PYTHON、YOLO_DEVICE 可覆盖模型和推理环境。
-C 可选 GEMINI_INPROCESS_REGISTRATION=true：配准并入 Pose 进程（默认 false，不能与 REID_ENABLED 同用）。
+C 可选 GEMINI_INPROCESS_REGISTRATION=true：配准并入 Pose 进程（默认 false，发布同帧校正 RGB 供 ReID 使用）。
 Ctrl-C 或任一子模块退出时停止本入口启动的全部模块。
 HELP
     exit 0;;
@@ -84,9 +84,6 @@ set -u
 for value in "$WITH_VOICE" "$WITH_CHASSIS" "$WITH_RADAR" "$WITH_FOLLOWER" "$WITH_TONGUE_MODE" "$MOTION_ENABLED" "${DEPTH_REGISTERED:-false}" "$AUTO_LOCK_SINGLE" "$FOLLOW_AUTO_ARM" "$FOLLOW_TARGET_AUTO_RECOVER" "$FOLLOW_EMERGENCY_KWS_REQUIRED" "${GEMINI_INPROCESS_REGISTRATION:-false}"; do
   [[ "$value" == true || "$value" == false ]] || { echo '开关必须为 true/false' >&2; exit 2; }
 done
-if [[ "${GEMINI_INPROCESS_REGISTRATION:-false}" == true && "${REID_ENABLED:-false}" == true ]]; then
-  echo '进程内配准不发布校正彩色图，ReID 需要独立配准节点；二者不能同时开启。' >&2; exit 2
-fi
 if [[ "$WITH_TONGUE_MODE" == true ]]; then
   [[ "$WITH_VOICE" == true && "$WITH_FOLLOWER" == true && "${VOICE_TTS_ENABLED:-true}" == true ]] || {
     echo '舌苔模式需要现有语音、带完成确认的 TTS 和唯一 guard（WITH_FOLLOWER=true）。' >&2; exit 2;

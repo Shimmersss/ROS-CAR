@@ -59,9 +59,7 @@ def launch_route(context):
             parameters[0]['owner_lost_timeout_s'] = float(LaunchConfiguration('owner_lost_timeout_s').perform(context))
             calibration = LaunchConfiguration('registration_calibration_file').perform(context)
             if calibration:
-                # In-process registration subscribes native topics and publishes no rectified color.
-                if LaunchConfiguration('reid_enabled').perform(context) == 'true':
-                    raise ValueError('In-process registration publishes no rectified color; ReID needs the gemini_registration node')
+                # The tracker publishes the rectified pixels for each completed inference.
                 parameters[0].update({
                     'registration_calibration_file': calibration,
                     'registration_expected_serial': ParameterValue(
@@ -130,7 +128,8 @@ def launch_route(context):
                           parameters=[LaunchConfiguration('reid_config').perform(context), {
                               'enabled': LaunchConfiguration('reid_enabled').perform(context) == 'true',
                               'model_path': ParameterValue(LaunchConfiguration('reid_model_path').perform(context), value_type=str),
-                              'color_topic': LaunchConfiguration('color_topic').perform(context)}]))
+                              'color_topic': ('/camera/color/image_rect' if calibration else
+                                              LaunchConfiguration('color_topic').perform(context))}]))
     return nodes
 
 
