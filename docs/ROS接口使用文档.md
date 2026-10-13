@@ -1,5 +1,7 @@
 # ROSCAR ROS 2 接口使用文档
 
+> 2026-10-13：新增默认关闭的 `/capture/face / tongue / helmet / pcb` 服务门面及 `/capture/cancel`。复用既有独立拍照action，图像仍上传云端，只返回采集/上传结果；详见本文第6节。未部署到小车。
+
 > 2026-10-12：新增文字播报服务 `/voice/say`（`roscar_interfaces/srv/SayText`），并公开既有 `/voice/speak` action 的调用方式。发送文字即可使用现有 TTS 播放，详细命令、结果与启动方法见 [文字播报 ROS 接口](文字播报ROS接口.md)。以下历史部署边界以各条目的日期为准。
 
 > 2026-10-04 开发接口更新（未部署）：`SetControlMode` 返回 `authority_epoch`，显式授权改用 `/control/authorize`（`AuthorizeMotion`），旧 `/control/arm` 默认拒绝；语音运动改用 `MotionRequest`。新消息/服务需要重建 overlay。当前约定及无车验证见 [语音优化无车实施与验收](语音优化无车实施与验收.md)，下文旧无票据示例须按此迁移。
@@ -274,3 +276,125 @@ ros2 run roscar_api radar
 - 光学位置有效但 base 无效：检查外参确认及观测时刻 TF，禁止用占位外参冒充实测。
 
 回归入口：`scripts/test_container.sh`、`scripts/test_navigation_container.sh`、`scripts/test_radar_container.sh`、`scripts/test_yolo_model.py`。验证日志放在 `artifacts/`；最终本轮结果见 WORKLOG。
+
+
+## 6. 拍照任务接口（2026-10-13，本机开发）
+
+其他ROS节点可以调用四个服务，执行“安全播报完成→准备→新鲜原始RGB→JPEG上传”。门面节点 `capture_api` 本身只把请求转为 `/capture_task/run` action，使用相同相机、唯一TTS和robot停车租约；不通过语音识别或意图解析，不推理、不发速度、不授权或清除急停。服务来自独立 `capture_task_interfaces`，未修改 `roscar_api` 或 `roscar_interfaces`。
+
+### 6.1 启动
+
+先构建当前接口与节点，复用已经运行的拍照执行器：
+
+```bash
+source /opt/ros/humble/setup.bash
+colcon build --base-paths ros2_ws/src --packages-up-to capture_task --executor sequential
+source install/setup.bash
+# 先确认与执行器使用同一ROS域；本机模拟用188 + localhost，车端实际部署另行确认
+ros2 run capture_task api_node
+```
+
+也可以在现有拍照组合入口显式加 `with_ros_api:=true`：
+
+```bash
+ros2 launch capture_task capture_task.launch.py with_ros_api:=true
+# 相机和唯一SpeakText须已在运行，cloud_url/robot_id/token配置沿用拍照协议
+```
+
+这两个入口任选一种，不能重复启动门面或执行器。默认 `with_ros_api=false`；整机入口显式 `WITH_CAPTURE_TASKS=true CAPTURE_ROS_API=true` 才启动服务，仍须满足语音/TTS、robot/bench保护。`CAPTURE_ROS_API=true` 而拍照模块关闭会退出2，开关仅接受true/false。只改门面接口不会自动开启相机、TTS、运动或真实云端。
+
+### 6.2 服务与字段
+
+| 服务 | 类型 | 任务 |
+|---|---|---|
+| `/capture/face` | capture_task_interfaces/srv/RunCapture | 面部采集上传 |
+| `/capture/tongue` | 同上 | 舌体采集上传 |
+| `/capture/helmet` | 同上 | 安全帽场景采集上传 |
+| `/capture/pcb` | 同上 | PCB采集上传 |
+| `/capture/cancel` | capture_task_interfaces/srv/CancelCapture | 请求取消门面自身匹配的任务 |
+
+服务按当前 `tasks.yaml` 的tasks自动生成；新增任务类型不必改门面，`cancel`名称保留给取消服务。目录与执行器应使用同一版本。
+
+RunCapture请求：
+
+| 字段 | 约定 |
+|---|---|
+| task_id | 空则生成 `ros-<32位hex>` 并回填；非空原样保留，须匹配 `[A-Za-z0-9_-]{1,64}`，建议以ros-开头并每次唯一 |
+| announce | 空则目录默认；非空最多300字符，不得包含停车/急停等RESERVED_STOP词（与云端覆盖采用相同规范化校验） |
+| prepare_sec | 有限负数表示目录默认；其他值0–30秒 |
+| timeout_sec | 0表示目录task_timeout_sec；其他值(0,600]秒，从执行器接收goal起约束任务TTL |
+
+RunCapture响应：
+
+| 字段 | 约定 |
+|---|---|
+| success | 仅status=uploaded为true |
+| status | uploaded / failed / cancelled / rejected / busy / unavailable / invalid / timeout |
+| detail | 执行器原因码或门面原因，不包含云端任意文字 |
+| task_id | 本次实际ID；无效请求保留请求ID |
+| capture_id | 执行器返回的capture ID；尚未采集时为空 |
+| upload_json | 与action result相同的已校验回执JSON数组；不是推理或诊断结果 |
+
+`uploaded`仅表示图像已上传并得到合法回执，不能表示面诊/舌诊、安全帽或PCB推理完成、检测准确。门面总等待上限为任务TTL（或默认值）+speech_timeout_sec+5秒；超限返回timeout并请求取消自身goal，不保证此刻已取得最终取消确认。执行器TTL先到时通常返回failed/task_timeout或deadline_exceeded，门面原样传回，不能把它改写成timeout。
+
+### 6.3 CLI和Python调用
+
+```bash
+ros2 service call /capture/pcb capture_task_interfaces/srv/RunCapture \
+  "{task_id: '', announce: '', prepare_sec: -1.0, timeout_sec: 0.0}"
+# 要自行取消时预先指定本次唯一ID；另一个终端调用取消
+ros2 service call /capture/face capture_task_interfaces/srv/RunCapture \
+  "{task_id: 'ros-manual-001', announce: '请面向镜头，保持姿势。', prepare_sec: 3.0, timeout_sec: 60.0}"
+ros2 service call /capture/cancel capture_task_interfaces/srv/CancelCapture \
+  "{task_id: 'ros-manual-001'}"
+```
+
+取消返回success/detail，detail为cancel_requested / not_active / not_owner。cancel_requested只说明发出了自身goal的取消请求，RunCapture的最终cancelled结果才是执行结束反馈；门面收到关闭信号也会取消自己的goal。客户端退出、ROS服务客户端超时不会自动撤回已经提交的任务。
+
+```python
+import json
+import rclpy
+from rclpy.node import Node
+from capture_task_interfaces.srv import RunCapture
+
+rclpy.init()
+node = Node('my_capture_client')
+client = node.create_client(RunCapture, '/capture/pcb')
+try:
+    if not client.wait_for_service(timeout_sec=5):
+        raise RuntimeError('拍照门面未启用')
+    request = RunCapture.Request(
+        task_id='', announce='', prepare_sec=-1.0, timeout_sec=0.0)
+    future = client.call_async(request)
+    rclpy.spin_until_future_complete(node, future)
+    result = future.result()
+    print(result.success, result.status, result.detail, result.task_id)
+    if result.success:
+        print(json.loads(result.upload_json))
+finally:
+    node.destroy_node()
+    rclpy.shutdown()
+```
+
+服务是一次阻塞操作；需要实时进度和精确取消句柄的客户端使用已有高级action，字段不变：
+
+```bash
+ros2 action send_goal /capture_task/run capture_task_interfaces/action/CaptureTask \
+  "{task_id: 'ros-action-001', task_type: 'pcb', source: 'ros_api', params_json: '{}', ttl_sec: 60.0}" --feedback
+ros2 topic echo /capture_task/state
+ros2 topic echo /capture_task/result
+```
+
+直接action不归门面所有，必须由发出action的客户端保留goal handle进行取消，不能用 `/capture/cancel` 取消它。
+
+### 6.4 互斥和云端确认
+
+门面只保留一个在途请求，第二次调用立即busy，不排队。云端任务先占执行器时ROS请求busy；ROS先占时云端ack busy。门面只取消自身匹配的goal；云端取消指令只取消bridge自身goal。无门面任务但执行器有外部任务时cancel返回not_owner，空闲返回not_active（执行器状态每0.25秒刷新）。新鲜语音舌苔模式active返回rejected/voice_mode_active；robot下ESTOP由既有guard拒绝租约，返回failed/hold_failed，不清锁存。
+
+`/capture/tongue`只采集并上传图像，不执行本地舌象结果播报；语音“舌苔检测”使用独立tongue_mode及其既有云端合同。两者共享资源且互斥，不可混淆。
+
+ROS任务不经过bridge，云端不会收到这次任务的command/ack/events；只会收到JPEG，心跳busy仍由执行器状态反映。上传新增 `X-Task-Source=ros_api`，其他字段不变。**待云端确认**：服务端必须允许未经自己下发的ROS任务上传；默认生成ros-开头ID。若正式云端仍只接受自己下发的ID，本服务会返回failed/upload_http_404，不能据本机mock通过认定真实云端已经支持。
+
+### 6.5 验证边界
+
+本轮仅本机Humble x86_64、隔离DDS188/localhost、合成图像/假TTS/mock云端。没有访问小车、没有真实拍照内容/扬声器/Jetson验收。验收结果见[云端拍照任务实现与验收](云端拍照任务实现与验收.md)；运行时入口 `tests/test_capture_api_runtime.py`，原拍照与文字播报回归分别使用187/186域。

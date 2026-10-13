@@ -127,7 +127,7 @@ class CaptureExecutor(Node):
                 return self.rejection(request,'busy')
             try:
                 identifier(request.task_id)
-                if request.source not in ('cloud','local_test'):
+                if request.source not in ('cloud','local_test','ros_api'):
                     raise ValueError()
                 params=loads(request.params_json or '{}')
                 task=self.catalog.resolve(request.task_type,params)
@@ -358,7 +358,7 @@ class CaptureExecutor(Node):
                                    self.catalog.defaults['max_frame_age_sec'],self.check,self.ros_now)
 
     def upload(self,image,record):
-        metadata={'X-Robot-Id':self.cfg['robot_id'],'X-Task-Type':record['task_type'],
+        metadata={'X-Task-Source':self.job.request.source,'X-Robot-Id':self.cfg['robot_id'],'X-Task-Type':record['task_type'],
                   'X-Frame-Index':str(record['frame_index']),'X-Capture-Time':record['capture_time'],
                   'X-Camera-Profile':self.cfg['camera_profile'],
                   'X-Quality':json.dumps(record['quality'],allow_nan=False)}

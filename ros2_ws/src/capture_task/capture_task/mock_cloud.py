@@ -17,7 +17,7 @@ class MockCloud(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, store, token='', fail_upload=0, slow_upload=0., drop_poll=False, prefix=''):
+    def __init__(self, address, store, token='', fail_upload=0, slow_upload=0., drop_poll=False, prefix='', reject_unknown_task=False):
         self.prefix = path_prefix(prefix)
         super().__init__(address, Handler)
         self.store = Path(store)
@@ -25,6 +25,9 @@ class MockCloud(ThreadingHTTPServer):
         self.token, self.fail_upload, self.slow_upload, self.drop_poll = token, fail_upload, slow_upload, drop_poll
         self.condition = threading.Condition()
         self.commands, self.acks, self.events, self.heartbeats, self.images = deque(), {}, {}, [], {}
+        self.reject_unknown_task = reject_unknown_task
+        self.issued_task_ids = set()
+        self.upload_sources = {}
         self.upload_attempts = 0
         self.stopping = threading.Event()
 
@@ -110,6 +113,8 @@ class Handler(BaseHTTPRequestHandler):
             while not self.server.commands and not self.server.stopping.is_set() and time.monotonic() < end:
                 self.server.condition.wait(min(.2, end-time.monotonic()))
             data = self.server.commands.popleft() if self.server.commands else None
+            if data and data.get('type') == 'capture' and isinstance(data.get('task_id'),str):
+                self.server.issued_task_ids.add(data['task_id'])
         self.reply(200, data) if data else self.reply(204)
 
     def do_POST(self):
@@ -181,6 +186,12 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError()
         with self.server.condition:
             self.server.upload_attempts += 1
+            source = self.headers.get('X-Task-Source')
+            if source is not None and source not in ('cloud','ros_api','local_test'):
+                self.reply(400, {'error':'invalid_task_source'}); return
+            self.server.upload_sources[(task_id,capture_id)] = source
+            if self.server.reject_unknown_task and task_id not in self.server.issued_task_ids:
+                self.reply(404, {'error':'unknown_task'}); return
         self.server.stopping.wait(self.server.slow_upload)
         with self.server.condition:
             if self.server.fail_upload in (500, 401):

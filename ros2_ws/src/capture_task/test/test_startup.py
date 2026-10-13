@@ -33,3 +33,16 @@ def test_robot_requires_explicit_guard_bench_disables_it(tmp_path):
     assert bench.returncode==1 and '+ CAPTURE_SAFETY_PROFILE=bench' in bench.stderr
     disabled=run(tmp_path,WITH_CAPTURE_TASKS='false',WITH_VOICE='false',WITH_FOLLOWER='true')
     assert disabled.returncode==1 and '+ CAPTURE_SAFETY_PROFILE=' not in disabled.stderr
+
+
+@pytest.mark.parametrize('changes',[
+    {'CAPTURE_ROS_API':'yes'}, {'CAPTURE_ROS_API':'true','WITH_CAPTURE_TASKS':'false'}])
+def test_ros_api_requires_capture_and_boolean(tmp_path,changes):
+    assert run(tmp_path,**changes).returncode==2
+
+
+def test_ros_api_default_closed_and_explicit_gate(tmp_path):
+    default=run(tmp_path,CAPTURE_ROS_API='false')
+    assert default.returncode==1 and '+ CAPTURE_ROS_API=false' in default.stderr
+    enabled=run(tmp_path,CAPTURE_ROS_API='true')
+    assert enabled.returncode==1 and '+ CAPTURE_ROS_API=true' in enabled.stderr

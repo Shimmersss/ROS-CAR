@@ -1449,3 +1449,19 @@
 - 已阅读方案规定的六份入口文档。复用capture_task两包，不增加包；保护十包、既有action和bridge保持不变。执行器只允许source白名单和X-Task-Source头两处增量。
 - 方案中的超时用例需分层：真实执行器的TTL会先于“TTL+speech_timeout+5”门面时限结束，因此慢上传首先验证failed；门面整体超时另用停滞action结果的故障注入验证，避免误报为真实执行器行为。
 - 最小审查：当前仅方案/索引/工作记录，git diff --check通过；后续编译与运行时证据单独记录。
+
+
+### 服务接口、门面与启动实现
+
+- 新增capture_task_interfaces/RunCapture、CancelCapture srv及CMake登记，capture_task的api_logic/api_node和entry point。按tasks.yaml自动生成四服务，含请求/禁用词/有限数字校验、自动ros-UUID、原样结果映射及整体时限；门面不拥有TTS/相机/HTTP/guard。
+- 门面单个在途服务、ReentrantCallbackGroup+多线程；0.2秒按task_id和本次接收时刻关联拒绝。取消仅作用于自身handle，外部任务返回not_owner；关闭/超时/取消-before-accept补挂回调处理迟到接受，覆盖接受回调与服务赋handle之间的竞争。已接受任务取消等待执行器结果，保留原detail。
+- with_ros_api/CAPTURE_ROS_API均默认false；显式打开需拍照模块开启，非法布尔/组合退出2。执行器相对08464e1仅source白名单和X-Task-Source头两处。mock可选reject-unknown-task默认为关，接受带/不带新头的旧客户端；严格云端仅认可自己下发过的ID。
+- 同步ROS接口手册（字段、CLI/Python、互斥/归属、超时两层、与tongue_mode区分）、HTTP增量/待云端确认、实现文档、README目录和AGENTS长期入口约定。显式task_id按srv定义原样保留，仅自动ID强制ros-；建议自定义ID也用ros-且每次唯一。
+- 本机纯Python110项通过（本次新增36项）；原生Humble x86_64子集18包编译通过。新ROS运行时14/14、原拍照14/14、文字播报8/8通过。新场景含四任务JPEG/SHA+来源头、覆盖播报、无效请求未发goal、门面/云端并发与取消归属、语音模式拒绝、取消不补播、无执行器约2秒、严格云端404、慢上传TTL失败、停滞结果及迟到accept的门面timeout、SIGTERM、默认/显式launch服务集合。全是合成RGB/假TTS/mock，没有实车或真实云端/相机/扬声器验收。
+- 最小审查：修正Node的services保留属性冲突；取消测试等待0.25秒状态刷新再断言空闲，未放宽取消完成。核对action/bridge/十个保护包零改动，执行器恰好两处增量。进一步统一检查及日志在artifacts/capture-validation/ros-api，图片不入库。
+
+- CLI额外检查发现基线capture_task_interfaces未export build_type，colcon误识别为ros.catkin：Python加载虽可用，但source install后AMENT_PREFIX_PATH没有它，ros2 interface show报Unknown package。为实现标准srv/CLI交付，本轮补其package.xml的ament_cmake声明（无字段/行为变更）；这是方案列出的srv/CMake之外的必要构建元数据修正，不修改同样缺声明但受保护的execution_mode_interfaces。将复核重新配置、原接口回归和CLI，不把此前仅Python导入成功当成CLI可用。
+
+- 最终统一验收：接口声明修正后重新配置/编译18包通过（execution_mode_interfaces仅有基线CATKIN变量未使用警告）；ros2 pkg prefix与两个srv的interface show可用，公开service call实际模拟上传成功。新ROS14/14、原拍照14/14、文字播报8/8再次通过；launch默认只含原executor/bridge，显式开启多一个api且只有预期五个/capture服务。
+- 启动集合测试曾发现FakeTTS的ActionServer持有node handle，Node.destroy_node不能单独清理它；测试夹具显式destroy server后，跨context重新发现不再有遗留节点。此修正仅在新增测试，不改基线fake或protected包。
+- 整仓CI通过（capture_task110项、录像工具22项，沿用ROS依赖排除口径）；结构21包/362个Python文件、Shell语法、文档目标与Python示例语法、diff检查通过。证据在artifacts/capture-validation/ros-api；没有实车或正式云端验收。准备本地提交及带08464e1前置提交的git bundle，基线分支保留原指针。

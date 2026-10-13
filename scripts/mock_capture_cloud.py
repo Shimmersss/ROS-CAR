@@ -23,6 +23,7 @@ def main():
     serve.add_argument('--token', default='', help='Prefer CAPTURE_CLOUD_TOKEN over shell history')
     serve.add_argument('--fail-upload', type=int, choices=[500,409,401], default=0)
     serve.add_argument('--slow-upload', type=float, default=0.)
+    serve.add_argument('--reject-unknown-task', action='store_true')
     serve.add_argument('--drop-poll', action='store_true')
     send = sub.add_parser('send')
     send.add_argument('task_type', choices=['face','tongue','helmet','pcb'])
@@ -36,7 +37,7 @@ def main():
     token = token_from_env(args.token_file)
     if args.operation == 'serve':
         server = MockCloud(('127.0.0.1', args.port), args.store, args.token or token,
-                           args.fail_upload, args.slow_upload, args.drop_poll, args.prefix)
+                           args.fail_upload, args.slow_upload, args.drop_poll, args.prefix, args.reject_unknown_task)
         print('Mock cloud: loopback port', server.server_port, flush=True)
         try:
             server.serve_forever()

@@ -1,0 +1,4 @@
+string task_id        # Only cancel the matching job owned by this facade.
+---
+bool success
+string detail         # cancel_requested|not_active|not_owner

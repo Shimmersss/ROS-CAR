@@ -104,3 +104,16 @@ def test_long_poll_overrides_default_socket_timeout(monkeypatch):
     assert client.request('GET','/v1/robots/r/commands/next?wait=5',deadline=time.monotonic()+7,timeout=7)[0]==204
     assert 6.9<observed['timeout']<=7.
     assert observed['path']=='/roscar/v1/robots/r/commands/next?wait=5'
+
+
+def test_strict_mock_rejects_unknown_but_accepts_issued_task(cloud):
+    server,url=cloud;server.reject_unknown_task=True;client=CloudClient(url)
+    image=b'\xff\xd8synthetic'
+    meta={'X-Robot-Id':'r','X-Task-Type':'face','X-Task-Source':'ros_api','X-Quality':'{"brightness":100,"sharpness":10,"rb_ratio":1,"width":1,"height":1}'}
+    with pytest.raises(CloudError,match='upload_http_404'):
+        client.upload('ros-t','c',image,meta,threading.Event(),time.monotonic()+3)
+    cmd=dict(command_id='c',type='capture',task_id='issued',task_type='face')
+    client.admin_request('POST','/admin/commands',cmd)
+    client.request('GET','/v1/robots/r/commands/next?wait=0')
+    assert client.upload('issued','c',image,meta,threading.Event(),time.monotonic()+3)['task_id']=='issued'
+    assert server.upload_sources[('issued','c')]=='ros_api'

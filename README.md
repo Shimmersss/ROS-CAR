@@ -88,8 +88,8 @@ ros2_ws/src/
   gimbal_bridge/         云台串口桥接（仅仿真验证）
   execution_mode_interfaces/ execution_mode_manager/ tongue_mode/
                          舌苔任务、模式调度、停车保持
-  capture_task_interfaces/ 独立云端拍照 action
-  capture_task/          云端任务→完成确认播报→新鲜原始RGB→上传（默认关闭）
+  capture_task_interfaces/ 独立拍照 action 与 RunCapture / CancelCapture 服务
+  capture_task/          云端任务→完成确认播报→新鲜原始RGB→上传，含可选 ROS 服务门面（默认关闭）
   offline_voice/         本地 ASR/TTS 语音入口
   xfyun_speech/          讯飞流式 ASR/TTS（回退）
   deepseek_ros2/         DeepSeek 文本桥（历史源码，不作为运动回退）

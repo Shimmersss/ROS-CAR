@@ -31,6 +31,7 @@ export WITH_RADAR="${WITH_RADAR:-false}"
 WITH_FOLLOWER="${WITH_FOLLOWER:-false}"
 WITH_TONGUE_MODE="${WITH_TONGUE_MODE:-false}"
 WITH_CAPTURE_TASKS="${WITH_CAPTURE_TASKS:-false}"
+CAPTURE_ROS_API="${CAPTURE_ROS_API:-false}"
 TONGUE_SAFETY_PROFILE="${TONGUE_SAFETY_PROFILE:-robot}"
 TONGUE_CAMERA_TOPIC="${TONGUE_CAMERA_TOPIC:-/camera/color/image_raw}"
 if [[ "$PERCEPTION_ROUTE" == c ]]; then
@@ -52,6 +53,7 @@ WITH_CHASSIS=true 开启底盘串口收发。
 WITH_TONGUE_MODE=true 将舌苔流程接入现有语音，要求 WITH_VOICE/WITH_FOLLOWER=true。
 WITH_CAPTURE_TASKS=true 启用独立云端拍照；要求语音/TTS；接底盘使用 robot，须显式 WITH_FOLLOWER=true。
 WITH_FOLLOWER=true 会同时启动跟随器；运动仍受 MOTION_ENABLED 与逐次授权约束。
+CAPTURE_ROS_API=true 显式打开 /capture/* 服务门面，要求 WITH_CAPTURE_TASKS=true；默认 false。
 无底盘拍照为 bench，要求 WITH_FOLLOWER=false / MOTION_ENABLED=false；默认关闭。
 CAPTURE_CLOUD_URL / CAPTURE_ROBOT_ID / CAPTURE_TOKEN_FILE 配置云端；CAPTURE_POLL_WAIT_SEC 为 0–20 整数，默认 1；默认原始 RGB。
 TONGUE_SAFETY_PROFILE=robot 要求底盘回传；bench 仅允许运动关闭的台架。
@@ -66,9 +68,12 @@ HELP
   *) echo '未知参数，使用 --help 查看用法。' >&2; exit 2;;
 esac
 set -u
-for value in "$WITH_VOICE" "$WITH_CHASSIS" "$WITH_RADAR" "$WITH_FOLLOWER" "$WITH_TONGUE_MODE" "$WITH_CAPTURE_TASKS" "$MOTION_ENABLED" "${DEPTH_REGISTERED:-false}" "$AUTO_LOCK_SINGLE"; do
+for value in "$WITH_VOICE" "$WITH_CHASSIS" "$WITH_RADAR" "$WITH_FOLLOWER" "$WITH_TONGUE_MODE" "$WITH_CAPTURE_TASKS" "$CAPTURE_ROS_API" "$MOTION_ENABLED" "${DEPTH_REGISTERED:-false}" "$AUTO_LOCK_SINGLE"; do
   [[ "$value" == true || "$value" == false ]] || { echo '开关必须为 true/false' >&2; exit 2; }
 done
+if [[ "$CAPTURE_ROS_API" == true && "$WITH_CAPTURE_TASKS" != true ]]; then
+  echo "CAPTURE_ROS_API=true 要求 WITH_CAPTURE_TASKS=true。" >&2; exit 2
+fi
 if [[ "$WITH_CAPTURE_TASKS" == true ]]; then
   [[ "$WITH_VOICE" == true && "${VOICE_TTS_ENABLED:-true}" == true ]] || {
     echo '云端拍照要求现有语音及带完成确认的 TTS。' >&2; exit 2;
@@ -220,6 +225,7 @@ if [[ "$WITH_VOICE" == true ]]; then
 fi
 if [[ "$WITH_CAPTURE_TASKS" == true ]]; then
   start_module capture ros2 launch capture_task capture_task.launch.py \
+    with_ros_api:="$CAPTURE_ROS_API" \
     safety_profile:="$CAPTURE_SAFETY_PROFILE" \
     poll_wait_sec:="${CAPTURE_POLL_WAIT_SEC:-1}" \
     cloud_url:="${CAPTURE_CLOUD_URL:-http://127.0.0.1:8090}" robot_id:="${CAPTURE_ROBOT_ID:-roscar-01}" \
