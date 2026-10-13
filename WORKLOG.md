@@ -1,3 +1,7 @@
+## 2026-10-13：板端联调主链 PR 提交
+
+- 按用户要求发布 codex/onboard-integration-20261013 到远端并创建 PR，范围包括连续输入修复/负载优化、2/5 秒主人恢复、固定机位跌倒播报、正式开机主链、显式 0.5 m/s 和语音急停开关。提交前 fetch 确认 main 无新增待合入提交，diff 空白审查通过；使用既有原生/合成回归及最终2094项纯单测证据，未重启硬件补跑无关测试。工作区新 Agent 控制接口速查草稿及其 README 修改不属于本轮提交，保留原状。PR 不把离线/合成数据、瞬时身份绑定或参数读回描述为现场返回/跌倒/满速制动验收。
+
 ## 2026-10-13：关闭当前主链语音自动急停
 
 - 用户明确要求关闭造成底盘锁存的急停开关。当前主链采用 VOICE_ESTOP_ENABLED=false：offline_voice 不启动 emergency_kws，FOLLOW_EMERGENCY_KWS_REQUIRED 同步 false；ASR/VoiceCommand 的 ESTOP 映射普通 STOP，避免另一语音路径继续持久锁存。普通停车、手动 /control/estop、目标/测距/请求失效与串口看门狗保护保留；通用语音默认 true 不变。
