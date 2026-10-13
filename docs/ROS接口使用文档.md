@@ -138,7 +138,7 @@ ros2 run roscar_api target release
 ros2 topic echo /perception/owner_state
 ```
 
-认领要求新鲜推理与已确认配准；未分配轨迹的空 ID、过期 epoch、不可见 ID 均拒绝。认领只选择人，不授权底盘。
+认领要求 `OwnerState.can_claim=true`（UNCLAIMED）、新鲜推理与已确认配准；未分配轨迹的空 ID、过期 epoch、不可见 ID 均拒绝。TRACKING 或 LOST 预留期间，指定 ID、空参数中央认领及兼容 `lock_target` 全部拒绝，重复认领同一 ID 也不重置计时或触发播报。需要主动更换主人时，先调用 `release_target`，再认领；流重置或 SOT 冲突撤回轨迹同样不会自动解除主人预留。认领只选择人，不授权底盘。
 
 `OwnerState` 包含 `header/state/target_id/person_id/sequence/event/lost_for_s/reclaim_after_s/can_claim`。state 为 UNCLAIMED、TRACKING、LOST；event 为 ready、claimed、lost、returned、expired、released。TRACKING 描述目标连续性，不表示三维测距或运动授权有效。
 

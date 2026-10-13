@@ -216,6 +216,11 @@ class TrackerNode(Node):
 
     @serialized
     def claim_owner(self, request, response):
+        # The serialized lifecycle is authoritative, including when an old track was
+        # withdrawn or its epoch reset. A claim must not restart a reserved owner's timer.
+        if self.owner.state != 'UNCLAIMED':
+            response.success, response.message = False, 'Owner reserved; wait for UNCLAIMED or call release_target first'
+            return response
         fresh = self.snapshot is not None and self.fresh_snapshot()
         track_id = None
         if request.target_id:
@@ -522,7 +527,7 @@ class TrackerNode(Node):
                               if self.cfg['auto_lock_single'] and not self.auto_lock_suppressed
                               else 'Call lock_target to select central track')
                 if self.sot_detail.startswith('Released: '):
-                    msg.detail = self.sot_detail + '; call lock_target'
+                    msg.detail = self.sot_detail + '; call release_target before lock_target'
                 if getattr(self.selection, 'detail', ''):
                     msg.detail = 'Owner: ' + self.selection.detail
             elif self.sot_paused is not None and self.sot_paused == self.selection.target_id:
@@ -541,7 +546,7 @@ class TrackerNode(Node):
                 msg.measurement_age_s = (self.get_clock().now().nanoseconds*1e-9
                                          - stamp_seconds(color.header.stamp))
             elif chosen is None:
-                msg.status, msg.detail = TargetState.LOST, 'Selected track absent; explicit relock required after stream reset'
+                msg.status, msg.detail = TargetState.LOST, 'Selected track absent; call release_target before lock_target after stream reset'
                 if getattr(self, 'reid_lock_enabled', False):
                     msg.detail = ('Waiting for fresh confirmed identity: '
                                   + (self.selection.person_id or 'initial association'))

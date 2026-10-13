@@ -15,12 +15,16 @@ from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 from person_interfaces.msg import TargetState
 from motion_guard.node import MotionGuard
+from monotonic_ros_clock import MonotonicRosClock
 
-rclpy.init(); probe = Node('grace_probe'); ex = SingleThreadedExecutor(); ex.add_node(probe)
+rclpy.init(); probe = Node('grace_probe', parameter_overrides=[Parameter('use_sim_time', value=True)])
+clock = MonotonicRosClock(probe)
+guards = []
+ex = SingleThreadedExecutor(); ex.add_node(probe)
 LATCH = str(Path(tempfile.mkdtemp())/'estop.json')
 BASE = dict(motion_enabled=True, geometry_confirmed=True, stopping_model_confirmed=True,
             mount_calibrated=True, radar_required=False, emergency_kws_required=False,
-            estop_latch_path=LATCH, command_mode='FOLLOW', auto_arm=True)
+            estop_latch_path=LATCH, command_mode='FOLLOW', auto_arm=True, use_sim_time=True)
 req = probe.create_publisher(TwistStamped, '/control/cmd_vel_request', 1)
 targets = probe.create_publisher(TargetState, '/perception/target_state', 1)
 health = probe.create_publisher(Bool, '/voice/emergency_healthy', 10)
@@ -33,6 +37,9 @@ flags = dict(lost=False, request=True, healthy=True)
 def pump(duration):
     end = time.monotonic()+duration; last = 0
     while time.monotonic() < end:
+        clock.tick()
+        for guard in guards:
+            guard.get_clock().set_ros_time_override(clock.clock.now())
         now = time.monotonic()
         if now-last > .025:
             last = now; stamp = probe.get_clock().now().to_msg()
@@ -59,6 +66,7 @@ def call(name):
 def run(grace, recover=False, **extra):
     params = dict(BASE, target_grace_s=grace, target_auto_recover=recover, **extra)
     guard = MotionGuard(parameter_overrides=[Parameter(k, value=v) for k, v in params.items()])
+    guards.append(guard)
     ex.add_node(guard); flags.update(lost=False, request=True, healthy=True)
     pump(.5)  # auto_arm: no explicit authorization call
     assert states[-1]['mode'] == 'ARMED' and states[-1]['authority_state'] == 'ARMED_FOLLOW', states[-1]
@@ -67,6 +75,7 @@ def run(grace, recover=False, **extra):
 
 
 def done(g):
+    guards.remove(g)
     ex.remove_node(g); g.destroy_node()
 
 
@@ -136,7 +145,7 @@ try:
     for health_value in (False, None):
         g = run(0., recover=True, emergency_kws_required=True, emergency_health_timeout_s=.3)
         flags['lost'] = True; pump(.15)
-        assert g.authority.reason == 'target_invalid'
+        assert g.authority.reason == 'target_invalid', states[-1]
         flags['healthy'] = health_value; pump(.45)
         assert g.authority.reason == 'emergency_channel_unhealthy', states[-1]
         epoch = g.authority.epoch
@@ -153,12 +162,22 @@ try:
     flags.update(lost=False, request=True); pump(.3)
     assert g.authority.state == 'FAULT' and all(v.linear.x == 0 for v in vel[-3:])
     done(g)
+    # The test clock removes uncontrolled VM adjustments, not timestamp validation.
+    # Rewind before a recent buffered request: its now-future stamp must latch a fault.
+    g = run(0., recover=True); flags['request'] = False
+    clock.offset_ns -= 500_000_000
+    pump(.1)
+    assert g.authority.reason == 'request_timestamp', states[-1]
+    clock.offset_ns += 500_000_000
+    flags['request'] = True; pump(.3)
+    assert g.authority.state == 'FAULT' and all(v.linear.x == 0 for v in vel[-3:]), states[-1]
+    done(g)
     assert rejected(target_grace_s=1.5), 'grace above 1 s must be rejected'
     assert rejected(command_mode='IDLE'), 'auto_arm requires a FOLLOW startup'
     assert rejected(motion_enabled=False), 'auto_arm requires motion_enabled'
     assert rejected(command_mode='EXTERNAL', auto_arm=False), 'startup EXTERNAL is not allowed'
     print('PASS motion_guard follow options on MotionAuthority: auto_arm from FOLLOW, grace decays/resumes, '
           'long gap faults, request failure no grace, auto-recover only target faults (not a later emergency-channel fault), STOP/ESTOP not undone, '
-          'invalid configurations rejected (synthetic)')
+          'clock rewind faults and stays latched, invalid configurations rejected (synthetic)')
 finally:
     probe.destroy_node(); rclpy.shutdown()

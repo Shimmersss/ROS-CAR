@@ -1,5 +1,14 @@
 # 工作记录
 
+## 2026-10-13：PR #21 审查修复与合并前补验
+
+- 核对 PR #21 全部审查意见，唯一意见为 `claim_owner` 忽略主人预留，允许 TRACKING/LOST 时直接换人。扩展真实 ROS 回归后，在原实现上复现 `TRACKING owner replaced by a premature claim`，确认问题成立；证据 `artifacts/pr21-review-20261013-before.log`。
+- 在现有 `serialized` 锁内先检查主人为 UNCLAIMED，才允许认领；指定其他 ID、同 ID 重复认领、空参数中央认领及兼容 `lock_target` 都遵守同一门禁。拒绝不改主人绑定、丢失时间、选择代次或播报次数；主动换人须先 release，丢失满十秒后仍开放认领。同步流重置/SOT 冲突后的提示及两份接口文档，未新增文档入口或长期规则。
+- 扩展 `test_owner_announcements_runtime.py` 覆盖 TRACKING/LOST 各四种拒绝请求、无副作用、主动释放后通过新/旧接口换人、两个实际完整十秒窗口后的自动/显式重认领；B 流重置、SOT 冲突回归验证旧主人仍被预留，并在显式 release 后继续原用例。
+- 首次全套在既有 guard 回归中断言失败，诊断重跑记录 `request_timestamp` 锁存；该合成测试改用项目已有 MonotonicRosClock/use_sim_time 驱动 probe 和 guard，并新增显式回拨 0.5 秒导致时间戳故障、恢复时钟后仍不自动授权的检查。生产时间验证未改，原请求/健康超时检查保留。另一次并发测试收尾等待超时，增加诊断的单独复验及最终全套通过，未据此反推该次失败的具体原因；中间日志和探针均保留。
+- 最终验证：ARM64 Humble 主动 **19 包 colcon 构建**及 tracker 增量构建通过；纯 Python CI **1960 passed / 2 skipped**，录像工具 22 项与 B 入口 1 项通过；`scripts/test_flow_regressions.sh` **18 次合成 ROS 脚本调用全部通过**，包含上述新用例、舌苔 17 场景和 SayText 8 项，入口前置方法回归 8 项、舌苔逻辑 34 项也通过。结构检查（19 包/354 Python 文件）、Python 语法、`git diff --check` 通过；最小审查覆盖原子门禁、拒绝无副作用、显式释放/超时、旧接口兼容及文档一致性。
+- 验证证据位于 `artifacts/pr21-review-20261013-*.log`，最终全套为 `full-ros`、纯单测为 `unit`；本轮只做合成 ROS 与软件验证，未连接或部署 Jetson、未启动实物硬件。创建前检查本机约 12 GiB 可用，复用已有 Humble 镜像并仅在临时容器补 Pillow；结束已删除本轮容器与约 50 MB 可重建构建输出，无新增镜像/卷，保留源码和全部验证证据。
+
 ## 2026-10-13：修复五项流程问题、主人十秒重认领与阶段语音、公共 ROS API
 
 - 基于已同步的 `main@64a48f7`，在本地 `codex/fix-flow-owner-api` 实施；保留此前同步/审查记录。用户确认播报范围为认领、开始跟随、丢失、找回、十秒后重认领及舌苔各阶段，状态心跳不重复播报。未连接、同步或部署到 Jetson，未触发真实运动。

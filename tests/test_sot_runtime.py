@@ -109,6 +109,8 @@ def main():
         assert last.status == TargetState.SEARCHING and 'possible ID swap' in last.detail, last.detail
         assert send(swapped).status == TargetState.SEARCHING  # no automatic relock or switch
         # Fresh lock; target then goes undetected and comes back under a new track number.
+        assert not call('lock_target').success  # Withdrawing a conflicting track does not release its owner.
+        assert call('release_target').success
         send(both, A); assert call('lock_target').success; spin(); send(both, A)
         bridged = send([Detection(9, B, .9)], A)
         assert bridged.status == TargetState.TRACKING and bridged.detail.startswith('Bridged'), bridged.detail

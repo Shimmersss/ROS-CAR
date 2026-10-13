@@ -57,6 +57,7 @@ def main():
     info = io.create_publisher(CameraInfo, tracker.cfg['camera_info_topic'], 10)
     control = io.create_publisher(String, '/control/state', 10)
     claim = io.create_client(ClaimOwner, '/perception/claim_owner')
+    lock = io.create_client(Trigger, '/perception/lock_target')
     release = io.create_client(Trigger, '/perception/release_target')
     last_input = [0.]
     def step():
@@ -93,6 +94,25 @@ def main():
         future = client.call_async(request)
         wait(future.done, 'service timeout')
         return future.result()
+    def assert_reserved(state):
+        wait(lambda: owners[-1].state == state and not owners[-1].can_claim,
+             f'{state} reservation not published')
+        def reservation():
+            return (tracker.selection.target_id, tracker.owner.state, tracker.owner.sequence,
+                    tracker.owner.lost_at, tracker.selection_generation)
+        before = reservation()
+        claims_spoken = spoken.count('已认领主人')
+        # Explicit replacement, repeated claim, central selection and the legacy service
+        # must all respect the same reservation without restarting its timer or generation.
+        for client, request in ((claim, ClaimOwner.Request(target_id='0:9')),
+                                (claim, ClaimOwner.Request(target_id='0:7')),
+                                (claim, ClaimOwner.Request()), (lock, Trigger.Request())):
+            response = call(client, request)
+            assert not response.success, f'{state} owner replaced by a premature claim'
+            assert 'release_target' in response.message, response.message
+            assert reservation() == before, 'rejected claim changed the owner reservation'
+        spin(.1)
+        assert spoken.count('已认领主人') == claims_spoken, 'rejected claim was announced'
     try:
         wait(lambda: targets and targets[-1].status == TargetState.SEARCHING, 'tracker not ready')
         assert tracker.owner.timeout_s == 10.
@@ -101,6 +121,9 @@ def main():
         assert not call(claim, ClaimOwner.Request(target_id='0:999')).success
         assert call(claim, ClaimOwner.Request(target_id='0:7')).success
         wait(lambda: '已认领主人' in spoken, 'claim not announced')
+        backend.people = [Detection(7, (10,5,90,95), .9), Detection(9, (55,5,95,95), .9)]
+        wait(lambda: {d.track_id for d in tracker.selection.candidates} == {7,9}, 'second person missing')
+        assert_reserved('TRACKING')
         control.publish(String(data=json.dumps(dict(command_mode='FOLLOW', authority_state='ARMED_FOLLOW'))))
         wait(lambda: '开始跟随' in spoken, 'follow not announced')
         backend.people = []
@@ -119,6 +142,7 @@ def main():
         backend.people = [Detection(9, (10,5,90,95), .9)]
         wait(lambda: tracker.owner.state == 'LOST', 'second loss missing')
         lost_at = tracker.owner.lost_at
+        assert_reserved('LOST')
         wait(lambda: time.monotonic()-lost_at >= 9.8, 'clock stalled', timeout=11.)
         assert tracker.owner.state == 'LOST' and tracker.selection.target_id == (0,7)
         wait(lambda: owners[-1].event == 'expired', 'owner did not expire', timeout=1.)
@@ -139,7 +163,30 @@ def main():
         assert spoken.count('主人未返回，可重新认领') == 1
         assert spoken.count('主人已返回') == 1
         assert not any(name == '/cmd_vel' for name in graph['topics'])
-        print('PASS real ROS: explicit claim, return, full 10 s expiry, new claim, release, SayText dedup, API discovery')
+        # Explicit release allows an intentional switch immediately, both while tracking
+        # and during a lost-owner reservation; it does not require waiting ten seconds.
+        assert call(claim, ClaimOwner.Request(target_id='0:9')).success
+        wait(lambda: owners[-1].state == 'TRACKING' and owners[-1].target_id == '0:9', 'reclaim failed')
+        backend.people = [Detection(7, (10,5,90,95), .9), Detection(9, (55,5,95,95), .9)]
+        wait(lambda: {d.track_id for d in tracker.selection.candidates} == {7,9}, 'switch candidates missing')
+        assert call(release, Trigger.Request()).success
+        assert call(claim, ClaimOwner.Request(target_id='0:7')).success
+        backend.people = [Detection(9, (10,5,90,95), .9)]
+        wait(lambda: tracker.owner.state == 'LOST', 'manual switch loss missing')
+        assert call(release, Trigger.Request()).success
+        assert call(lock, Trigger.Request()).success
+        wait(lambda: owners[-1].state == 'TRACKING' and owners[-1].target_id == '0:9', 'legacy switch failed')
+        # With auto claim disabled, expiry must also reopen the explicit ClaimOwner API.
+        tracker.cfg['auto_lock_single'] = False
+        backend.people = [Detection(7, (10,5,90,95), .9)]
+        wait(lambda: tracker.owner.state == 'LOST', 'explicit expiry loss missing')
+        explicit_lost_at = tracker.owner.lost_at
+        wait(lambda: owners[-1].can_claim and owners[-1].event == 'expired', 'explicit expiry missing', timeout=11.)
+        assert time.monotonic()-explicit_lost_at >= 10.
+        assert call(claim, ClaimOwner.Request(target_id='0:7')).success
+        wait(lambda: owners[-1].state == 'TRACKING' and owners[-1].target_id == '0:7', 'claim after expiry failed')
+        print('PASS real ROS: reserved TRACKING/LOST claims rejected without side effects, explicit release/switch, '
+              'return, full 10 s expiry, automatic/explicit reclaim, SayText dedup, API discovery')
     finally:
         executor.shutdown()
         for node in nodes:

@@ -38,7 +38,7 @@ A/B/demo 使用同一接口。输出描述观测状态，不是控制命令。
 
 Astra 原 Bodyposture 没有 header，不得直接把回调接收时间称为传感器采集时间。真实适配时补源时间，或明确暴露时间未知。不同 optical/SDK 轴约定必须先确认后转换。
 
-B 提供 `/perception/lock_target` 与 `/perception/release_target`（std_srvs/Trigger），锁定最新画面水平中央轨迹。ID 为 epoch:track_id，流重置需显式重锁；不提供任意 ID 的 SetTarget 服务。详见 [B 实现](方案B实现与验收.md)。
+B 提供 `/perception/lock_target` 与 `/perception/release_target`（std_srvs/Trigger），锁定最新画面水平中央轨迹；精确选择当前候选可使用 `/perception/claim_owner`。ID 为 epoch:track_id，流重置保留主人预留，需先显式释放再重新认领，或等待丢失超时。详见下方主人生命周期契约与 [B 实现](方案B实现与验收.md)。
 
 ## 红色方案 A 接口（2026-09-16）
 
@@ -112,6 +112,6 @@ PersonState新增body_depth_valid/body_depth_m/body_depth_source，传递当前�
 
 `/perception/owner_state`（`person_interfaces/msg/OwnerState`）发布 `header/state/target_id/person_id/sequence/event/lost_for_s/reclaim_after_s/can_claim`，state 为 UNCLAIMED/TRACKING/LOST。sequence 在本进程每次状态变化时增加，不能跨进程当持久身份；事件为 ready/claimed/lost/returned/expired/released。认领接口 `/perception/claim_owner`（`person_interfaces/srv/ClaimOwner`）接受空 target_id 选中央人物，或精确的当前 epoch:track_id，返回 success/message；旧 lock_target/release_target 保持可用。
 
-主人失去跟踪后按单调时钟等待 `owner_lost_timeout_s=10.0`，在期限内恢复则保留主人；期限到达先清旧绑定、旧联动选择代次及 ReID 找回状态，重新开放认领。显式开启的单人自动认领策略此时重新等待三帧确认；主动 release 则继续抑制自动认领。断流同样计时，10 秒恰好到达时释放优先。该计时不扩大 motion_guard 的目标运动宽限，也不直接授权。
+主人失去跟踪后按单调时钟等待 `owner_lost_timeout_s=10.0`，在期限内恢复则保留主人；期限到达先清旧绑定、旧联动选择代次及 ReID 找回状态，重新开放认领。`claim_owner` 与兼容 `lock_target` 只在 `can_claim=true`（UNCLAIMED）接受认领；TRACKING/LOST 时包括同 ID 重复认领在内均拒绝，不改变旧绑定、选择代次或丢失计时。主动换人须先 release 再认领。显式开启的单人自动认领策略此时重新等待三帧确认；主动 release 则继续抑制自动认领。断流同样计时，10 秒恰好到达时释放优先。该计时不扩大 motion_guard 的目标运动宽限，也不直接授权。
 
 地面与统一定位的选中目标输出始终遵守主 target_state 的 TRACKING/来源/非模拟/新鲜度门禁，不再仅在 ReID 锁定时检查；主选择 LOST 或 SOT 冲突暂停时，不得从仍有效的全员几何数组重新生成一个有效主人目标。二维主目标没有光学深度仍可使用独立且有效的地面几何。完整调用见 [ROS 接口使用文档](ROS接口使用文档.md)。
