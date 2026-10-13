@@ -1,0 +1,14 @@
+# Independent capture job. Never moves the vehicle.
+string task_id
+string task_type
+string source
+string params_json
+float64 ttl_sec
+---
+string status
+string detail
+string capture_id
+string upload_json
+---
+string phase
+string detail

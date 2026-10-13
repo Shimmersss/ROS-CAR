@@ -102,3 +102,15 @@
 
 - GitHub Actions `unit-tests` 在 PR 和 main 推送时运行 `scripts/ci_unit_tests.sh`（主动包纯 Python 单测 + 录像工具，Python 3.10，无 ROS/硬件/权重/录像）；本机 `PYTHON=.venv/bin/python scripts/ci_unit_tests.sh` 同口径。通过不等于 colcon 编译、ROS 运行时或实机验证；需要 rclpy 的测试列在脚本 `NEEDS_ROS`。
 - `scripts/test_flow_regressions.sh` 在已构建的 Humble overlay 中运行五项流程回归、真实 10 秒主人等待、播报、公共 API 与舌苔合成 ROS 验证；仍不等于实机播放或运动验收。
+
+
+## 独立云端拍照任务
+
+- `capture_task` / `capture_task_interfaces` 为独立拍照上传链路，见 `docs/云端拍照任务实现与验收.md` 与协议。不经过 ASR/router/manager，不依赖 tongue_mode，不推理、不发布速度、不授权或清急停；只共享原始 RGB、唯一 SpeakText、robot 下的 TaskHold。
+- `WITH_CAPTURE_TASKS=false` 默认关闭；接底盘强制 robot，须显式 WITH_FOLLOWER=true 复用唯一 guard（该入口同时启动跟随器，不自动打开跟随）；bench 要求 /cmd_vel 零发布者。robot 始终停车租约+新鲜静止回传；当前guard拒绝ESTOP下申请，报hold_failed而不改guard。语音舌苔 active 时拒绝云端拍照，执行中也监测互斥。两个bench入口因guard要求不同不能并开。
+- 播报须完成确认且禁含紧急/RESERVED_STOP词；采集须晚于播报及准备并校验帧龄。JPEG/凭据不提交Git，图像默认不在执行器落盘；mock调试图像位于忽略的artifacts。fake/synthetic仅显式隔离本机测试；Humble x86_64与相机采集不能描述为Jetson或小车验收。
+- 本机usb_cam0.8.1时间戳修正仅通过 scripts/build_capture_usb_cam.sh 的固定源码独立overlay，不改系统驱动或车端相机标定。车端部署和push须用户另行授权。
+
+- ROS拍照门面只转发给 `/capture_task/run`，`with_ros_api=false` / `CAPTURE_ROS_API=false` 默认关闭，不改既有action、bridge及HTTP字段；取消仅针对门面自身goal。ROS任务上传带 `X-Task-Source=ros_api`，不经bridge产生云端ack/events；`/capture/tongue`只拍照上传，与语音tongue_mode独立。
+
+- 拍照整机兼容约定：`WITH_CAPTURE_TASKS=true` 时强制 `FOLLOW_AUTO_ARM=false`、`FOLLOW_TARGET_AUTO_RECOVER=false`、`FOLLOW_EMERGENCY_KWS_REQUIRED=true`，任务释放租约不自动续跟；拍照关闭时保留远端 C 跟随入口配置。
