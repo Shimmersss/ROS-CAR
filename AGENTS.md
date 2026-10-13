@@ -118,4 +118,5 @@
 ## 固定机位开机入口
 
 - `scripts/run_robot_onboard.sh` / `deploy/systemd/roscar-robot.service` 是显式板端 C 入口，默认参数仍运动关闭。板端私有 env 按用户授权开机 FOLLOW 自动授权，并临时沿用 1.3 m、最高 0.2 m/s、无避障；三项确认仅表示本次临时授权，不作为正式标定验收。启动器不清 ESTOP，进程故障不自动重启授权。见 `docs/2026-10-13板端联调与开机跟随.md`。
+- 当前固定机位入口按用户要求强制关闭 ReID 外观校验与找回（REID_ENABLED / REID_LOCK_ENABLED / REID_REACQUIRE_ENABLED=false），保留 VitTrack 与十秒主人生命周期，到期后单人三帧重新认领。不可声称仍有身份校验或保证返回者为同一人。
 - 固定 27 cm / 上仰 15.1° / 横滚 0.5° 使用显式 `pose_fixed_27cm.yaml`；通用 pose.yaml 默认不变。身体高度线索无需头脚全入画；运动时关闭旧像素框延续。安装变化或非平坦地面须重新确认；已有标注录像复评不等于现场跌倒验收。
