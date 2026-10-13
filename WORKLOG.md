@@ -1486,3 +1486,10 @@
 - 延续用户已授权的 wlcb 文档托管，发布 main@dab98ed 快照到 `/var/www/download/roscar/20261013-dab98ed/`，旧 c6d23f1 下载路径保留，Nginx 配置和其他服务不变。
 - 新下载前缀 `http://8.130.12.77/d/roscar/20261013-dab98ed/`；ZIP 为 `roscar-interface-docs-20261013-dab98ed.zip`（38 文件、96695 字节），另有 `ros-api.md`、`capture-http-api.md`、`speech-api.md`。ZIP SHA256：`0b67707f026fe06af48d6ff92e8a47336a750d78e2a7055b0867417bbbf0de79`。
 - ZIP CRC 和逐文件 SHA256 检查通过；本机无代理直连公网，四个文件均 HTTP 200、attachment，逐字节匹配本地。只发布文档，未更新小车程序或正式拍照云端业务实现。
+
+## 2026-10-13：同步本地主线到 5060wsl
+
+- 用户授权通过 MeatShell 的 5060wsl 会话，将仓库同步回 E 盘 works/newcar。现场发现 ROS-CAR、ROS-CAR-voice-tongue、ROS-CAR-cloud-capture、ROS-CAR-capture-ros-api 为同一 Git 仓库的 worktree；main 实际检出于 `/mnt/e/works/newcar/ROS-CAR-voice-tongue`，该工作区干净。ROS-CAR 仍在旧固定规则分支并有未提交修改，因此更新现有 main 工作区，保留其他工作区和本地数据。
+- 通过增量 Git bundle 将 main 从 62a7c59 快进到 c43864e，带回独立云端拍照模块、七项修复、拍照 ROS 门面和重写接口手册；没有覆盖整个目录或复制构建产物、权重、图像、厂商原包与私有凭据。转移前保留 `codex/backup-main-before-wsl-sync-20261013`，指向 62a7c59。
+- 最小审查：传输 bundle SHA256 与前置提交校验通过；目标 main 的 58 个变更路径逐一匹配本机 SHA256，工作区干净；其余三个 worktree 的 HEAD、分支、索引、未提交状态以及修改文件内容校验一致。三份接口文档的 Python 语法和本地链接在 WSL 检查通过，git diff --check 通过。
+- 这次只同步源码、文档与 Git 历史，不构建、不启动 ROS 或硬件服务，也不推送 GitHub。随后将本条同步记录提交并增量同步到同一个 main 工作区，最终以两端 HEAD 一致为完成条件。
