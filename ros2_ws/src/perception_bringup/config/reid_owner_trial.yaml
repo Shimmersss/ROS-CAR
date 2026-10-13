@@ -1,0 +1,31 @@
+/perception/reid_observer:
+  ros__parameters:
+    # Explicit opt-in observer; never reassigns the control target.
+    forget_released_owner: true
+    enabled: false
+    model_path: ''
+    expected_frame: camera_color_optical_frame
+    max_age_s: 0.5
+    sample_hz: 5.0
+    max_people: 8
+    min_crop_height: 80
+    min_crop_width: 32
+    blur_min: 20.0
+    confirm_frames: 3
+    match_distance: 0.25
+    new_identity_distance: 0.45
+    update_distance: 0.15
+    retention_s: 30.0
+    max_gap_s: 1.0
+    max_identities: 64
+    gallery_size: 8
+    # 10-11 recording evaluation (docs/方案C身份ReID接入与验收.md). Original logic: margin 0.08, the rest 0/false.
+    margin: 0.15
+    verify_distance: 0.30
+    confirm_min_interval_s: 0.15
+    co_visible_exclusion: true
+    reconfirm_on_overlap_only: true
+    # Grey out pixels of a nearer overlapping person (pose silhouette) instead of dropping the crop.
+    mask_overlap: true
+    # Owner following (C reid_reacquire): extra views of the pinned owner; inactive without owner_focus.
+    owner_views: 24

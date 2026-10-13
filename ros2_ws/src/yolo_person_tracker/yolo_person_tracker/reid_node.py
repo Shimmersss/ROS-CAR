@@ -21,14 +21,14 @@ class ReIDNode(Node):
         defaults=dict(enabled=False, model_path='', color_topic='/camera/color/image_rect',
                       expected_frame='camera_color_optical_frame', max_age_s=.5,
                       sample_hz=5., max_people=8, min_crop_height=80, min_crop_width=32,
-                      blur_min=20., mask_overlap=False)
+                      blur_min=20., mask_overlap=False, forget_released_owner=False)
         defaults.update(vars(IdentityConfig()))
         for name, value in defaults.items():
             self.declare_parameter(name,value)
         self.cfg={k:self.get_parameter(k).value for k in defaults}
         c=self.cfg
         self.manager=IdentityManager(IdentityConfig(**{k:c[k] for k in vars(IdentityConfig())}))
-        for name in ('enabled','mask_overlap'):
+        for name in ('enabled','mask_overlap','forget_released_owner'):
             if not isinstance(c[name],bool):
                 raise ValueError(f'{name} must be boolean')
         for name in ('max_age_s','sample_hz','blur_min'):
@@ -106,6 +106,10 @@ class ReIDNode(Node):
         return persons.header,observations,reasons,(time.monotonic()-start)*1000.,generation
 
     def on_owner_focus(self,msg):
+        previous = self.owner_focus[0] if self.owner_focus else ''
+        if self.cfg['forget_released_owner'] and previous and not msg.person_id:
+            self.manager.forget(previous)
+            self.generation += 1  # old in-flight descriptors cannot recreate it
         self.owner_focus=(msg.person_id,msg.track_id);self.owner_focus_at=time.monotonic()
 
     def owner_hint(self):

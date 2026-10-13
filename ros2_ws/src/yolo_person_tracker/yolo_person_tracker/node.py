@@ -53,7 +53,7 @@ class TrackerNode(Node):
             'depth_registered': False, 'sync_slop_s': .06, 'max_age_s': .5,
             'visualization_fps': 10.0, 'visualization_scale': 0.5,
             'auto_lock_single': False,
-            'owner_lost_timeout_s': 10.0,
+            'owner_lost_timeout_s': 10.0, 'owner_continuity_reset_s': 0.0,
             'track_hold_s': .8,
             'reacquire_s': 1.2,
             'reacquire_center_fraction': .25,
@@ -87,7 +87,7 @@ class TrackerNode(Node):
         for name, value in defaults.items():
             self.declare_parameter(name, value)
         self.cfg = {name: self.get_parameter(name).value for name in defaults}
-        self.owner = OwnerLifecycle(self.cfg['owner_lost_timeout_s'])
+        self.owner = OwnerLifecycle(self.cfg['owner_lost_timeout_s'], self.cfg['owner_continuity_reset_s'])
         self.selection_generation = self.pending_generation = self.arbiter_generation = 0
         if not 0 < self.cfg['sync_slop_s'] < self.cfg['max_age_s']:
             raise ValueError('Require 0 < sync_slop_s < max_age_s')
@@ -525,6 +525,17 @@ class TrackerNode(Node):
                 self.last_key = ('failed',)
                 self.get_logger().error(self.error)
             self.future = None
+        if self.owner.reset_continuity_due(time.monotonic()):
+            # Only detach continuity. The original loss deadline and appearance
+            # owner remain intact until the lifecycle expires or ReID returns.
+            if hasattr(self.selection, 'lose'):
+                self.selection.lose('owner continuity deadline')
+                self.selection.frames.clear()
+            else:
+                self.selection.release()
+            self.selection_generation += 1
+            self.sot_bridged = self.sot_paused = None
+            self.sot_detail = 'Continuity reset; waiting for owner identity'
         msg = TargetState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.source = 'yolo'

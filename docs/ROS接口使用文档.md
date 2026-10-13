@@ -817,3 +817,8 @@ pub.publish(msg)
 ## 固定机位开机入口与跌倒播报
 
 当前专用入口为 `scripts/run_robot_onboard.sh`，用户服务为 `roscar-robot.service`；启动/停止方法、运动确认、机位参数和准确率边界见 [10-13 板端联调记录](2026-10-13板端联调与开机跟随.md)。它复用既有控制服务，不能再叠加第二个 guard。跌倒播报订阅已有 `/perception/fall_alarm`，阶段 JSON `/system/phase` 的 `source=fall`；实际播放使用 `/voice/say`/`/voice/speak`，不增加运动接口。
+
+
+### 固定机位 2/5 秒找回配置
+
+当前 `run_robot_onboard.sh` 显式重启 ReID 找回：`pose_fixed_27cm.yaml` 的 `owner_continuity_reset_s=2.0`、入口 `OWNER_LOST_TIMEOUT_S=5.0` 从首次连续丢失起算，前者只清轨迹/VitTrack 连续性，后者清主人绑定并开放认领。`reid_owner_trial.yaml` 的 `forget_released_owner=true` 同时删除释放主人的外观库并作废旧推理结果。通用默认仍为十秒且连续性定时重置关闭；此配置不改变运动宽限、急停或故障授权。

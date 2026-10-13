@@ -3,6 +3,7 @@
 # Continuation stays off: a moving chassis cannot reuse a fixed image box as a person.
 /**:
   ros__parameters:
+    owner_continuity_reset_s: 2.0
     pose_confidence: 0.5
     reid_lock_confirm_frames: 3
     reid_lock_max_age_s: 0.5

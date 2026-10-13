@@ -20,12 +20,13 @@ export FOLLOW_GEOMETRY_CONFIRMED="${FOLLOW_GEOMETRY_CONFIRMED:-false}"
 export FOLLOW_MOUNT_CALIBRATED="${FOLLOW_MOUNT_CALIBRATED:-false}"
 export FOLLOW_STOPPING_MODEL_CONFIRMED="${FOLLOW_STOPPING_MODEL_CONFIRMED:-false}"
 export SERIAL_PORT="${SERIAL_PORT:-/dev/wheeltec_controller}" CAR_MODE=mini_akm
-export AUTO_LOCK_SINGLE="${AUTO_LOCK_SINGLE:-true}" OWNER_LOST_TIMEOUT_S=10.0 DEPTH_REGISTERED=true
-# Current onboard trial: follow continuity without appearance verification.
-export REID_ENABLED=false REID_LOCK_ENABLED=false REID_REACQUIRE_ENABLED=false
+export AUTO_LOCK_SINGLE="${AUTO_LOCK_SINGLE:-true}" OWNER_LOST_TIMEOUT_S=5.0 DEPTH_REGISTERED=true
+# Two-stage recovery: continuity reset at 2 s, appearance owner expires at 5 s.
+export REID_ENABLED=true REID_LOCK_ENABLED=false REID_REACQUIRE_ENABLED=true
 export SOT_ENABLED="${SOT_ENABLED:-true}"
 export GEMINI_INPROCESS_REGISTRATION=true GEMINI_REGISTRATION_BACKEND="${GEMINI_REGISTRATION_BACKEND:-cuda}"
 export POSE_CONFIG
+export REID_CONFIG="$ROOT/ros2_ws/src/perception_bringup/config/reid_owner_trial.yaml"
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 OPENCV_FOR_THREADS_NUM=1
 # Wait for udev names once at boot. A later failure stops the stack; no automatic re-arming restart.
 for device in "$SERIAL_PORT" /dev/wheeltec_mic; do
