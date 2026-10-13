@@ -1465,3 +1465,10 @@
 - 最终统一验收：接口声明修正后重新配置/编译18包通过（execution_mode_interfaces仅有基线CATKIN变量未使用警告）；ros2 pkg prefix与两个srv的interface show可用，公开service call实际模拟上传成功。新ROS14/14、原拍照14/14、文字播报8/8再次通过；launch默认只含原executor/bridge，显式开启多一个api且只有预期五个/capture服务。
 - 启动集合测试曾发现FakeTTS的ActionServer持有node handle，Node.destroy_node不能单独清理它；测试夹具显式destroy server后，跨context重新发现不再有遗留节点。此修正仅在新增测试，不改基线fake或protected包。
 - 整仓CI通过（capture_task110项、录像工具22项，沿用ROS依赖排除口径）；结构21包/362个Python文件、Shell语法、文档目标与Python示例语法、diff检查通过。证据在artifacts/capture-validation/ros-api；没有实车或正式云端验收。准备本地提交及带08464e1前置提交的git bundle，基线分支保留原指针。
+
+### 接口文档发布到 wlcb
+
+- 用户授权通过 MeatShell 的 wlcb 会话发布接口文档；首次主机密钥由用户在 MeatShell 确认后连接成功。复用服务器已有 Nginx `/d/` 静态下载配置，文件位于 `/var/www/download/roscar/20261013-c6d23f1/`，没有修改 Nginx 配置或重启服务。
+- 发布代码版本 c6d23f1 的文档快照：ROS接口使用文档、云端拍照任务接口协议、文字播报ROS接口，以及包含背景文档和五个自定义接口包字段定义的 ZIP（34 个文件，62427 字节）。打包产物只在忽略的 artifacts/interface-docs，不含凭据、图像、权重或构建产物。
+- 下载前缀 `http://8.130.12.77/d/roscar/20261013-c6d23f1/`；文件为 `roscar-interface-docs-20261013-c6d23f1.zip`、`ros-api.md`、`capture-http-api.md`、`speech-api.md`。ZIP SHA256：`659dac7d5648be254e496a2d3787c1003009a0ec47c99c76d7d5e93657f5c574`。
+- 最小审查：ZIP 结构与 CRC、包内逐文件 SHA256 通过；本机直连公网下载四个文件均返回 HTTP 200、Content-Disposition: attachment，内容与本地原文逐字节一致。此次只发布文档，没有部署小车程序、推送 Git 或进行实车验收。
