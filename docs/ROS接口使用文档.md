@@ -1,276 +1,307 @@
 # ROSCAR ROS 2 接口使用文档
 
-> 2026-10-12：新增文字播报服务 `/voice/say`（`roscar_interfaces/srv/SayText`），并公开既有 `/voice/speak` action 的调用方式。发送文字即可使用现有 TTS 播放，详细命令、结果与启动方法见 [文字播报 ROS 接口](文字播报ROS接口.md)。以下历史部署边界以各条目的日期为准。
+更新：2026-10-13。本文对应当前源码的 B/C 感知、主人认领、受保护底盘控制、语音、舌苔、雷达、云台和导航接口。所有接口通过原生 ROS 2 topic / service / action 调用；没有另开 HTTP 控制端口。运行时的类型、发布者和服务是否就绪，以实际 ROS 图为准。
 
-> 2026-10-04 开发接口更新（未部署）：`SetControlMode` 返回 `authority_epoch`，显式授权改用 `/control/authorize`（`AuthorizeMotion`），旧 `/control/arm` 默认拒绝；语音运动改用 `MotionRequest`。新消息/服务需要重建 overlay。当前约定及无车验证见 [语音优化无车实施与验收](语音优化无车实施与验收.md)，下文旧无票据示例须按此迁移。
+## 1. 构建、发现和启动
 
-
-本文对应本机软件接口；硬件标定、制动距离、RGB-D 配准和实车运动必须另行验收。本轮不访问或部署小车。所有名称以下述 launch 的默认绝对路径为准，可用 `ros2 topic info -v` 核对实际发布者、类型与 QoS。
-
-## 1. 环境与启动
-
-使用 Ubuntu 22.04 / ROS 2 Humble，Python 与 rclpy 的 ABI 必须兼容。Mac 上使用项目 ARM64 Humble 容器验证；Mac Foxglove WebSocket 连接并不提供原生 ROS Python 接口。
+在 Ubuntu 22.04 / ROS 2 Humble 的项目根目录执行：
 
 ```bash
 source /opt/ros/humble/setup.bash
-# 在项目根目录；安装现有包及新增 vision_msgs 的系统依赖
 rosdep install --from-paths ros2_ws/src --ignore-src -r -y
 bash scripts/build_ros.sh
-source ros2_ws/install/setup.bash
-export ROS_DOMAIN_ID=182
-export ROS_LOCALHOST_ONLY=1
-ros2 interface show roscar_interfaces/srv/SetControlMode
+source install/setup.bash
+export ROS_DOMAIN_ID=182 ROS_LOCALHOST_ONLY=1
 ros2 launch roscar_api api.launch.py
 ```
 
-默认仅启动一个 motion_guard，`command_mode=IDLE`、`motion_enabled=false`；发布零速度和状态，不启动相机、雷达、底盘、视觉或跟随器，也不自动 arm。不要与已有 route A、导航或其他包含 guard 的组合入口叠加运行。先停止旧组合入口，或者继续使用旧入口提供的相同公共接口。出现重复速度发布者时 guard 拒绝授权或进入 FAULT。
+构建及 B/C 启动统一使用仓库根目录 `install/`，不再默认加载旧 `ros2_ws/install/`。脚本需要另一套 overlay 时设置 `PERCEPTION_INSTALL=/绝对路径/install`。厂商底盘、雷达和麦克风仍分别构建、source 独立 overlay，不移除它们的 `COLCON_IGNORE`。
 
-统一入口可选参数：
-
-| 参数 | 默认 | 作用 |
-|---|---|---|
-| `with_perception` / `route` | false / yolo | 启用 yolo、red 或 astra 感知；不启动相机/骨架 SDK |
-| `model_path` / `device` / `yolo_python` | 空 / cpu / 空 | 本地权重、推理设备、ABI 兼容解释器 |
-| `depth_registered` | false | 现场确认配准后才能设 true，不能只按 frame 名称认定配准 |
-| `color_topic` / `depth_topic` / `camera_info_topic` | 见下例 | 同步 RGB-D 输入 |
-| `camera_mount_config` | perception_bringup/config/camera_mount.yaml | YOLO 车体坐标派生接口；未标定不影响原光学接口 |
-| `with_follower` / `target_distance_m` | false / 1.0 | 启动内部跟随请求生产者，不自动切 FOLLOW/arm |
-| `safety_config` | motion_guard/config/safety.yaml | 实测尺寸、雷达安装、停车模型、来源和 frame；占位确认开关默认 false |
-| `motion_enabled` | false | 允许调用 arm；仍须满足全部保护条件 |
-| `radar_required` | false | 要求 `/scan` 和雷达时刻 TF；默认 false 时 EXTERNAL/FOLLOW 均可无雷达运动，但没有障碍保护 |
-| `with_radar` / `radar_config` | false / perception_bringup/config/radar.yaml | 显式启用已有 N10P 驱动与状态节点 |
-| `with_chassis` / `serial_port` / `car_mode` | false / 空 / 空 | 显式启用底盘；后两项必须填写实测值 |
-
-仅启动视觉软件的例子（相机已提供配准数据；权重路径替换为实际绝对路径）：
+默认只启动一个 motion_guard，IDLE、运动关闭、不自动授权，不开启相机、串口或录音。已有 `start_project.sh` / `start_robot.sh` / 导航等入口包含 guard 时，直接使用它们的公共接口，**不要再叠加 api.launch.py**。需要单独补上播报桥时使用 `speech_api.launch.py`。
 
 ```bash
-ros2 launch roscar_api api.launch.py with_perception:=true route:=yolo \
-  model_path:=/absolute/path/yolo26s.pt depth_registered:=true \
-  color_topic:=/camera/color/image_rect \
-  depth_topic:=/camera/aligned_depth_to_color/image_raw \
-  camera_info_topic:=/camera/color/camera_info
+# 枚举所有已发现的接口（包含中间件参数服务及模块内部协作接口）
+ros2 run roscar_api interfaces
+ros2 run roscar_api interfaces --json --wait 3
+ros2 service list -t
+ros2 action list -t
+ros2 topic info -v /perception/owner_state
+ros2 interface show person_interfaces/srv/ClaimOwner
+ros2 launch roscar_api api.launch.py --show-args
 ```
 
-底盘和雷达为可选独立覆盖工作区，使用前分别执行 `bash scripts/build_chassis.sh`、`bash scripts/build_radar.sh` 并 source `ros2_ws/chassis_install/setup.bash`、`ros2_ws/radar_install/setup.bash`。不取消厂商目录的 COLCON_IGNORE。不提供自动电机转速、电源或距离运动服务。
+图中出现 topic/action 名称不代表存在发布者或 action server，客户端自身也会注册名称。程序调用前使用 `wait_for_service()` / `wait_for_server()`，订阅后检查时间戳与有效位；不能把无数据当作零或正常状态。局域网调用要求两端安装相同接口版本、相同 `ROS_DOMAIN_ID`、`ROS_LOCALHOST_ONLY=0`、DDS 网络畅通、时钟同步。Foxglove WebSocket 用于展示，不等于原生 DDS 客户端。
 
-局域网原生 DDS：两端 source 相同接口版本，设置相同 `ROS_DOMAIN_ID`，两端 `ROS_LOCALHOST_ONLY=0`，允许 DDS 发现/数据通信，保持系统时钟同步（例如系统 NTP/chrony），使用一致的时间源。带时间戳的请求在接收时必须仍在有效期内，时钟偏差会触发拒绝。Foxglove 的 `ws://小车地址:8765` 用于展示，与 DDS 的 ROS 域和 Python 接入是两条不同链路。
+### 可选启动项
 
-## 2. 底盘指令与模式
-
-### 2.1 外部速度请求
-
-**功能**：外部程序 → `/chassis/cmd_vel`，类型 `geometry_msgs/msg/TwistStamped`。它是请求入口，最终 `/cmd_vel` 仅由 motion_guard 发布。不要绕过保护直接写 `/cmd_vel`。
-
-| 字段 | 单位 / 约定 |
-|---|---|
-| `header.stamp` | 当前 ROS 时间；零、未来、切换模式前或超时的请求不能驱动 |
-| `header.frame_id` | 必须 `base_link`；EXTERNAL 同时要求 guard 的 base_frame 为 base_link |
-| `twist.linear.x` | m/s，前进/倒车，默认允许 [-0.15, 0.15]；语音手动模式允许受限倒车 |
-| `twist.angular.z` | rad/s，左转正，默认允许 [-0.5, 0.5] |
-| 其他 linear/angular 分量 | 必须为零；拒绝横移和非有限值 |
-
-默认 QoS 为 reliable / volatile / keep_last(1)。推荐 20 Hz 持续发布；默认请求有效期 0.2 s，同时检查消息时间与单调接收时间。超出限速直接拒绝，不在 API 层悄悄裁剪。合法零速度也必须定期发送。跟随和导航请求可由各自生产者继续保持不倒车策略。
-
-### 2.2 模式服务与授权
-
-`/control/set_mode` 类型 `roscar_interfaces/srv/SetControlMode`：
-
-```text
-string mode
----
-bool success
-string message
-```
-
-| mode | 语义 |
-|---|---|
-| `IDLE` | 不接收运动来源，不能 arm |
-| `EXTERNAL` | 仅 `/chassis/cmd_vel`；不要求视觉目标或视觉发布者 |
-| `FOLLOW` | 仅已有 `/control/cmd_vel_request`；还要求新鲜有效的真实锁定目标 |
-
-区分大小写。非法字符串返回 `success=false`，保留当前模式。合法切换（包括重复设置当前模式）立即发零、清空旧请求、解除授权；之后必须收到时间戳晚于切换时刻的新模式请求，再显式 arm。非选中来源不填充请求缓存。旧入口默认 FOLLOW，新 API 入口强制从 IDLE 开始。`command_mode` ROS 参数只表示启动值，运行期模式以 `/control/state` 为准。
-
-本版本两种运动模式均不要求雷达新鲜度、扫描时刻 TF、雷达包络或 `/scan`；`radar_required` 固定为 `false`，雷达不参与任何模式切换、arm 或故障门禁。仍要求尺寸、安装与停车模型确认、请求/目标时效和发布者数量正确。EXTERNAL 不要求视觉目标。
-
-| 服务 | 类型 | 成功 / 失败含义 |
+| 参数 | 默认 | 含义 |
 |---|---|---|
-| `/control/arm` | std_srvs/srv/Trigger | 全部检查通过才 success=true；失败原因在 message；不改变来源模式 |
-| `/control/stop` | std_srvs/srv/Trigger | 立即发零并解除授权；需要再次显式 arm 才能恢复 |
-| `/control/disarm` | std_srvs/srv/Trigger | 与 stop 相同 |
-
-缺请求、目标失效（FOLLOW）或重复发布者等会使已授权状态进入 FAULT 并发零；本版本不因缺少雷达、雷达 TF、扫描或雷达障碍结果触发 FAULT。数据恢复或节点重启不会自动恢复运动；例外：`target_auto_recover:=true`（`start_project.sh` 跟随入口默认开启）时，目标类故障在目标重新有效后自动回到 ARMED，其他故障仍锁存。服务用 ROS 默认可靠服务 QoS，无固定频率。
+| `with_perception`、`route` | false、yolo | B 用 yolo，C 用 yolo_pose；相机独立启动；astra/red 仅保留旧调用兼容 |
+| `model_path`、`device`、`yolo_python` | 空、cpu、空 | 明确本地模型及兼容解释器；缺模型不静默回退 |
+| `depth_registered` | false | 物理配准验收后显式确认 |
+| `color_topic`、`depth_topic`、`camera_info_topic` | `/camera/color/image_rect`、`/camera/aligned_depth_to_color/image_raw`、`/camera/color/camera_info` | 同步 RGB-D 输入 |
+| `pose_config`、`camera_mount_config`、`reid_config` | perception_bringup 对应 YAML | 骨架/跌倒、安装/地面、身份参数；确认开关不自动置真 |
+| `reid_enabled`、`reid_lock_enabled`、`reid_reacquire_enabled`、`sot_enabled` | false | 身份观察、身份锁定、主人找回、单目标联动；仍遵守互斥和模型校验规则 |
+| `reid_model_path`、`sot_model_path` | 空 | 本地模型和校验文件，显式启用时必须齐全 |
+| `registration_calibration_file`、`registration_expected_serial` | 空 | C 可选进程内 Gemini 配准，不能与 ReID 同开 |
+| `auto_lock_single`、`owner_lost_timeout_s` | false、10.0 | 单人连续三帧自动认领开关、主人丢失等待秒数 |
+| `with_follower`、`target_distance_m` | false、1.0 | 跟随请求生产者；不自动切模式或授权 |
+| `expected_source`、`target_frame`、`target_topic` | yolo、camera_color_optical_frame、`/perception/target_state` | 同时配置 guard 与跟随器的目标契约；来源/坐标必须与输出一致 |
+| `motion_enabled`、`safety_config` | false、motion_guard/config/safety.yaml | 运动总开关及已验收安全参数；开总开关仍需逐次授权 |
+| `with_radar`、`radar_required` | false、false | 启动雷达、让 guard 要求扫描/TF/包络保护；两个开关含义不同 |
+| `with_chassis`、`serial_port`、`car_mode` | false、空、空 | 启动底盘必须明确串口与车型；本车使用 mini_akm |
+| `with_voice`、`voice_config` | false、offline_voice/config/offline_voice.yaml | 启动共享录音、常开 KWS、固定规则、ASR、唯一 TTS，同时开放播报 API |
+| `enable_wake_driver`、`use_xfyun_asr` | true、false | 仅 with_voice 时生效；讯飞只替换识别，不引入 LLM 运动控制 |
+| `with_speech`、`speech_with_tts`、`with_announcements` | false、false、true | 仅播报桥、额外启动 TTS、阶段播报；已有 TTS 必须保持 speech_with_tts=false；与 with_voice 重复所有者组合会拒绝启动 |
+| `with_tongue`、`tongue_safety_profile` | false、robot | 模式管理器及舌苔；robot 要新鲜静止里程计，bench 必须运动关闭 |
+| `tongue_config`、`modes_config`、`tongue_server_url`、`tongue_camera_topic`、`tongue_camera_profile` | 对应包 YAML、现有服务地址、`/camera/color/image_raw` | 检测契约、模式目录、云端服务和原始 RGB；profile 默认按 C/B 使用 Gemini/Astra，可显式覆盖；本 API 不重复启动 guard/router/TTS |
+| `with_gimbal`、`gimbal_port`、`gimbal_mock`、`gimbal_mount_config` | false、空、false、gimbal_bridge/config/gimbal_mount.yaml | 云台串口或显式 PTY 模拟；未确认安装不发布云台 TF |
 
 ```bash
-ros2 service call /control/set_mode roscar_interfaces/srv/SetControlMode "{mode: EXTERNAL}"
-# 持续零请求的可运行示例；在另一个终端明确 arm 后才前进，默认最多 2 秒
-ros2 run roscar_api chassis --speed 0.05 --turn 0.0 --duration 2.0
-# 示例自己也调用 set_mode，因此须在示例报告等待授权之后执行：
-ros2 service call /control/arm std_srvs/srv/Trigger '{}'
+# 相机已独立运行时，启动 C 感知软件，保持运动关闭
+ros2 launch roscar_api api.launch.py with_perception:=true route:=yolo_pose \
+  model_path:=/绝对路径/yolo26s-pose-fp16.engine device:=0
+
+# 已有 TTS 和 guard，仅增加文字播报及主人/跟随阶段播报
+ros2 launch roscar_api speech_api.launch.py with_announcements:=true
+
+# 没有其他整车入口时，显式启动语音和舌苔；其依赖、模型、录音设备须先就绪
+ros2 launch roscar_api api.launch.py with_voice:=true with_tongue:=true
+```
+
+## 2. 底盘和运动授权
+
+### 公共服务
+
+| 名称 | 类型 | 请求 / 返回与语义 |
+|---|---|---|
+| `/control/set_mode` | roscar_interfaces/srv/SetControlMode | 请求 `mode: IDLE/EXTERNAL/FOLLOW`；返回 `success/message/authority_epoch`；切换撤销旧票据并清请求 |
+| `/control/authorize` | roscar_interfaces/srv/AuthorizeMotion | 请求当前 `authority_epoch` 和 `mode`；返回 `success/message`；必须有新鲜零请求及全部健康条件 |
+| `/control/arm` | std_srvs/srv/Trigger | 兼容入口，默认拒绝，使用 authorize |
+| `/control/stop`、`/control/disarm` | std_srvs/srv/Trigger | 停车、回 IDLE、撤销授权；不清除 FAULT/ESTOP 锁存 |
+| `/control/estop` | std_srvs/srv/Trigger | 锁存紧急制动；持久化保留 |
+| `/control/reset_estop`、`/control/reset_fault` | std_srvs/srv/Trigger | 条件满足时显式复位，只回未授权状态；仍需重新选模式和授权 |
+| `/control/task_hold` | execution_mode_interfaces/srv/TaskHold | `ACQUIRE/RENEW/RELEASE` 停车租约；字段见下例；释放/到期不恢复运动 |
+
+```bash
+ros2 service call /control/set_mode roscar_interfaces/srv/SetControlMode '{mode: EXTERNAL}'
+# 终端 A：持续发零并打印本次 epoch；等待明确授权后最多运行 2 秒，退出自动发零并 STOP
+ros2 run roscar_api chassis --speed 0.05 --turn 0 --duration 2
+# 终端 B：将 123 替换成上条程序实际返回的 epoch，不能复用旧值
+ros2 service call /control/authorize roscar_interfaces/srv/AuthorizeMotion \
+  '{authority_epoch: 123, mode: EXTERNAL}'
 ros2 service call /control/stop std_srvs/srv/Trigger '{}'
-ros2 service call /control/disarm std_srvs/srv/Trigger '{}'
+ros2 service call /control/estop std_srvs/srv/Trigger '{}'
+ros2 service call /control/reset_estop std_srvs/srv/Trigger '{}'
 ```
 
-上述启动默认未开启运动，所以 arm 会失败。真实使用需使用经确认的安全配置并显式 `motion_enabled:=true`。示例不替调用者 arm；等待授权最多 60 秒，开始运动后失去授权、模式改变或状态超时即退出，退出发送零请求并调用 stop，打印服务失败结果。源码见 `ros2_ws/src/roscar_api/roscar_api/chassis.py`；其 Python 发布核心为：
+默认运动关闭时授权失败是正常结果。外部程序只向 `/chassis/cmd_vel` 发布 `geometry_msgs/msg/TwistStamped`：新鲜 ROS 时间，`frame_id=base_link`，`linear.x` 米/秒、`angular.z` 弧度/秒，其余分量零。推荐 20 Hz，默认请求超时 0.2 秒。限速取当前 guard 配置，超限/NaN/未来时间戳会被拒绝；不要直接向最终 `/cmd_vel` 发命令。
 
-```python
-from geometry_msgs.msg import TwistStamped
-publisher = node.create_publisher(TwistStamped, '/chassis/cmd_vel', 1)
-msg = TwistStamped()
-msg.header.stamp = node.get_clock().now().to_msg()
-msg.header.frame_id = 'base_link'
-msg.twist.linear.x = 0.0  # 未授权前持续发送零
-publisher.publish(msg)
-```
+FOLLOW 的内部请求是 `/control/cmd_vel_request`（TwistStamped），只保留一个跟随或导航生产者。目标必须真实、新鲜、来源/坐标正确。目标短丢失宽限和目标故障自动恢复使用既有配置；**主人 10 秒认领窗口不延长运动宽限**。目标 FAULT 中发生急停健康 false 或心跳超时，会升级为不可自动恢复的故障；恢复目标及健康后仍须显式复位。
 
-### 2.3 控制状态和底盘反馈
+`/control/state` 为 `std_msgs/msg/String` JSON，约 20 Hz：`authority_state`（DISARMED/ARMED_MANUAL/ARMED_FOLLOW/FAULT/ESTOP）、`authority_epoch`、`command_mode`、`ready/reason/last_fault`、`motion_enabled`、`emergency_healthy`、`task_hold`。旧 `mode` 为 PERCEPTION_ONLY/STANDBY/ARMED/FAULT 兼容视图；判定授权以 authority_state 为准。
 
-`/control/state` 是 `std_msgs/msg/String` 中的 JSON，20 Hz，reliable / volatile / keep_last(10)：
-
-| JSON 字段 | 说明 |
-|---|---|
-| `mode` | PERCEPTION_ONLY / STANDBY / ARMED / FAULT，授权状态 |
-| `command_mode` | IDLE / EXTERNAL / FOLLOW，来源选择 |
-| `ready` | 当前检查是否通过；不等于已授权 |
-| `reason` | 当前检查原因，例如 idle、request_timeout、invalid_velocity_request |
-| `last_fault` | 最近锁存故障；可保留历史值 |
-| `motion_enabled` | 启动期运动许可开关 |
-
-`ros2 topic echo /control/state` 可观察状态。最终 `/cmd_vel` 为 `geometry_msgs/msg/Twist`，20 Hz、reliable / volatile / keep_last(1)，仅供底盘驱动订阅。
-
-底盘驱动启动并收到有效下位机回传后才有以下反馈，频率取决于实际串口帧，不承诺固定值：
-
-| 话题 / 类型 | 字段与单位 | 坐标与注意事项 |
+| 话题 | 类型 | 方向 / 含义 |
 |---|---|---|
-| `/odom` / nav_msgs/msg/Odometry | pose.position.x/y：m；orientation：四元数；twist：m/s、rad/s | 默认 odom → base_footprint（以实际 header 为准）；厂商 pose.position.z 存航向 rad，**不是高度** |
-| `/imu/data_raw` / sensor_msgs/msg/Imu | angular_velocity：rad/s；linear_acceleration：m/s²；orientation：四元数 | 读取实际 frame_id，不能假设与相机一致 |
-| `/PowerVoltage` / std_msgs/msg/Float32 | data：V | 无 header；不得据接收值推断当前仍在线 |
+| `/chassis/cmd_vel` | geometry_msgs/msg/TwistStamped | 外部请求输入 |
+| `/control/emergency_stop` | std_msgs/msg/Bool | true 触发 ESTOP；false 不复位 |
+| `/cmd_vel` | geometry_msgs/msg/Twist | guard 唯一输出，底盘消费 |
+| `/odom` | nav_msgs/msg/Odometry | 底盘反馈，米、米/秒、弧度/秒；厂商 pose.position.z 为航向，不能当高度 |
+| `/imu/data_raw` | sensor_msgs/msg/Imu | 底盘惯性反馈，读实际 frame_id |
+| `/PowerVoltage` | std_msgs/msg/Float32 | 电压 V，无时间戳，要自行检查接收超时 |
+| `/control/performance` | person_interfaces/msg/RuntimeMetrics | 跟随耗时和吞吐统计 |
 
-标准消息的完整字段可用 `ros2 interface show nav_msgs/msg/Odometry`、`ros2 interface show sensor_msgs/msg/Imu` 查看；pose/twist covariance 与 IMU covariance 是相应量的协方差，未校验的厂商估计不能视为实测精度。
-
-反馈采用驱动 reliable/volatile/keep_last：odom 与 IMU 为 2，电压为 1（可用 `ros2 topic info -v` 查看）；读取方可用 sensor_data QoS。没有反馈可能是未启动、串口故障或失联，不能把“未收到”当零速度/正常电压。驱动另保留命令及反馈超时停车。
-
-### 2.4 语音控制接口
-
-语音链路先在本地解析常用中文操控词，无法确定时才交给 DeepSeek 的结构化工具调用。
-标准输入为 `roscar_interfaces/msg/VoiceCommand` `/voice/command`，结果为
-`roscar_interfaces/msg/VoiceCommandResult` `/voice/command_result`。路由器通过
-`/control/set_mode`、`/control/arm` 和 `/control/stop` 编排控制，只有 `EXTERNAL`
-模式发布 `/chassis/cmd_vel`，不会直接发布最终 `/cmd_vel`。
-
-“开始遥控”会切换到 `EXTERNAL` 并请求显式授权；“开始跟随”切换到 `FOLLOW`，但仍需
-真实目标和跟随请求通过保护检查；“停止/急停”立即归零并切换到 `IDLE`。手动运动命令
-默认速度为前进 0.08 m/s、倒车 -0.08 m/s、转向 ±0.25 rad/s，单次和无新命令保持时间
-最多 2 秒。语音节点停止或请求超时仍由 motion_guard 的更短请求看门狗负责停车。
-
-## 3. RGB-D 视觉接口
-
-### 3.1 全部二维检测
-
-**功能**：视觉 → `/perception/detections`，`vision_msgs/msg/Detection2DArray`，reliable / volatile / keep_last(10)。YOLO/red 每次新鲜、成功的同步 RGB-D 检测完成后发布一次；频率随相机和推理耗时变化，不补帧。没有目标发空 `detections`；缺流、配准未确认、内参错误、推理失败或结果过期不发“正常空列表”。调用者必须自行检查时间戳和接收超时。
-
-| 字段 | 格式 / 单位 / 含义 |
-|---|---|
-| array.header、每个 detection.header | 原彩色帧时间戳与光学 frame_id，不是处理完成时刻 |
-| detection.bbox.center.position.x/y | 原图像素中心 u/v；不是缩小后的可视化图像坐标 |
-| detection.bbox.center.theta | 0；轴对齐框 |
-| detection.bbox.size_x/y | 原图像素宽/高 |
-| detection.results[0].hypothesis.class_id | `person` 或 `red_object` |
-| detection.results[0].hypothesis.score | YOLO 检测置信度（阈值 0.1）；红色为 NaN，表示没有概率估计 |
-| detection.id | YOLO `epoch:track_id`；未分配轨迹时空字符串；红色仅已确认关联目标使用 `red:N`，其他候选为空 |
-| detection.results[0].pose | 不提供三维；position 为 NaN，其他默认字段无测量意义 |
-
-YOLO 每帧仅一次模型推理，再把原始检测交给 ByteTrack；完整框列表不会因尚未建立轨迹而丢失。只检测人体；流重置增加 epoch，防止复用 ID 误接旧目标。列表不是逐人体三维结果，也不是运动授权。红色输出全部符合 HSV/面积门槛的连通块。Astra 骨架路线不新增此二维列表。
+任务持有者示例（租约只保持静止）：
 
 ```bash
-ros2 topic echo /perception/detections --once
-ros2 run roscar_api detections
+ros2 service call /control/task_hold execution_mode_interfaces/srv/TaskHold \
+  '{operation: ACQUIRE, owner: my_app, session_id: session_001, lease_sec: 2.0}'
+# 保存响应 token，定期 RENEW；结束时 RELEASE；不要伪造其他任务的 token
+ros2 service call /control/task_hold execution_mode_interfaces/srv/TaskHold \
+  '{operation: RELEASE, token: "替换为响应中的token"}'
 ```
 
-可运行 Python 示例见 `ros2_ws/src/roscar_api/roscar_api/observe.py`：
+## 3. 主人认领和十秒等待
 
-```python
-from vision_msgs.msg import Detection2DArray
-from rclpy.qos import qos_profile_sensor_data
-node.create_subscription(Detection2DArray, '/perception/detections',
-    lambda msg: print([(d.id, d.bbox.size_x) for d in msg.detections]),
-    qos_profile_sensor_data)
-```
-
-### 3.2 锁定目标与三维位置
-
-`/perception/target_state` 类型 `person_interfaces/msg/TargetState` 不改变结构。Astra、YOLO、red 提供实际路线的锁定目标；状态发布通常 20 Hz，并不意味着每秒 20 次新观测。QoS reliable / volatile / keep_last(10)。
-
-| 字段 | 含义 |
-|---|---|
-| header | 状态发布时刻；frame_id 为 position 坐标系 |
-| observation_stamp | 真实观测时刻；Astra SDK 没提供时为零，不能伪造为相机时间 |
-| source / is_simulated | astra、yolo、red_object；模拟目标不得授权真实运动 |
-| status | 0 NOT_READY、1 SEARCHING、2 TRACKING、3 LOST、4 STALE |
-| detail / target_id | 解释信息 / 当前锁定身份 |
-| position_valid | 仅 true 时可用三维位置；TRACKING 单独不保证深度有效 |
-| position.x/y/z | 米；光学坐标右/下/前 |
-| horizontal_distance_m / bearing_rad | 光学下 hypot(X,Z) 与 atan2(X,Z)，偏角右正，单位 m / rad |
-| measurement_age_s / confidence | 秒 / 置信度；未知为 NaN |
-
-保留配准、内参、同步、深度有效性和时效检查。有效二维框可以同时对应无效深度，但不能因此生成有效三维坐标或允许跟随运动。
-
-YOLO 锁定/释放服务为 `/perception/lock_target`、`/perception/release_target`，均 `std_srvs/srv/Trigger`。lock 选择当前新鲜、有跟踪 ID、最靠近原图中央的候选；无候选/过期返回失败。release 清除选择。失去目标不会悄悄换人；服务本身不 arm。红色路线自动确认/关联红块，Astra 由叉腰条件锁定，不提供这两个 YOLO 服务。
+| 接口 | 类型 | 行为 |
+|---|---|---|
+| `/perception/claim_owner` | person_interfaces/srv/ClaimOwner | 请求 `target_id`；空值选当前中央人物，非空精确选检测列表中的 epoch:track_id；返回 success/message |
+| `/perception/lock_target` | std_srvs/srv/Trigger | 兼容中央人物认领 |
+| `/perception/release_target` | std_srvs/srv/Trigger | 主动释放，抑制自动认领，等待显式再次认领 |
+| `/perception/owner_state` | person_interfaces/msg/OwnerState | 20 Hz 生命周期状态；变化时 sequence 增加 |
 
 ```bash
-ros2 run roscar_api target lock
+ros2 run roscar_api target claim
+ros2 run roscar_api target claim --id 0:7
+ros2 service call /perception/claim_owner person_interfaces/srv/ClaimOwner '{target_id: "0:7"}'
 ros2 run roscar_api target release
-ros2 service call /perception/lock_target std_srvs/srv/Trigger '{}'
-ros2 topic echo /perception/target_state --once
+ros2 topic echo /perception/owner_state
 ```
 
-YOLO 的 `/perception/target_state_base` 保持同类型、20 Hz；只在相机外参已确认且观测时刻 tf2 变换有效时输出有效车体坐标。base_link 为前/左/上，距离 hypot(X,Y)，偏角 atan2(Y,X) 左正。未标定仅使这个派生接口无效，原光学接口继续工作。禁止将它直接接到假设光学坐标右正的旧跟随算法。
+认领要求新鲜推理与已确认配准；未分配轨迹的空 ID、过期 epoch、不可见 ID 均拒绝。认领只选择人，不授权底盘。
 
-### 3.3 展示话题
+`OwnerState` 包含 `header/state/target_id/person_id/sequence/event/lost_for_s/reclaim_after_s/can_claim`。state 为 UNCLAIMED、TRACKING、LOST；event 为 ready、claimed、lost、returned、expired、released。TRACKING 描述目标连续性，不表示三维测距或运动授权有效。
 
-| 路线 | 话题 / 类型 | 行为 |
+从目标首次不可跟踪开始按单调时钟计时：10 秒内同一主人恢复则清计时并播报返回；到 10 秒先释放旧目标、ReID 主人绑定与旧联动结果，再进入 UNCLAIMED 并播报“主人未返回，可重新认领”。断流同样计时，恰好达到期限时先执行释放。未超时不会因画面里只剩另一人而自动换主人。
+
+超时后可调用 claim_owner 认领任何新鲜可见人物。原先显式开启 `auto_lock_single` 的入口恢复单人连续三帧自动认领；多人仍须显式选择。新主人使用新的选择代次，旧异步联动结果不能接回；机器人是否运动仍由 guard 的模式、故障和授权决定。
+
+## 4. 感知与相机输出
+
+这些是订阅接口，不是运动命令。B/C 的 `TargetState.source=yolo` 保持兼容。数组时间戳是原 RGB 观测时间；状态消息有单独 `observation_stamp/measurement_age_s`，不能用发布心跳代替真实测量年龄。
+
+| 话题 | 类型 | 内容 / 启用条件 |
 |---|---|---|
-| YOLO | detections_image / sensor_msgs/Image | bgr8 画框，默认最高 10 Hz、缩放 0.5；header 保留彩色帧 |
-| red | color_image、detections_image、red_mask_image / sensor_msgs/Image | 原始 RGB、bgr8 框、mono8 红色掩码；现有显示逻辑保留 |
-| Astra | body_mask_image / sensor_msgs/Image | SDK 人体掩码，现有实测 320×240 mono8 |
-| 各路线 | target_marker / visualization_msgs/Marker | 有效位置 ADD，无效 DELETE；仅展示 |
-| YOLO | target_marker_base / visualization_msgs/Marker | 车体坐标派生球；标定/TF 失败则删除 |
-
-上述话题均在 `/perception/` 下，图像 reliable/volatile（队列 2；Astra 以实际接口为准），Marker reliable/volatile（队列 10），频率依路线/输入而定。RGB-D 是本次新增检测接口的前提；没有增加 RGB-only 模式或独立二维推理流水线。红色路线原有视频展示功能保持原状。
-
-## 4. 雷达接口
-
-默认 N10P/N10Plus 配置目标 10 Hz，串口 460800；串口名、实际型号与安装外参必须核对。构建/组合方法见 [N10P雷达接入.md](N10P雷达接入.md)。
-
-| 话题 / 类型 | 字段、坐标、单位 | QoS / 频率 / 失败语义 |
-|---|---|---|
-| `/scan` / sensor_msgs/msg/LaserScan | header：扫描时间/laser；angle_min/max/increment：rad；ranges：m；range_min/max：有效范围；intensities：厂商强度 | 驱动 reliable/volatile/keep_last(10)；目标 10 Hz。越界/非有限回波不是有效障碍距离，更不能默认视为空旷 |
-| `/radar/points` / sensor_msgs/msg/PointCloud2 | 与 scan 同 frame，fields 描述 x/y/z（m）及强度；按消息 offsets/point_step 解码 | 驱动 reliable/volatile/keep_last(10)；随扫描输出，不能仅凭点少判断通行 |
-| `/radar/status` / std_msgs/msg/String | JSON，见下表 | reliable/volatile/keep_last(10)，5 Hz；健康状态不是避障或运动许可 |
-
-laser 平面 x 方向为零角、正角朝 +y；安装后与车体的关系由实测 TF 决定，不能从产品正面猜测。订阅使用 `qos_profile_sensor_data` 可兼容可靠/尽力而为传感器源。
-
-| status JSON 字段 | 含义 |
-|---|---|
-| status | WAITING / STALE / INVALID / OK / NO_RETURNS |
-| frame_id | 期望雷达 frame |
-| hz | 最近到达频率，超时归零 |
-| valid_points / nearest_m | 有效点数 / 最近有效距离，缺失为 null |
-| observation_age_s / detail | 观测年龄 / 状态解释 |
+| `/camera/color/image_raw`、`/camera/color/image_rect` | sensor_msgs/msg/Image | 原始/校正彩色；由相机/配准入口提供 |
+| `/camera/depth/image_raw`、`/camera/aligned_depth_to_color/image_raw` | sensor_msgs/msg/Image | 原深度/配准深度；16UC1 毫米或 32FC1 米，须核对 encoding |
+| `/camera/color/camera_info`、`/camera/color/camera_info_rect` | sensor_msgs/msg/CameraInfo | 与实际图像尺寸及光学坐标匹配的内参 |
+| `/perception/detections` | vision_msgs/msg/Detection2DArray | 全部二维框；bbox 原图像素，id=epoch:track_id，未跟踪为空 |
+| `/perception/detections_image` | sensor_msgs/msg/Image | 缩放后的画框视频，不可拿其尺寸解释原框坐标 |
+| `/perception/color_preview/compressed`、`/perception/detections_preview/compressed` | sensor_msgs/msg/CompressedImage | 低带宽预览 |
+| `/perception/target_state`、`/perception/target_state_base` | person_interfaces/msg/TargetState | 光学框中心代表点 / 已确认安装后的车体系代表点 |
+| `/perception/target_marker`、`/perception/target_marker_base` | visualization_msgs/msg/Marker | 对应目标标记 |
+| `/perception/person_states` | person_interfaces/msg/PersonStateArray | C 真实检测、2D/3D 关节、姿态和跌倒状态；缺关节 NaN |
+| `/perception/person_states_continued` | person_interfaces/msg/PersonStateArray | 显式开启丢失高度延续后的独立输出，不能混入真实检测 |
+| `/perception/fall_alarm` | person_interfaces/msg/FallAlarm | C 每帧汇总 NONE/SUSPECTED/CONFIRMED；当前不触发语音或运动 |
+| `/perception/skeleton_markers` | visualization_msgs/msg/MarkerArray | 骨架可视化 |
+| `/perception/person_identities` | person_interfaces/msg/PersonIdentityArray | ReID 身份观察及有效性；开关/本地模型要求见 C 文档 |
+| `/perception/owner_focus` | person_interfaces/msg/PersonIdentity | 主人找回模式向 ReID 传递当前身份，模块协作输出 |
+| `/perception/person_ground_states`、`/perception/person_positions` | person_interfaces/msg/PersonGroundArray | 单目双踝接地点 / 统一脚下位置，车体系米 |
+| `/perception/target_state_ground`、`/perception/target_state_unified` | person_interfaces/msg/TargetState | 对应已选择人物的位置；主选择 LOST、陈旧或冲突时同步无效 |
+| `/perception/ground_markers`、`/perception/position_markers` | visualization_msgs/msg/MarkerArray | 地面/统一位置可视化 |
+| `/perception/floor_plane` | person_interfaces/msg/FloorPlane | 显式开启深度地面拟合后的本帧证据，不自动确认标定 |
+| `/perception/performance` | person_interfaces/msg/RuntimeMetrics | FPS、处理耗时及观测年龄 |
+| `/tf`、`/tf_static` | tf2_msgs/msg/TFMessage | 已确认的坐标关系，依观测时刻查询 |
 
 ```bash
-ros2 topic echo /radar/status --once
-ros2 topic info /scan -v
-ros2 run roscar_api radar
+ros2 run roscar_api detections
+ros2 topic echo /perception/target_state
+ros2 topic echo /perception/fall_alarm
+ros2 interface show person_interfaces/msg/PersonState
+ros2 interface show person_interfaces/msg/PersonGround
 ```
 
-## 5. 验证范围与定位问题
+`TargetState` 状态为 NOT_READY/SEARCHING/TRACKING/LOST/STALE；使用位置必须同时检查 TRACKING、position_valid、非模拟、来源/坐标及真实观测时效。光学代表点和脚下投影是不同参考点。地面/统一定位还要求确认安装和地面；即使全员位置数组有效，LOST 的主人也不得成为有效跟随目标。细节见 [感知消息契约](interfaces.md) 与 [C 统一定位与三维姿态](方案C统一定位与三维姿态.md)。
 
-本机测试使用隔离 ROS 域和合成 RGB-D/雷达。真实 C++ 底盘驱动通过伪串口核对控制及停车帧；真实 YOLO26s 权重在 Mac CPU 上推理静态示例图片。以上不等于实车运动、相机配准或雷达覆盖验收。
+## 5. 语音与阶段播报
 
-- 看不到话题：先检查进程、域号、DDS 网络和接口安装，不使用 Foxglove 连接状态推断 DDS 是否可用。
-- arm 失败：先读 message 与 `/control/state`；确认新鲜选中来源、启动许可及所有保护前提，不反复自动 arm。
-- 列表停止：检查彩色/深度/CameraInfo、配准确认、时戳、推理错误；不得把停止更新当“当前无人”。
-- 有框无坐标：检查 position_valid、detail 和配准深度；框只表示二维检测。
-- 光学位置有效但 base 无效：检查外参确认及观测时刻 TF，禁止用占位外参冒充实测。
+| 接口 | 类型 | 调用含义 |
+|---|---|---|
+| `/voice/say` | roscar_interfaces/srv/SayText | 纯文字播报；请求 text，返回 success/status/utterance_id/message；完成后返回 |
+| `/voice/speak` | execution_mode_interfaces/action/SpeakText | text + 唯一 utterance_id；反馈 phase；result.status=completed 表示完成；可取消自己的 goal |
+| `/voice/tts_text` | std_msgs/msg/String | 兼容无需完成回执的文字播报输入 |
+| `/voice/start_listening`、`/voice/cancel_listening` | std_srvs/srv/Trigger | 触发一次识别 / 取消正在监听的会话 |
+| `/voice/cancel_speech` | std_srvs/srv/Trigger | 全局取消播报；普通调用超时应用自己的 action goal 取消，避免干扰检测 |
+| `/voice/asr_text`、`/voice/asr_state` | std_msgs/msg/String | 识别结果 / 状态；固定规则入口使用完整结果，讯飞无最终包或截断不发布临时文本 |
+| `/voice/speaking`、`/voice/tts_state` | std_msgs/msg/Bool、std_msgs/msg/String | 播放中 / 播放状态 |
+| `/voice/audio` | roscar_interfaces/msg/AudioFrame | 唯一录音所有者的共享 PCM16、16 kHz 单声道帧，不增加第二录音器 |
+| `/voice_words` | std_msgs/msg/String | 硬件内部唤醒事件“小车唤醒”；不是口头唤醒词“小微小微” |
+| `/voice/command` | roscar_interfaces/msg/VoiceCommand | 程序化命令；新鲜 stamp 和 request_id；STOP/DISARM/ESTOP/ARM/SET_MODE/RESET_ESTOP/RESET_FAULT/QUERY_STATUS |
+| `/voice/motion_request` | roscar_interfaces/msg/MotionRequest | 固定规则产生的语义动作，经能力校验/阿克曼适配；绑定当前 authority_epoch |
+| `/voice/command_result` | roscar_interfaces/msg/VoiceCommandResult | request_id、action、success、message、模式回执 |
+| `/voice/tool_result`、`/voice/assistant_text` | std_msgs/msg/String | 兼容 JSON 回执 / 助手文字 |
+| `/voice/emergency_healthy`、`/voice/emergency_event` | std_msgs/msg/Bool、std_msgs/msg/String | 常开 KWS 健康及事件输出；包括 TTS 期间 |
+| `/system/phase` | std_msgs/msg/String | 主人/跟随阶段 JSON：source、phase、text；表示播报请求，非播放成功回执 |
 
-回归入口：`scripts/test_container.sh`、`scripts/test_navigation_container.sh`、`scripts/test_radar_container.sh`、`scripts/test_yolo_model.py`。验证日志放在 `artifacts/`；最终本轮结果见 WORKLOG。
+```bash
+ros2 service call /voice/say roscar_interfaces/srv/SayText '{text: "开始跟随"}'
+ros2 action send_goal /voice/speak execution_mode_interfaces/action/SpeakText \
+  '{utterance_id: "app-001", text: "正在分析"}' --feedback
+ros2 service call /voice/start_listening std_srvs/srv/Trigger '{}'
+ros2 topic echo /voice/command_result
+```
+
+文字不进入意图解析。300 字上限，空白拒绝；服务忙/不可用/失败/超时必须检查 status，见 [文字播报接口](文字播报ROS接口.md)。底层始终复用唯一 TTS 队列，不靠新建播放器实现阶段播报。
+
+B/C 整机入口开启语音及 TTS 时自动启动阶段观察器，通过 `/voice/say` 播报：等待认领、认领成功、开始跟随、主人丢失、主人返回、10 秒到期重新认领、主动释放。相同阶段心跳不重复播，目标故障恢复不重复“开始跟随”。播报忙时短暂重试并合并同来源未发送状态；当前阶段心跳持续时等待语音就绪，心跳中断超过 4 秒的过时内容丢弃，接口不可用不阻塞感知/控制。故障可查看播报节点日志和 `/system/phase`。
+
+## 6. 舌苔执行模式
+
+```bash
+ros2 run roscar_api mode ENTER --mode tongue
+ros2 run roscar_api mode RETAKE --mode tongue
+ros2 run roscar_api mode REPEAT --mode tongue
+ros2 run roscar_api mode EXIT --mode tongue
+```
+
+旧 `python3 scripts/mode_command.py ...` 保留为兼容入口，需先 source 当前 install。命令行创建当前时间戳及唯一 request_id，等待订阅者后发送；“请求已发送”不是检测成功，后续读取 state/result。
+
+| 接口 | 类型 | 契约 |
+|---|---|---|
+| `/execution_mode/request` | execution_mode_interfaces/msg/ModeCommand | 外部请求入口，header.stamp、request_id、mode_id、operation；ENTER/RETAKE/REPEAT/EXIT；session_id 由管理器填充 |
+| `/execution_mode/state` | std_msgs/msg/String | active/busy/mode_id/session_id/phase/detail/result_json |
+| `/modes/tongue/run` | execution_mode_interfaces/action/RunMode | 完整模式会话；goal 包含 mode_id/session_id/request_id；反馈 phase/detail/result_json；最终 status/detail/last_result_json |
+| `/execution_mode/control`、`/execution_mode/heartbeat` | ModeCommand、std_msgs/msg/String | 管理器到模式的内部协作通道；外部应用使用 request 避免绕过串行清理 |
+| `/tongue/state`、`/tongue/result` | std_msgs/msg/String | 阶段 JSON / 经版本、请求/采集 ID 和八项契约校验的结果 JSON |
+
+完整消息类型可用 `ros2 interface show execution_mode_interfaces/action/RunMode` 查看。RunMode 在 READY 仍保持，不会一轮拍摄结束就返回；直接 action 客户端须承担管理器心跳/串行退出职责，普通集成应调用 mode/request。EXIT 等旧任务完成清理后才允许切换；不会恢复运动。
+
+阶段播报通过 `/voice/speak` 等待逐条完成：检查服务 → 面向相机伸舌 → 准备拍摄 → 正在拍摄 → 正在分析 → 简短结果 → “可重拍或退出”。拍摄窗口在“正在拍摄”播放完成后建立，不能取播报前的缓存帧。READY_PROMPT 是最后提示播放阶段，完成后才进入 READY 并开放有界续聊；失败播报为“检测未完成，请重拍”。最后的续聊提示若播放失败，会记录 detail 并保留操作入口，不丢弃已完成的检测结果。阶段不随反馈心跳重复播报，晚到的过期语音 goal 只取消自身。
+
+进入检测先获得停车保持并确认静止；异常模式、ESTOP、KWS 失效及心跳失效均退出。云端地址可配置，冻结模型版本和响应契约不能省略；图片及凭据不提交。完整流程见 [舌苔整合与验收](语音舌苔流程整合与验收.md)。
+
+## 7. 雷达、云台和导航
+
+| 接口 | 类型 | 调用 / 订阅 |
+|---|---|---|
+| `/scan` | sensor_msgs/msg/LaserScan | 距离米、角弧度；订阅使用 sensor_data / best_effort；按 header 时间查 TF |
+| `/radar/status` | std_msgs/msg/String | 雷达状态 JSON |
+| `/gimbal/command` | gimbal_interfaces/msg/GimbalCommand | 云台命令输入，见下文 |
+| `/gimbal/status` | gimbal_interfaces/msg/GimbalStatus | connected/time_synced/pan_source/pan_valid/角度/故障等 |
+| `/gimbal/joint_states`、`/gimbal/imu` | sensor_msgs/msg/JointState、sensor_msgs/msg/Imu | MCU 采样时间换算的关节和惯性反馈 |
+| `/gimbal/set_pan_zero`、`/gimbal/calibrate_gyro`、`/gimbal/save_config` | std_srvs/srv/Trigger | 设零/校准/保存；success 表示 MCU ACK，不能替代硬件精度验收 |
+| `/navigation/start_follow`、`/navigation/stop_follow` | std_srvs/srv/Trigger | 导航跟随目标规划开关，不授予运动权限 |
+| `/navigation/state`、`/navigation/follow_goal` | std_msgs/msg/String、geometry_msgs/msg/PoseStamped | 导航状态 / 跟随目标 |
+| `/navigation/cmd_vel_raw` | geometry_msgs/msg/Twist | Nav2 输出给速度适配器的内部通道 |
+| `/navigate_to_pose` | nav2_msgs/action/NavigateToPose | Nav2 导航 action，仅在导航栈启动后可用 |
+
+```bash
+ros2 run roscar_api radar
+ros2 topic echo /scan --qos-reliability best_effort
+ros2 service call /gimbal/set_pan_zero std_srvs/srv/Trigger '{}'
+ros2 interface show gimbal_interfaces/msg/GimbalCommand
+ros2 service call /navigation/start_follow std_srvs/srv/Trigger '{}'
+ros2 service call /navigation/stop_follow std_srvs/srv/Trigger '{}'
+```
+
+云台命令带当前 header.stamp，mode 为 DISABLE=0、HOLD=1、POSITION=2、RATE=3、HOME=4；pan_target_rad 相对车体左正，tilt_target_rad 相对重力向下正，RATE 使用 pan_rate_ff_radps，速率单位弧度/秒。持续命令推荐 20 Hz，默认 0.2 秒无新命令转 HOLD。示例只保持当前位置：
+
+```python
+from gimbal_interfaces.msg import GimbalCommand
+pub = node.create_publisher(GimbalCommand, '/gimbal/command', 10)
+msg = GimbalCommand(mode=GimbalCommand.HOLD)
+msg.header.stamp = node.get_clock().now().to_msg()
+pub.publish(msg)
+```
+
+导航使用独立 `ros2 launch navigation_bringup navigation.launch.py`，它拥有自己的 guard，不能叠加 api.launch.py 或普通跟随生产者。Nav2/map/TF 等标准端点通过 `roscar_api interfaces` 完整列举；见 [导航文档](导航与自动绕障.md)。云台实物协议、时钟和坐标规则见 [云台协议](云台跟随设计与串口协议.md)。
+
+## 8. Python 服务调用与验证
+
+以下调用既有认领服务，不启动额外节点栈或运动：
+
+```python
+import rclpy
+from rclpy.node import Node
+from person_interfaces.srv import ClaimOwner
+
+rclpy.init()
+node = Node('my_owner_client')
+client = node.create_client(ClaimOwner, '/perception/claim_owner')
+try:
+    if not client.wait_for_service(timeout_sec=3):
+        raise RuntimeError('认领服务未就绪')
+    future = client.call_async(ClaimOwner.Request(target_id='0:7'))
+    rclpy.spin_until_future_complete(node, future, timeout_sec=3)
+    if not future.done():
+        raise TimeoutError('认领响应超时，请先查询 owner_state 再决定是否重试')
+    response = future.result()
+    print(response.success, response.message)
+finally:
+    node.destroy_node()
+    rclpy.shutdown()
+```
+
+其他 service 替换消息类型、路径及字段即可。Service 客户端超时不撤销服务端已执行的操作；状态写入后先查询实际状态，不盲目重发。需要取消和完成反馈的长任务使用 action，保留自己的 goal handle。
+
+回归入口：`bash scripts/test_flow_regressions.sh`（先在 Humble 构建当前源码），覆盖五项缺陷、完整 10 秒主人生命周期、播报去重、定位门禁、API 模块与舌苔流程。`PYTHON=.venv/bin/python scripts/ci_unit_tests.sh` 为无 ROS 纯单测。容器 ROS 测试使用合成 RGB-D/里程计、可控语音回执和本地假云端；通过仅证明软件流程，不等于麦克风、扬声器、模型识别、云台硬件或实车验收。

@@ -199,17 +199,21 @@ def test_flow_waits_for_speech_before_new_capture():
     class Ports:
         def stage(self, phase, body=None): events.append(phase)
         def ready(self): events.append('cloud_ready')
-        def speak(self, text): events.append('speech_complete')
+        def speak(self, text): events.append(('speech_complete', text))
         def wait(self, seconds): events.append('prepared')
         def capture(self, after, cancel):
-            assert events[-1] == 'CAPTURE' and events.index('speech_complete') < events.index('prepared')
+            assert events[-2:] == ['CAPTURE', ('speech_complete', '正在拍摄')]
+            assert events.index(('speech_complete', '准备拍摄')) < events.index('prepared')
             return Frame(np.zeros((12, 12, 3), np.uint8), 1, after+.01, 1.)
         def analyze(self, jpeg, ids, capture_time): return body_for(ids)
         def save(self, record, jpeg): events.append('saved')
     cfg = dict(prepare_sec=0., jpeg_quality=95, expected_pipeline_id=PIPELINE, expected_pipeline_digest=DIGEST)
     body = DetectionFlow(Ports(), cfg).run('s', threading.Event(), True)
-    assert body['status'] == 'ok' and events[-1] == 'speech_complete'
+    assert body['status'] == 'ok' and events[-1][0] == 'speech_complete'
     assert events.index('saved') < events.index('SPEAK_RESULT')
+    for phase, text in [('CHECK_CLOUD', '检查检测服务'), ('PREPARE', '准备拍摄'),
+                        ('CAPTURE', '正在拍摄'), ('ANALYZING', '正在分析')]:
+        assert events[events.index(phase)+1] == ('speech_complete', text)
 
 
 def test_audio_abort_prevents_late_start():

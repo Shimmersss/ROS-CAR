@@ -10,7 +10,7 @@ if [[ "${WITH_RADAR:-false}" == true ]]; then
   source "$ROOT/ros2_ws/radar_install/setup.bash"
 fi
 # shellcheck disable=SC1091
-source "${PERCEPTION_INSTALL:-$ROOT/ros2_ws/install}/setup.bash"
+source "${PERCEPTION_INSTALL:-$ROOT/install}/setup.bash"
 set -u
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-182}"
 export ROS_LOCALHOST_ONLY=0
@@ -51,6 +51,7 @@ setsid ros2 launch perception_bringup perception.launch.py \
   yolo_python:="$YOLO_PYTHON" model_path:="$MODEL_PATH" device:="${YOLO_DEVICE:-0}" \
   depth_registered:="${DEPTH_REGISTERED:-false}" \
   auto_lock_single:="${AUTO_LOCK_SINGLE:-false}" \
+  owner_lost_timeout_s:="${OWNER_LOST_TIMEOUT_S:-10.0}" \
   color_topic:="${COLOR_TOPIC:-/camera/color/image_raw}" \
   depth_topic:="${DEPTH_TOPIC:-/camera/depth/image_raw}" \
   camera_info_topic:="${CAMERA_INFO_TOPIC:-/camera/color/camera_info}" \

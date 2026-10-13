@@ -43,7 +43,8 @@ def pump(duration):
             m.source = 'astra'; m.status = m.LOST if flags['lost'] else m.TRACKING
             m.position_valid = not flags['lost']; m.position.z = 3.; m.horizontal_distance_m = 3.; m.bearing_rad = 0.
             m.measurement_age_s = math.nan; targets.publish(m)
-            health.publish(Bool(data=flags['healthy']))
+            if flags['healthy'] is not None:
+                health.publish(Bool(data=flags['healthy']))
         ex.spin_once(timeout_sec=.005)
 
 
@@ -131,6 +132,27 @@ try:
     assert states[-1]['mode'] == 'FAULT' and all(v.linear.x == 0 for v in vel[-3:]), states[-1]
     done(g)
     Path(LATCH).unlink(missing_ok=True)
+    # A second fault while ALREADY waiting for a target must supersede the recoverable latch.
+    for health_value in (False, None):
+        g = run(0., recover=True, emergency_kws_required=True, emergency_health_timeout_s=.3)
+        flags['lost'] = True; pump(.15)
+        assert g.authority.reason == 'target_invalid'
+        flags['healthy'] = health_value; pump(.45)
+        assert g.authority.reason == 'emergency_channel_unhealthy', states[-1]
+        epoch = g.authority.epoch
+        flags.update(lost=False, healthy=True); pump(.35)
+        assert g.authority.state == 'FAULT' and all(v.linear.x == 0 for v in vel[-3:])
+        assert g.authority.epoch == epoch, 'A preserved latch must not churn epochs'
+        assert call('/control/reset_fault').success
+        pump(.2)
+        assert g.authority.state == 'DISARMED' and g.command_mode == 'IDLE'
+        done(g)
+    g = run(0., recover=True); flags['lost'] = True; pump(.15)
+    flags['request'] = False; pump(.35)
+    assert g.authority.reason == 'request_timeout'
+    flags.update(lost=False, request=True); pump(.3)
+    assert g.authority.state == 'FAULT' and all(v.linear.x == 0 for v in vel[-3:])
+    done(g)
     assert rejected(target_grace_s=1.5), 'grace above 1 s must be rejected'
     assert rejected(command_mode='IDLE'), 'auto_arm requires a FOLLOW startup'
     assert rejected(motion_enabled=False), 'auto_arm requires motion_enabled'

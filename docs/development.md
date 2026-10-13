@@ -25,7 +25,7 @@ python3 scripts/sync_to_jetson.py --host wheeltec@192.168.1.240 --dest /home/whe
 
 ## 编译与启动
 
-在 Jetson 的 Bash 中依次执行 `source /opt/ros/humble/setup.bash`、`bash scripts/build_ros.sh`、`source ros2_ws/install/setup.bash`。构建只扫描 `ros2_ws/src`；迁入的厂商包分别用 `build_chassis.sh`、`build_radar.sh` 等独立构建。C 的启动入口为 `scripts/start_c.sh`，B 和整机为 `scripts/start_project.sh`。
+在 Jetson 的 Bash 中依次执行 `source /opt/ros/humble/setup.bash`、`bash scripts/build_ros.sh`、`source install/setup.bash`。构建只扫描 `ros2_ws/src`；迁入的厂商包分别用 `build_chassis.sh`、`build_radar.sh` 等独立构建。C 的启动入口为 `scripts/start_c.sh`，B 和整机为 `scripts/start_project.sh`。
 
 ## 测试层级
 

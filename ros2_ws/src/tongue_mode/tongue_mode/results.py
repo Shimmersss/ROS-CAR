@@ -57,7 +57,7 @@ def validate_response(body, request_id, capture_id, pipeline_id, digest, session
 def spoken_result(body):
     status = body.get('status')
     if status == 'retake':
-        return '这次没有获得清晰的舌象，请正对相机伸出舌头，再说重新拍摄。'
+        return '舌象不清晰，请重新拍摄。'
     errors = {'busy': '服务繁忙，请稍后说重新拍摄。',
               'timeout': '这次连接超时，请稍后说重新拍摄。',
               'invalid_input': '这次图片提交失败，请重新拍摄。',
@@ -68,4 +68,4 @@ def spoken_result(body):
     text = ('本次识别到' + '、'.join(positives) + '。') if positives else '本次没有明确检出这八项舌象特征。'
     if status == 'uncertain':
         text += '部分特征暂不确定，可以重新拍摄。'
-    return text + '可以说重新拍摄、播报上次结果，或退出舌苔检测。'
+    return text

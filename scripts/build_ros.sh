@@ -8,5 +8,5 @@ fi
 set +u
 source /opt/ros/humble/setup.bash
 set -u
-cd "$ROOT/ros2_ws"
-colcon build --base-paths src --symlink-install --event-handlers console_direct+ "$@"
+cd "$ROOT"
+colcon build --base-paths ros2_ws/src --symlink-install --event-handlers console_direct+ "$@"

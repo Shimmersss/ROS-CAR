@@ -14,6 +14,7 @@ from yolo_person_tracker.node import TrackerNode
 from yolo_person_tracker.pose_node import PoseTrackerNode
 from yolo_person_tracker.identity_selection import IdentitySelection
 from yolo_person_tracker.owner_selection import OwnerSelection
+from yolo_person_tracker.sot import Decision
 from person_interfaces.msg import PersonIdentity
 
 A, B = (5, 5, 45, 95), (55, 5, 95, 95)
@@ -86,6 +87,16 @@ def main():
         both = [Detection(7, A, .9), Detection(9, B, .9)]
         send(both); assert call('lock_target').success; spin()
         assert send(both).status == TargetState.TRACKING and states[-1].target_id == '0:7'
+        # A release/reclaim may deliberately choose the same track number. A late
+        # old-owner decision must not release this new claim just because IDs match.
+        old_target, old_generation = node.selection.target_id, node.pending_generation
+        assert call('release_target').success
+        assert call('lock_target').success
+        node.sot_result = (old_target, Decision('lost', reason='old owner conflict'))
+        node.pending_generation = old_generation
+        node.apply_arbiter()
+        assert node.selection.target_id == old_target
+        assert send(both).status == TargetState.TRACKING
         inits = tracker.inits
         assert send(both, A).status == TargetState.TRACKING and tracker.inits > inits  # agreement refreshes
         # ByteTrack exchanges the numbers; the bridge stays on the original person -> released, not switched.

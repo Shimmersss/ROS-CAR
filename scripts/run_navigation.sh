@@ -6,7 +6,7 @@ set +u
 # shellcheck disable=SC1091
 source /opt/ros/humble/setup.bash
 # shellcheck disable=SC1091
-source "$ROOT/ros2_ws/install/setup.bash"
+source "${PERCEPTION_INSTALL:-$ROOT/install}/setup.bash"
 if [[ -f "$ROOT/ros2_ws/radar_install/setup.bash" ]]; then
   # shellcheck disable=SC1091
   source "$ROOT/ros2_ws/radar_install/setup.bash"

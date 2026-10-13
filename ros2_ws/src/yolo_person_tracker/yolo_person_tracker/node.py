@@ -18,7 +18,8 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, CameraInfo, CompressedImage
 from std_srvs.srv import Trigger
 from visualization_msgs.msg import Marker
-from person_interfaces.msg import TargetState
+from person_interfaces.msg import OwnerState, TargetState
+from person_interfaces.srv import ClaimOwner
 from vision_msgs.msg import Detection2DArray
 from astra_body_adapter.detections import detection_array
 from .backend import YoloBackend
@@ -28,6 +29,7 @@ from .sot import ArbiterConfig, BridgeArbiter, BridgeConfig, TargetBridge, VitTr
 from .input_contract import stamp_seconds, validate_pair
 from .registration import load_registration, rectified_camera_info, validate_raw_pair
 from .visualization import draw_labels
+from .owner_lifecycle import OwnerLifecycle
 
 
 def serialized(method):
@@ -51,6 +53,7 @@ class TrackerNode(Node):
             'depth_registered': False, 'sync_slop_s': .06, 'max_age_s': .5,
             'visualization_fps': 10.0, 'visualization_scale': 0.5,
             'auto_lock_single': False,
+            'owner_lost_timeout_s': 10.0,
             'track_hold_s': .8,
             'reacquire_s': 1.2,
             'reacquire_center_fraction': .25,
@@ -82,6 +85,8 @@ class TrackerNode(Node):
         for name, value in defaults.items():
             self.declare_parameter(name, value)
         self.cfg = {name: self.get_parameter(name).value for name in defaults}
+        self.owner = OwnerLifecycle(self.cfg['owner_lost_timeout_s'])
+        self.selection_generation = self.pending_generation = self.arbiter_generation = 0
         if not 0 < self.cfg['sync_slop_s'] < self.cfg['max_age_s']:
             raise ValueError('Require 0 < sync_slop_s < max_age_s')
         if self.cfg['image_size'] < 32:
@@ -167,6 +172,7 @@ class TrackerNode(Node):
         self.backend = backend
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='yolo')
         self.pub = self.create_publisher(TargetState, 'target_state', 10)
+        self.owner_state_pub = self.create_publisher(OwnerState, 'owner_state', 10)
         self.marker_pub = self.create_publisher(Marker, 'target_marker', 10)
         self.detections_pub = self.create_publisher(Detection2DArray, 'detections', 10)
         self.image_pub = self.create_publisher(Image, 'detections_image', 2)
@@ -176,6 +182,7 @@ class TrackerNode(Node):
             CompressedImage, 'detections_preview/compressed', 2)
         self.create_service(Trigger, 'lock_target', self.lock_target, callback_group=self.state_group)
         self.create_service(Trigger, 'release_target', self.release_target, callback_group=self.state_group)
+        self.create_service(ClaimOwner, 'claim_owner', self.claim_owner, callback_group=self.state_group)
         if self.registration is None:
             self.create_subscription(CameraInfo, self.cfg['camera_info_topic'],
                                      self.on_info, qos_profile_sensor_data, callback_group=self.input_group)
@@ -205,12 +212,27 @@ class TrackerNode(Node):
 
     @serialized
     def lock_target(self, request, response):
+        return self.claim_owner(ClaimOwner.Request(), response)
+
+    @serialized
+    def claim_owner(self, request, response):
         fresh = self.snapshot is not None and self.fresh_snapshot()
+        track_id = None
+        if request.target_id:
+            try:
+                epoch, track_id = map(int, request.target_id.split(':'))
+                if epoch != self.selection.epoch or track_id < 0:
+                    raise ValueError()
+            except ValueError:
+                response.success, response.message = False, 'Require a current epoch:track_id'
+                return response
         if self.error or not self.cfg['depth_registered'] or not fresh:
             response.success, response.message = False, 'No fresh valid inference'
         else:
-            response.success, response.message = self.selection.lock(max_age=self.cfg['max_age_s'])
+            response.success, response.message = self.selection.lock(max_age=self.cfg['max_age_s'], track_id=track_id)
             if response.success:
+                self.owner.claim()
+                self.selection_generation += 1
                 self.auto_lock_suppressed = False
                 self.sot_detail = ''
         return response
@@ -218,6 +240,8 @@ class TrackerNode(Node):
     @serialized
     def release_target(self, request, response):
         self.selection.release()
+        self.owner.release()
+        self.selection_generation += 1
         self.sot_detail = ''
         self.auto_lock_suppressed = True
         response.success, response.message = True, 'Target released'
@@ -263,6 +287,7 @@ class TrackerNode(Node):
             self.last_key, self.last_stamp, self.last_input_at = key, stamp, received_at
             self.error = ''
             self.pending_target = None if reset else self.selection.target_id
+            self.pending_generation = self.selection_generation
             self.future = self.pool.submit(self.process_pair, color, depth, received_at, intrinsics, reset)
         except (ValueError, TypeError, cv2.error, CvBridgeError) as exc:
             self.error = str(exc)
@@ -348,8 +373,9 @@ class TrackerNode(Node):
         if self.arbiter is None:
             return
         target = self.pending_target
-        if target != self.arbiter_target:
+        if target != self.arbiter_target or self.arbiter_generation != self.pending_generation:
             self.arbiter.reset(); self.arbiter_target = target
+            self.arbiter_generation = self.pending_generation
         if target is None:
             return
         tracked = [d for d in detections if d.track_id is not None]
@@ -375,7 +401,8 @@ class TrackerNode(Node):
         """Main-thread: apply the worker decision if the selection did not change meanwhile."""
         self.sot_bridged = self.sot_paused = None
         result, self.sot_result = self.sot_result, None
-        if result is None or result[0] != self.selection.target_id:
+        if (result is None or result[0] != self.selection.target_id
+                or self.pending_generation != self.selection_generation):
             if hasattr(self.selection, 'check_absence') and self.snapshot is not None:
                 self.selection.check_absence(self.snapshot[2], bridging=False)
             return
@@ -448,7 +475,9 @@ class TrackerNode(Node):
                 if self.fresh_snapshot():
                     if (self.cfg['auto_lock_single'] and self.cfg['depth_registered']
                             and not self.auto_lock_suppressed):
-                        self.selection.auto_lock_single(max_age=self.cfg['max_age_s'])
+                        if self.owner.state == 'UNCLAIMED' and self.selection.auto_lock_single(max_age=self.cfg['max_age_s']):
+                            self.owner.claim()
+                            self.selection_generation += 1
                     self.detections_pub.publish(detection_array(self.snapshot[0].header,
                         [(d.box, 'person', d.confidence,
                           '' if d.track_id is None else f'{self.selection.epoch}:{d.track_id}')
@@ -550,6 +579,24 @@ class TrackerNode(Node):
                     msg.horizontal_distance_m = math.hypot(xyz[0], xyz[2])
                     msg.bearing_rad = math.atan2(xyz[0], xyz[2])
                     msg.measurement_age_s = measurement_age
+        now = time.monotonic()
+        if self.owner.update(msg.status == TargetState.TRACKING, now):
+            self.selection.release()
+            self.selection_generation += 1
+            self.sot_bridged = self.sot_paused = None
+            self.sot_detail = ''
+            self.auto_lock_suppressed = False
+            msg.target_id, msg.status, msg.position_valid = '', TargetState.SEARCHING, False
+            msg.position.x = msg.position.y = msg.position.z = math.nan
+            msg.horizontal_distance_m = msg.bearing_rad = math.nan
+            msg.measurement_age_s = msg.confidence = math.nan
+            msg.detail = f'Owner absent for {self.owner.timeout_s:g} seconds; ready for a new claim'
+        self.owner_state_pub.publish(OwnerState(
+            header=copy.deepcopy(msg.header), state=self.owner.state, event=self.owner.event,
+            sequence=self.owner.sequence, target_id=msg.target_id,
+            person_id=getattr(self.selection, 'owner_id', '') or getattr(self.selection, 'person_id', ''),
+            lost_for_s=float(self.owner.lost_for(now)), reclaim_after_s=float(self.owner.timeout_s),
+            can_claim=self.owner.state == 'UNCLAIMED'))
         self.pub.publish(msg)
         marker = Marker()
         marker.header = copy.deepcopy(msg.header)

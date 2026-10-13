@@ -7,7 +7,7 @@ source /opt/ros/humble/setup.bash
 # shellcheck disable=SC1091
 source "$ROOT/ros2_ws/radar_install/setup.bash"
 # shellcheck disable=SC1091
-source "$ROOT/ros2_ws/install/setup.bash"
+source "${PERCEPTION_INSTALL:-$ROOT/install}/setup.bash"
 set -u
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-182}"
 export ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}"

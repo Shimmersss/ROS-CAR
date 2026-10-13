@@ -47,6 +47,7 @@
 ## 文字播报接口约定
 
 - 文字播报公共服务为 `/voice/say`（`SayText`），独立入口 `ros2 launch roscar_api speech_api.launch.py` 默认仅复用现有 `/voice/speak` action。正文只交给唯一 TTS 队列，不经过意图/运动解析；超时仅取消本次 goal。只有没有现有 TTS 时才使用 `with_tts:=true`，避免重复播放所有者。B/C 总入口 `start_project.sh` 在语音与 TTS 启用时自动开启 SpeakText action 和 `/voice/say` 桥接，复用唯一队列。调用说明见 `docs/文字播报ROS接口.md`。
+- B/C 总入口同时启动主人/跟随阶段观察器，按状态变化调用 `/voice/say`，心跳不重复播；舌苔阶段使用同一队列的 `/voice/speak` 完成确认，READY 提示播放完成后才开放续聊。阶段播报仍不包含跌倒告警。
 
 ## C 路线入口约定
 
@@ -92,9 +93,12 @@
 ## 对外接口与语音
 
 - 对外 ROS 2 入口为 `ros2 launch roscar_api api.launch.py`，默认 IDLE/运动关闭/不启硬件。接口手册 `docs/ROS接口使用文档.md`；外部速度只发 `/chassis/cmd_vel`，模式服务 `/control/set_mode`，由唯一 motion_guard 输出 `/cmd_vel`。禁止与已有包含 guard 的组合入口重复启动。检测列表沿用同步 RGB-D，未跟踪框不参与目标锁定。
+- 主动构建和 B/C 运行统一使用仓库根目录 `install/`；API 可选启动语音、舌苔及云台，导航保留独立且互斥的 guard 入口。`roscar_api interfaces` 枚举运行中接口，`target claim --id epoch:track_id` 和 `mode` 提供认领与模式调用。
+- 主人生命周期由 `/perception/owner_state` 发布，`/perception/claim_owner` 支持中央/精确轨迹认领。丢失默认等待 10 秒，期限内找回保留主人，到期清除旧绑定和联动代次并开放重新认领；仅原先启用的单人自动认领策略恢复三帧确认，主动释放仍抑制自动认领。这个窗口不得延长 motion_guard 的目标运动宽限或直接授予运动权限。主选择 LOST/陈旧/冲突时，地面及统一定位的选中输出也必须无效。
 - V5.1 语音入口保留 V5 的本地控制与 DeepSeek 结构化控制工具，但不再声明或接受蜂鸣器动作；`voice_assistant.launch.py` 不启动蜂鸣器适配节点。独立 `voice_command_router` 包内的蜂鸣器解析与 GPIO 源码保留，历史条目中关于语音蜂鸣器的描述不代表当前入口行为。
 - 本地合并主线采用共享录音 + Qwen3-ASR / Silero VAD + 固定语义规则 + 常开 KWS + 唯一 MeloTTS；8 秒有界续聊，运动显式绑定 epoch 授权，不能由方向口令自动授权。ASR_BACKEND=xfyun 只替换识别，仍消费共享音频。远端旧 continuous_asr 实现不合入，CONTINUOUS_ASR 不切换录音方案。云端 C 跌倒状态仍不触发语音或底盘动作。
 
 ## 测试与 CI
 
 - GitHub Actions `unit-tests` 在 PR 和 main 推送时运行 `scripts/ci_unit_tests.sh`（主动包纯 Python 单测 + 录像工具，Python 3.10，无 ROS/硬件/权重/录像）；本机 `PYTHON=.venv/bin/python scripts/ci_unit_tests.sh` 同口径。通过不等于 colcon 编译、ROS 运行时或实机验证；需要 rclpy 的测试列在脚本 `NEEDS_ROS`。
+- `scripts/test_flow_regressions.sh` 在已构建的 Humble overlay 中运行五项流程回归、真实 10 秒主人等待、播报、公共 API 与舌苔合成 ROS 验证；仍不等于实机播放或运动验收。
