@@ -1,6 +1,6 @@
 # ROS-CAR 接口使用手册
 
-更新日期：2026-10-13。本文以当前 PR 合并远端 `main` 后的代码为准，包含新合并的拍照 ROS 接口。它说明软件如何接入；合并代码不等于已经更新小车上的程序。
+更新日期：2026-10-13。本文按当前工作区的消息定义、服务实现和启动入口核对，覆盖感知、跌倒、主人认领、语音、控制、舌苔及拍照上传。接口契约与现场验收范围分别说明；实际启用的接口以运行图为准。
 
 ## 1. 先选你需要的接口
 
@@ -10,8 +10,11 @@
 | 取消自己通过上述服务发起的拍照 | `/capture/cancel` | 是否已请求取消；最终结果由原拍照调用返回 |
 | 让小车读出一段文字 | `/voice/say` | 等合成与播放结束，返回完成或失败 |
 | 订阅检测框、锁定目标的位置 | `/perception/detections`、`/perception/target_state` | 持续发布的 ROS 消息 |
+| 读取跌倒告警和每人的骨架、姿态 | `/perception/fall_alarm`、`/perception/person_states` | 告警汇总 / 逐人状态；不是运动命令 |
+| 认领主人、释放主人、查看丢失等待 | `/perception/claim_owner`、`/perception/release_target`、`/perception/owner_state` | 服务结果 / 生命周期状态 |
 | 切换控制来源、明确授权、停车 | `/control/set_mode`、`/control/authorize`、`/control/stop` | 控制服务的执行结果 |
 | 外部程序发送速度请求 | `/chassis/cmd_vel` | 请求话题；最终速度由唯一 `motion_guard` 决定 |
+| 拍照等任务期间保持停车 | `/control/task_hold` | 有期限的停车租约与续期 token；释放不恢复运动 |
 | 读取里程计、IMU、电压或雷达 | `/odom`、`/imu/data_raw`、`/PowerVoltage`、`/scan` | 需要对应硬件驱动已启动 |
 
 这里有两套通信方式：
@@ -38,6 +41,13 @@ export ROS_LOCALHOST_ONLY=1
 ```
 
 `ROS_LOCALHOST_ONLY=1` 适合单机调试。电脑通过局域网调用小车时，两端使用相同域号和接口版本，并设为 `ROS_LOCALHOST_ONLY=0`；允许 DDS 通信，保持时钟同步。域号 182 是项目常用值，必须与正在运行的服务一致。
+
+若运行入口设置了 `RMW_IMPLEMENTATION` 或 `FASTRTPS_DEFAULT_PROFILES_FILE`，调用终端也应加载该部署对应的通信配置；XML 路径必须在调用端真实存在，不能直接把小车文件路径用于另一台电脑。已有 Fast DDS 配置时，例如：
+
+```bash
+# 替换为本部署的实际配置；没有自定义 profile 时不必设置
+export FASTRTPS_DEFAULT_PROFILES_FILE=/absolute/path/fastdds-profile.xml
+```
 
 Foxglove 的 WebSocket 连接只负责展示，不能替代 `rclpy` 或 `ros2 service call`。Windows 没有 ROS 环境时，可以通过 SSH 在已经安装 ROS 的小车终端调用。
 
@@ -80,7 +90,7 @@ ros2 interface show roscar_interfaces/srv/SayText
 | `pose_config`、`camera_mount_config`、`reid_config` | perception_bringup 对应 YAML | 骨架/跌倒、安装/地面、身份参数；确认开关不自动置真 |
 | `reid_enabled`、`reid_lock_enabled`、`reid_reacquire_enabled`、`sot_enabled` | false | 身份观察、身份锁定、主人找回、单目标联动；仍遵守互斥和模型校验规则 |
 | `reid_model_path`、`sot_model_path` | 空 | 本地模型和校验文件，显式启用时必须齐全 |
-| `registration_calibration_file`、`registration_expected_serial` | 空 | C 可选进程内 Gemini 配准，不能与 ReID 同开 |
+| `registration_calibration_file`、`registration_expected_serial` | 空 | C 可选进程内 Gemini 配准；发布同帧校正 RGB，可与 ReID 同开；不要再启动独立配准发布者 |
 | `auto_lock_single`、`owner_lost_timeout_s` | false、10.0 | 单人连续三帧自动认领开关、主人丢失等待秒数 |
 | `with_follower`、`target_distance_m` | false、1.0 | 跟随请求生产者；不自动切模式或授权 |
 | `expected_source`、`target_frame`、`target_topic` | yolo、camera_color_optical_frame、`/perception/target_state` | 同时配置 guard 与跟随器的目标契约；来源/坐标必须与输出一致 |
@@ -346,6 +356,7 @@ ros2 topic echo /control/state
 | `/control/reset_estop` | 同上 | 健康条件满足才解除急停；只回未授权状态 |
 | `/control/reset_fault` | 同上 | 故障条件恢复后复位；只回未授权状态 |
 | `/control/arm` | 同上 | 旧兼容服务，默认拒绝并提示改用 `/control/authorize` |
+| `/control/task_hold` | `execution_mode_interfaces/srv/TaskHold` | 申请/续期/释放停车租约；见下文 |
 
 正确顺序是：**选择模式并取得 epoch → 持续发送该模式的新鲜零请求 → 明确绑定本次 epoch 授权 → 确认状态已授权 → 才发送非零请求。**不能先缓存非零速度再授权。STOP、故障、模式切换和重启都会使旧 epoch 失效。
 
@@ -361,6 +372,28 @@ ros2 service call /control/stop std_srvs/srv/Trigger '{}'
 默认 `motion_enabled=false`，上述授权会失败。真正授权还要求已验收的几何/安装/停车模型、常开 KWS 健康心跳、正确且唯一的发布者及新鲜输入，FOLLOW 还要求有效目标；不能仅修改确认开关代替实测。TaskHold 活跃期间禁止授权。
 
 `radar_required` 默认 false，此时不提供雷达避障保护；显式 true 时，guard 还检查新鲜扫描、扫描时刻 TF 和安全包络。它是配置项，不是“永久关闭雷达检查”。
+
+**停车租约 `/control/task_hold`** 用于外部静止任务。请求字段为 `operation / owner / session_id / token / lease_sec`，响应为 `success / token / detail`。
+
+| operation | 必填内容 | 执行结果 |
+|---|---|---|
+| `ACQUIRE` | 非空 owner、session_id；lease_sec 为 0.5–10 秒 | 无其他租约、无 ESTOP/FAULT 且 KWS 健康时取得 token，回 IDLE 并撤销运动授权 |
+| `RENEW` | 本次返回的 token、有效 lease_sec | 从当前时刻延长租约；过期 token 拒绝 |
+| `RELEASE` | 本次返回的 token | 释放本次租约，仍保持 IDLE/未授权 |
+
+owner/session_id 各最多 80 字符。任务须在租约到期前续期；释放或到期不会续跟、不会清除故障或急停。TaskHold 不替代机器人实际静止检查，需同时检查新鲜 `/odom`。
+
+```bash
+ros2 service call /control/task_hold execution_mode_interfaces/srv/TaskHold \
+  '{operation: ACQUIRE, owner: "external_capture", session_id: "session-001", token: "", lease_sec: 3.0}'
+# 把 TOKEN_FROM_ACQUIRE 替换为 success=true 响应中的 token
+ros2 service call /control/task_hold execution_mode_interfaces/srv/TaskHold \
+  '{operation: RENEW, token: "TOKEN_FROM_ACQUIRE", lease_sec: 3.0}'
+ros2 service call /control/task_hold execution_mode_interfaces/srv/TaskHold \
+  '{operation: RELEASE, token: "TOKEN_FROM_ACQUIRE"}'
+```
+
+`/control/emergency_stop` 是 `std_msgs/msg/Bool` 急停输入，`data=true` 锁存急停，`false` 不能复位。外部应用通常调用有回执的 `/control/estop`，然后读 `/control/state` 确认结果。
 
 ### 5.3 外部速度格式
 
@@ -437,6 +470,12 @@ ros2 launch perception_bringup perception.launch.py route:=yolo \
 | `/perception/target_state_base` | 同上 | 通过已确认安装外参与观测时刻 TF 派生的车体坐标 |
 | `/perception/lock_target`、`/perception/release_target` | `std_srvs/srv/Trigger` | 锁定/释放目标，不授权运动 |
 | `/perception/person_states` | `person_interfaces/msg/PersonStateArray` | C 的骨架、姿态与跌倒状态 |
+| `/perception/person_states_continued` | 同上 | 显式启用高度延续时的未检出人员；不混入真实检测列表，不用于认领 |
+| `/perception/fall_alarm` | `person_interfaces/msg/FallAlarm` | 当前 RGB 帧的最高跌倒阶段，汇总检出与延续人员；见 6.3 |
+| `/perception/person_identities` | `person_interfaces/msg/PersonIdentityArray` | 启用 ReID 时的外观身份假设；检查 enabled、valid、verified、visible |
+| `/perception/owner_focus` | `person_interfaces/msg/PersonIdentity` | 启用主人 ReID 找回时的主人身份与当前轨迹提示 |
+| `/perception/floor_plane` | `person_interfaces/msg/FloorPlane` | 显式启用地面拟合时的逐帧平面证据；不会自动确认地面/重力 |
+| `/perception/performance` | `person_interfaces/msg/RuntimeMetrics` | C 启用性能统计时的实际推理频率、耗时与观测年龄 |
 | `/perception/person_ground_states` | `person_interfaces/msg/PersonGroundArray` | C 的单目地面定位结果 |
 | `/perception/person_positions` | 同上 | C 的统一脚下位置，参考点为双踝中点地面投影 |
 | `/perception/target_state_ground`、`/perception/target_state_unified` | `person_interfaces/msg/TargetState` | C 的独立锁定目标地面/统一位置输出 |
@@ -472,6 +511,131 @@ ros2 service call /perception/release_target std_srvs/srv/Trigger '{}'
 ```
 
 YOLO 的中央认领仅在主人未认领时接受；已有主人 TRACKING 或丢失等待 LOST 期间，所有认领方式均拒绝。丢失默认等待 10 秒，主人未返回才释放并允许重新认领；主动换人须先 release_target，再认领。主人等待不延长底盘运动宽限，详细调用见第 8 节。展示图 `/perception/detections_image` 与 Marker 只用于观察，不能替代原始采集图或有效位置契约。
+
+### 6.3 跌倒检测：如何订阅、如何判断
+
+跌倒检测在 C 的 Pose 节点内运行。普通 B 检测路线不提供相同的骨架/跌倒输出；识别结果无需先认领主人。应用只需要整体告警时订阅 `/perception/fall_alarm`，需要逐人骨架或同时处理多人时订阅 `/perception/person_states`。
+
+```bash
+ros2 interface show person_interfaces/msg/FallAlarm
+ros2 topic echo /perception/fall_alarm person_interfaces/msg/FallAlarm \
+  --once --qos-reliability best_effort
+ros2 topic echo /perception/person_states person_interfaces/msg/PersonStateArray \
+  --once --qos-reliability best_effort
+```
+
+`FallAlarm` 字段：
+
+| 字段 | 类型 / 单位 | 含义 |
+|---|---|---|
+| `header` | std_msgs/Header | RGB 采集时间与光学坐标系；检查时间戳及接收超时 |
+| `valid` | bool | 本帧汇总是否有效；false 表示未知，不能解释成没有跌倒 |
+| `stage` | uint8 | 0 NONE、1 SUSPECTED、2 CONFIRMED，即无告警、疑似、确认 |
+| `track_id` | string | 最高阶段对应的 epoch:track_id；stage=0 时为空 |
+| `continued` | bool | 此告警是否来自未检出的延续人员，而非当前真实检测 |
+| `box` | float32[4]，像素 | 原图 x1、y1、x2、y2；延续人员用最后检出框；无告警时为 NaN |
+| `geometry_confirmed` | bool | 三维/高度几何的重力、地面是否均确认；不是二维阶段上限 |
+| `suspected_count / confirmed_count` | uint32 | 本帧疑似 / 确认人数，含检出及延续人员 |
+| `detail` | string | 原因、证据来源或失效说明 |
+
+`valid=true, stage=0, detail="no fall"` 表示当前有效帧没有跌倒告警；`valid=false`、零/过期/未来时间戳或话题断流表示结果未知。不能把最后一帧永久显示为当前状态。`geometry_confirmed=false` 不表示检测没运行：三维证据不足时可使用二维时序规则；二维确认还受 `pose_upright_confirmed` 等配置约束，依据不足时最多疑似。
+
+每帧可能重复发布相同阶段。应用应按人员/阶段变化处理，避免每条消息都触发一次提示；同一 RGB 时刻的检出与延续输出已由 `fall_alarm` 汇总，不要再相加造成重复告警。若要完整的多人事件，逐人处理数组而非只看全局最高阶段。
+
+下面的 Python 客户端只观察，不发布语音或运动：
+
+```python
+import time
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from person_interfaces.msg import FallAlarm
+
+class FallReader(Node):
+    def __init__(self):
+        super().__init__('fall_alarm_reader')
+        self.max_age_sec = 0.5  # 应用自己的读数期限，按实测处理延迟配置
+        self.received_at = None
+        self.observation_stamp = None
+        self.previous = None
+        self.unknown = False
+        self.create_subscription(FallAlarm, '/perception/fall_alarm',
+                                 self.on_alarm, qos_profile_sensor_data)
+        self.create_timer(0.2, self.watchdog)
+
+    def report_unknown(self):
+        if not self.unknown:
+            self.get_logger().warning('跌倒检测数据未知或已过期')
+        self.unknown = True
+
+    def on_alarm(self, msg):
+        stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        age = self.get_clock().now().nanoseconds * 1e-9 - stamp
+        if not msg.valid or stamp <= 0 or not 0 <= age <= self.max_age_sec:
+            self.report_unknown()
+            return
+        self.received_at = time.monotonic()
+        self.observation_stamp = stamp
+        was_unknown = self.unknown
+        self.unknown = False
+        key = (msg.track_id, msg.stage)
+        if key != self.previous or was_unknown:
+            self.get_logger().info(
+                f'target={msg.track_id or "-"} stage={msg.stage} '
+                f'suspected={msg.suspected_count} confirmed={msg.confirmed_count}')
+            self.previous = key
+
+    def watchdog(self):
+        age = (None if self.observation_stamp is None else
+               self.get_clock().now().nanoseconds * 1e-9 - self.observation_stamp)
+        if (self.received_at is None or time.monotonic() - self.received_at > self.max_age_sec
+                or age is None or not 0 <= age <= self.max_age_sec):
+            self.report_unknown()
+
+def main():
+    rclpy.init()
+    node = FallReader()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+`PersonStateArray.header` 同样是 RGB 采集时间；检查 `valid / is_simulated / detail`。每个 `PersonState` 包含 ID、检测框、置信度、17 个 COCO 关节、逐关节置信度/三维有效标记、姿态与跌倒阶段。`posture` 为 0 UNKNOWN、1 STANDING、2 SITTING_CROUCHING、3 LYING、4 FALLEN；`fall_stage` 为 0 NONE、1 SUSPECTED、2 CONFIRMED。二维点单位为像素，三维点为光学坐标米；缺失关节保持无效/NaN，不得使用 `body_depth_m` 补成三维关节。
+
+当前跌倒输出只供感知与显示，没有自动接入语音报警或底盘动作；软件输出有效不代表真人跌倒或分类准确率已验收。完整判定逻辑见[跌倒检测整体逻辑](跌倒检测整体逻辑.md)。
+
+### 6.4 相机、可视化与运行频率
+
+| 话题 | 类型 | 内容与条件 |
+|---|---|---|
+| `/camera/color/image_raw` | sensor_msgs/msg/Image | 原始 RGB，拍照/舌苔使用此输入；不含检测框 |
+| `/camera/depth/image_raw` | sensor_msgs/msg/Image | 原生深度；16UC1 为毫米，32FC1 为米，以实际 encoding 为准 |
+| `/camera/color/camera_info`、`/camera/depth/camera_info` | sensor_msgs/msg/CameraInfo | 对应原生图像的内参 |
+| `/camera/color/image_rect`、`/camera/color/camera_info_rect` | Image、CameraInfo | 校正彩色与内参；进程内配准按完成推理发布校正图 |
+| `/camera/aligned_depth_to_color/image_raw` | sensor_msgs/msg/Image | 独立配准节点的彩色对齐深度；进程内配准不单独发布此话题 |
+| `/perception/color_preview/compressed`、`/perception/detections_preview/compressed` | sensor_msgs/msg/CompressedImage | JPEG 预览，后者含框/标签；不作为业务采集原图 |
+| `/perception/skeleton_markers` | visualization_msgs/msg/MarkerArray | 骨架显示，需要相应坐标/有效关节证据 |
+| `/perception/target_marker` | visualization_msgs/msg/Marker | 当前有效目标代表点的显示 |
+
+图像/相机信息建议用 `qos_profile_sensor_data`（best effort）订阅；即使发布者使用 reliable，也可由 best effort 订阅者接收。ROS 的命名空间或重映射会改变表中的默认话题名，接入时先发现实际运行图。
+
+```bash
+ros2 topic echo /perception/performance person_interfaces/msg/RuntimeMetrics --once
+ros2 topic hz /perception/person_states
+ros2 topic info /perception/fall_alarm --verbose
+python3 scripts/measure_c_rates.py --duration 15
+```
+
+`RuntimeMetrics.input_fps / output_fps` 是实际窗口内推理/发布计数；`processing_ms` 是工作线程处理耗时，可能包含配准、深度和跟踪，不能当作 TensorRT 模型执行时间。`observation_age_ms` 是处理输出距采集的年龄。目标状态 20 Hz 心跳、相机帧率与实际人体推理帧率是不同指标。
+
+负载选项属于 `perception_bringup/perception.launch.py` 或 B/C 脚本入口：`with_auxiliary:=false` / `PERCEPTION_AUXILIARY=false` 移出地面/统一定位和坐标转换，启用的 ReID 仍保留；`registration_backend:=cuda` / `GEMINI_REGISTRATION_BACKEND=cuda` 显式使用进程内 CUDA 配准，默认 numpy。公共 `roscar_api/api.launch.py` 当前未透传这两个选项，不能将其当作公共 API 参数。具体环境与互斥规则见[方案 C 实现与验收](方案C实现与验收.md)。
 
 ## 7. 底盘与雷达反馈
 
@@ -634,6 +798,9 @@ pub.publish(msg)
 | 授权失败 | 看服务 message 与 `/control/state`；核对 epoch、零请求、运动开关与保护前提 |
 | 有框但位置无效 | 看 position_valid/detail、配准深度、内参与观测新鲜度 |
 | 光学位置有效但 base 无效 | 安装外参与观测时刻 TF 是否已确认 |
+| 人体框可见但主人丢失 | 分别检查 target_state 的 STALE/LOST、观测年龄、轨迹 epoch，以及 person_identities 的 valid/verified；检出人体不等于确认原主人 |
+| 找不到 fall_alarm | 是否运行 C Pose 节点、域号/命名空间是否一致；只有 B 检测框不代表跌倒节点已启用 |
+| fall_alarm.valid=false 或断流 | 当作未知；查看相机、同步、模型和帧龄；不能把无消息当 stage=0 |
 
 ## 12. 验证范围与进一步阅读
 
@@ -645,3 +812,8 @@ pub.publish(msg)
 - [TargetState 接口](interfaces.md)：锁定目标消息说明。
 - [motion_guard](../ros2_ws/src/motion_guard/README.md)：运动保护实现。
 - [工作记录](../WORKLOG.md)：逐次变更和验证证据。
+
+
+## 固定机位开机入口与跌倒播报
+
+当前专用入口为 `scripts/run_robot_onboard.sh`，用户服务为 `roscar-robot.service`；启动/停止方法、运动确认、机位参数和准确率边界见 [10-13 板端联调记录](2026-10-13板端联调与开机跟随.md)。它复用既有控制服务，不能再叠加第二个 guard。跌倒播报订阅已有 `/perception/fall_alarm`，阶段 JSON `/system/phase` 的 `source=fall`；实际播放使用 `/voice/say`/`/voice/speak`，不增加运动接口。

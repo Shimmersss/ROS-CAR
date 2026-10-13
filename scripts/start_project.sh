@@ -81,6 +81,7 @@ FOLLOW_TARGET_GRACE_S 目标短时缺失宽限（默认 0.6）；FOLLOW_TARGET_A
 FOLLOW_EMERGENCY_KWS_REQUIRED（默认 true）要求语音急停心跳；无语音时须显式 false。
 MODEL_PATH、YOLO_PYTHON、YOLO_DEVICE 可覆盖模型和推理环境。
 C 可选 GEMINI_INPROCESS_REGISTRATION=true：配准并入 Pose 进程（默认 false，发布同帧校正 RGB 供 ReID 使用）。
+PERCEPTION_AUXILIARY=false 可移出地面/统一定位和目标坐标转换；启用的 ReID 找回仍保留。
 Ctrl-C 或任一子模块退出时停止本入口启动的全部模块。
 HELP
     exit 0;;

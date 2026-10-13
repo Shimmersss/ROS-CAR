@@ -79,6 +79,7 @@ class TrackerNode(Node):
             # Opt-in in-process Gemini registration: subscribe native RGB-D, rectify/align in the
             # worker and publish the rectified CameraInfo, replacing the gemini_registration node.
             'registration_calibration_file': '', 'registration_expected_serial': '',
+            'registration_backend': 'numpy',
             'registration_color_frame': 'camera_color_optical_frame',
             'registration_depth_frame': 'camera_depth_optical_frame',
             'registration_rectified_color_topic': '/camera/color/image_rect',
@@ -125,7 +126,8 @@ class TrackerNode(Node):
         self.registration = None
         if self.cfg['registration_calibration_file']:
             self.registration = load_registration(self.cfg['registration_calibration_file'],
-                                                  self.cfg['registration_expected_serial'])
+                                                  self.cfg['registration_expected_serial'],
+                                                  self.cfg['registration_backend'])
         self.state_lock = RLock()
         self.input_group = MutuallyExclusiveCallbackGroup()
         self.state_group = MutuallyExclusiveCallbackGroup()
@@ -168,6 +170,7 @@ class TrackerNode(Node):
         self.last_key = None
         self.last_stamp = None
         self.last_input_at = -math.inf
+        self.stream_reset_pending = False
         self.error = ''
         self.last_visualization_at = -math.inf
         self.backend = backend
@@ -272,7 +275,7 @@ class TrackerNode(Node):
 
     @serialized
     def on_pair(self, color, depth):
-        if self.backend is None or self.future is not None:
+        if self.backend is None:
             return
         received_at = time.monotonic()
         try:
@@ -294,10 +297,17 @@ class TrackerNode(Node):
                 key != self.last_key or stamp <= self.last_stamp
                 or stamp-self.last_stamp > self.cfg['max_age_s']
                 or received_at-self.last_input_at > self.cfg['max_age_s'])
+            # Continuity is about valid incoming RGB-D, including frames skipped
+            # while inference is busy. A slow worker is not a camera restart.
+            self.stream_reset_pending |= reset
+            self.last_key, self.last_stamp, self.last_input_at = key, stamp, received_at
+            if self.future is not None:
+                return
+            reset = self.stream_reset_pending
+            self.stream_reset_pending = False
             if reset:
                 self.selection.reset_stream()
                 self.depth_filters.clear()
-            self.last_key, self.last_stamp, self.last_input_at = key, stamp, received_at
             self.error = ''
             self.pending_target = None if reset else self.selection.target_id
             self.pending_generation = self.selection_generation
@@ -480,6 +490,15 @@ class TrackerNode(Node):
             self.loading = None
         if self.future is not None and self.future.done():
             try:
+                if self.stream_reset_pending:
+                    # The worker still owns its filters until it has finished.
+                    # Withdraw its old result; the next valid pair resets them.
+                    self.future.result()
+                    self.future = None
+                    self.snapshot = None
+                    self.selection.candidates = []
+                    self.sot_result = None
+                    return
                 (self.snapshot, detections, self.positions,
                  self.position_ages, self.position_stamps,
                  self.held_position_ids) = self.future.result()

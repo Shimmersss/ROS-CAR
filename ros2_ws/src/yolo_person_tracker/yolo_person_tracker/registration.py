@@ -79,12 +79,60 @@ class Registration:
         return corrected,aligned.reshape(height,width)
 
 
-def load_registration(path, expected_serial):
+class CudaRegistration(Registration):
+    """Explicit CUDA projection; retain CPU color rectification and float64 geometry."""
+    def __init__(self, calibration):
+        super().__init__(calibration)
+        import torch
+        if not torch.cuda.is_available():
+            raise ValueError('CUDA registration requested but CUDA is unavailable')
+        self.torch = torch
+        self.cuda_rays = torch.as_tensor(self.rotated_rays, dtype=torch.float64, device='cuda')
+        self.cuda_ray_ok = torch.as_tensor(self.ray_ok, device='cuda')
+        self.cuda_ignored_index = torch.arange(len(self.rays), device='cuda') % (
+            self.color['width']*self.color['height'])
+
+    def apply(self, color, depth_m):
+        if color.shape[:2]!=(self.color['height'],self.color['width']) or depth_m.shape!=(self.depth['height'],self.depth['width']):
+            raise ValueError('Native RGB-D dimensions differ from device calibration')
+        corrected=cv2.remap(color,*self.maps,cv2.INTER_LINEAR)
+        torch=self.torch
+        with torch.inference_mode():
+            z=torch.as_tensor(np.ascontiguousarray(depth_m.reshape(-1)), device='cuda', dtype=torch.float64)
+            valid=self.cuda_ray_ok & (z>=.2) & (z<=8.)
+            # Fixed-size tensors avoid CUDA boolean indexing's host/device
+            # synchronizations. Invalid samples scatter infinity into spread-out
+            # pixels, so they cannot alter depth or contend on a single atomic.
+            points=self.cuda_rays*z[:,None]
+            # Keep each multiply/add separate, as on the NumPy path; float32
+            # projection could change rounded pixels at occlusion edges.
+            translation=torch.as_tensor(self.translation, device='cuda')
+            points=points+translation
+            x,y,depth=points[:,0],points[:,1],points[:,2]
+            valid=valid & (depth>.05)
+            denominator=torch.where(valid,depth,torch.ones_like(depth))
+            kc=self.kc
+            u=torch.round((float(kc[0,0])*x+float(kc[0,2])*depth)/denominator).to(torch.int64)
+            v=torch.round((float(kc[1,1])*y+float(kc[1,2])*depth)/denominator).to(torch.int64)
+            width,height=self.color['width'],self.color['height']
+            inside=valid & (u>=0)&(u<width)&(v>=0)&(v<height)
+            index=torch.where(inside,v*width+u,self.cuda_ignored_index)
+            values=torch.where(inside,depth.to(torch.float32),float('inf'))
+            nearest=torch.full((width*height,), float('inf'), dtype=torch.float32, device='cuda')
+            nearest.scatter_reduce_(0,index,values,reduce='amin',include_self=True)
+            nearest.masked_fill_(~torch.isfinite(nearest),0.)
+            aligned=nearest.reshape(height,width).cpu().numpy()
+        return corrected,aligned
+
+
+def load_registration(path, expected_serial, backend='numpy'):
     """Device calibration for the explicitly selected Gemini; a serial mismatch refuses to start."""
     calibration=json.loads(Path(path).read_text())
     if not expected_serial or calibration['serial']!=expected_serial:
         raise ValueError('Calibration serial must match explicitly selected Gemini')
-    return Registration(calibration)
+    if backend not in ('numpy', 'cuda'):
+        raise ValueError('registration backend must be numpy or cuda')
+    return (CudaRegistration if backend == 'cuda' else Registration)(calibration)
 
 
 def rectified_camera_info(registration, header):

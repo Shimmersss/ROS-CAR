@@ -20,6 +20,7 @@ def main():
         proc = subprocess.Popen([
             'ros2', 'launch', 'perception_bringup', 'perception.launch.py',
             'route:=yolo_pose', 'reid_enabled:=true', 'with_foxglove:=false', 'with_radar:=false',
+            'with_auxiliary:=false',
             'color_topic:=/camera/color/image_raw', 'depth_topic:=/camera/depth/image_raw',
             'registration_expected_serial:=AY2755200PW',
             'registration_calibration_file:=' + str(root / 'ros2_ws/src/perception_bringup/config/gemini_AY2755200PW.json'),
@@ -38,6 +39,7 @@ def main():
             assert proc.poll() is None
             assert node.count_publishers('/camera/color/image_rect') == 1
             assert node.count_publishers('/cmd_vel') == 0
+            assert not {'ground_localizer', 'unified_localizer', 'target_transform'} & set(node.get_node_names())
             print('PASS in-process + ReID launch: native RGB input, rectified ReID input, unique image publisher, no motion')
         except Exception:
             log.seek(0)

@@ -6,6 +6,33 @@ OWNER_TEXT = {
     'returned': '主人已返回', 'expired': '主人未返回，可重新认领', 'released': '已解除认领',
 }
 
+FALL_TEXT = {1: '疑似跌倒，请查看', 2: '检测到跌倒，请查看'}
+
+
+class FallTransitions:
+    """Alert on rising aggregate stages; invalid frames/ID changes cannot re-arm speech."""
+    def __init__(self, recovery_s=2.):
+        self.stage = 0
+        self.clear_since = None
+        self.recovery_s = recovery_s
+
+    def update(self, valid, stage, now=None):
+        now = time.monotonic() if now is None else now
+        if not valid or stage not in (0, 1, 2):
+            self.clear_since = None
+            return None
+        if stage == 0:
+            if self.clear_since is None:
+                self.clear_since = now
+            if now-self.clear_since >= self.recovery_s:
+                self.stage = 0
+            return None
+        self.clear_since = None
+        if stage > self.stage:
+            self.stage = stage
+            return FALL_TEXT[stage]
+        return None
+
 
 class PhaseTransitions:
     def __init__(self, owner_loss_delay_s=.5):

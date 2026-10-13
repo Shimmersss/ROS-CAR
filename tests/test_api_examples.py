@@ -84,7 +84,11 @@ try:
     def success(req,res):res.success=True;res.message='synthetic target service';return res
     services=[p.create_service(Trigger,'/perception/'+name+'_target',success) for name in ('lock','release')]
     for name in ('lock','release'):
-        proc,log=start(['ros2','run','roscar_api','target',name]);pump(1.2)
+        proc,log=start(['ros2','run','roscar_api','target',name])
+        # Wait for the actual CLI exit, including ROS shutdown; a fixed 1.2 s
+        # sleep can expire after a successful service response on the Jetson.
+        deadline=time.monotonic()+6
+        while proc.poll() is None and time.monotonic()<deadline:pump(.03)
         assert proc.poll()==0,output(log)
     print('PASS installed detection/radar subscriptions and lock/release service example')
 finally:
