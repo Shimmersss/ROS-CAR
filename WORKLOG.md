@@ -1472,3 +1472,11 @@
 - 发布代码版本 c6d23f1 的文档快照：ROS接口使用文档、云端拍照任务接口协议、文字播报ROS接口，以及包含背景文档和五个自定义接口包字段定义的 ZIP（34 个文件，62427 字节）。打包产物只在忽略的 artifacts/interface-docs，不含凭据、图像、权重或构建产物。
 - 下载前缀 `http://8.130.12.77/d/roscar/20261013-c6d23f1/`；文件为 `roscar-interface-docs-20261013-c6d23f1.zip`、`ros-api.md`、`capture-http-api.md`、`speech-api.md`。ZIP SHA256：`659dac7d5648be254e496a2d3787c1003009a0ec47c99c76d7d5e93657f5c574`。
 - 最小审查：ZIP 结构与 CRC、包内逐文件 SHA256 通过；本机直连公网下载四个文件均返回 HTTP 200、Content-Disposition: attachment，内容与本地原文逐字节一致。此次只发布文档，没有部署小车程序、推送 Git 或进行实车验收。
+
+## 2026-10-13：拍照 ROS 分支合并本地主线与接口手册重写
+
+- 用户要求把添加 ROS 接口的分支合并回本地主线。先提交上一轮 wlcb 文档发布记录（a3a39ad），再将 main 从 62a7c59 快进到 codex/capture-ros-api@a3a39ad；没有冲突，原功能分支保留。云端拍照实现、七项修复和可选 ROS 门面均纳入 main，默认关闭参数不变。
+- 对照实际 launch、srv/action、motion_guard、拍照门面/执行器/bridge 和 TTS 源码，重写 ROS接口使用文档、文字播报ROS接口、云端拍照任务接口协议；README 索引同步说明使用入口。按“选接口→构建/启动→调用→读结果→取消→排查”组织，不把历史试运行目录当新部署位置。
+- 清除旧文档中的无 epoch arm 操作、缺失 SetControlMode.authority_epoch、DeepSeek 控车描述及雷达检查固定关闭的过时结论；补齐当前 STOP/ESTOP/FAULT 与复位语义、固定规则链路、B/C 感知接口和坐标区分。明确 prepare_sec 负数采用目录默认、ROS 字段省略为 0、bench 与 guard 入口不能并开、取消归属及两层时限。
+- 拍照质检对照代码说明：宽度也是质量警告之一，默认 warn 可上传，fail 才拒绝；上传回执不是图片 URL 或推理结果，ROS 自建 task_id 仍须正式云端确认。HTTP 文档分开两种任务来源，列出方法方向、必填字段、回执/幂等与事件可靠性边界。
+- 最小审查：三个文档的 3 个 Python 块 AST、22 个 Bash 块语法、7 个 JSON 块和 21 个本地链接通过；请求/结果与 srv/action 原文核对，git diff --check 通过。拍照纯 Python 回归 110/110 通过（从包目录使用 PYTHONPATH=.；首次从仓库根调用未设置路径造成导入失败，已纠正）。合并后语音、guard、tongue_mode 和 YOLO 包相对原 main@62a7c59 无改动。未重新编译或进行 ROS 运行时/实车验收，没有 push 或更新小车。

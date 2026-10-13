@@ -114,7 +114,7 @@ docs/      方案、接口、计划；docs/archive/ 为历史文档
 - [云端拍照任务修复说明](docs/云端拍照任务修复说明.md)（验收后七项修复要求）
 - [云端拍照任务 ROS 接口方案](docs/云端拍照任务ROS接口方案.md)（可选服务门面实施入口）
 - [云端拍照任务实现与验收](docs/云端拍照任务实现与验收.md)（独立链路、本机联调与待现场项）
-- [云端拍照任务接口协议](docs/云端拍照任务接口协议.md)（HTTP v0、mock 参考实现）
+- [云端拍照任务接口协议](docs/云端拍照任务接口协议.md)（云端开发接入：任务来源、HTTP v0、JPEG 回执与 mock）
 - [云端拍照任务执行方案](docs/云端拍照任务执行方案.md)（本机独立链路实施入口）
 
 **C 路线（主线）**
@@ -127,13 +127,13 @@ docs/      方案、接口、计划；docs/archive/ 为历史文档
 
 **语音与本次合并**
 - [语音控制说明书](docs/语音控制使用说明书.md) · [当前语音入口与回退](docs/语音入口与回退.md)
-- [舌苔整合与验收](docs/语音舌苔流程整合与验收.md) · [文字播报 ROS 接口](docs/文字播报ROS接口.md)
+- [舌苔整合与验收](docs/语音舌苔流程整合与验收.md) · [文字播报 ROS 接口](docs/文字播报ROS接口.md)（启动、CLI/Python、完成确认与取消）
 - [远端 C 与语音合并说明](docs/远端C与语音合并说明20261012.md) · [原语音舌苔实机记录](docs/2026-10-12语音舌苔实机试运行.md)
 - [语音优化无车验收](docs/语音优化无车实施与验收.md) · [Orin Nano 优化方案](docs/Orin Nano 小车语音控制系统优化.md)
 
 **公共与其他模块**
 - [完整方案](人体跟随感知方案.md) · [架构](docs/architecture.md) · [分阶段计划](docs/roadmap.md) · [开发工作流](docs/development.md)
-- 接口：[TargetState](docs/interfaces.md) · [ROS 接口使用文档](docs/ROS接口使用文档.md)
+- 接口：[TargetState](docs/interfaces.md) · [ROS 接口使用手册](docs/ROS接口使用文档.md)（先选接口；拍照上传、播报、epoch 授权、感知与反馈）
 - [方案 B 实现与验收](docs/方案B实现与验收.md) · [语音入口与回退](docs/语音入口与回退.md) · [端侧 ASR 候选实测](docs/端侧ASR候选实测.md)
 - [motion_guard](ros2_ws/src/motion_guard/README.md) · [导航与自动绕障](docs/导航与自动绕障.md) · [N10P 雷达接入](docs/N10P雷达接入.md) · [底盘物理串口协议](docs/物理串口协议说明.md)
 - [构建与部署](deploy/README.md) · [Foxglove](foxglove/README.md) · [原厂代码索引](docs/vendor_inventory.md) · [工作记录](WORKLOG.md) · [归档](docs/archive/README.md)

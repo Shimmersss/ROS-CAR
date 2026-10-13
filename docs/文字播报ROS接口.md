@@ -1,45 +1,98 @@
-# 文字播报 ROS 2 接口
+# 文字播报 ROS 接口使用手册
 
-分支：`codex/voice-speak-api`。你发送一段文字，小车用已有 MeloTTS 播放。无需先喊唤醒词，不经过 ASR、聊天模型或运动指令解析。
+更新日期：2026-10-13；对应本地 `main`。这个接口让程序发送一段文字，交给已有 MeloTTS 队列合成并播放。无需先喊唤醒词，也不会把正文交给语音意图或底盘运动解析。
 
-## 最常用的调用方法
+## 1. 选择哪种调用方式
 
-在小车终端（或通过 SSH 登录后）执行：
+| 接口 | 类型 | 适合什么情况 |
+|---|---|---|
+| `/voice/say` | `roscar_interfaces/srv/SayText` | 最常用：发送文字，等播放结果 |
+| `/voice/speak` | `execution_mode_interfaces/action/SpeakText` | 需要阶段反馈、自己取消某一次播报 |
+| `/voice/tts_text` | `std_msgs/msg/String` topic | 只发送，不需要完成确认 |
+
+三者共用唯一 TTS 队列。不要为每个调用者另启 TTS 节点。拍照模块使用第二种方式，必须等准备提示播放完成后才拍照。
+
+## 2. 启动前提
+
+先在项目根目录构建并加载当前接口：
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/wheeltec/ROSCAR-voice-tongue-20261012-066c2ad/install/setup.bash
-export ROS_DOMAIN_ID=182 ROS_LOCALHOST_ONLY=0
-ros2 service call /voice/say roscar_interfaces/srv/SayText \
-  "{text: '你好，我是小车，现在开始播报。'}"
+bash scripts/build_ros.sh --packages-up-to roscar_api
+source ros2_ws/install/setup.bash
+export ROS_DOMAIN_ID=182 ROS_LOCALHOST_ONLY=1
 ```
 
-将 `text` 换成你想说的话即可。正文含引号时按 YAML 规则转义；程序调用可直接设置字符串字段。每次最多 300 个字符，空白文本或超长文本直接拒绝，不会截断后假报成功。
+如果通过局域网从另一台电脑调用，两端使用同一域号、相同接口版本，设置 `ROS_LOCALHOST_ONLY=0` 并允许 DDS 通信。小车上实际工作区路径、运行域号以当前服务为准；历史试运行目录见[实机记录](2026-10-12语音舌苔实机试运行.md)，不把历史路径当作新版本已部署的位置。
 
-返回示例：
+### 已有 TTS：只加服务节点
 
-```text
+```bash
+ros2 action list -t  # 确认已有 /voice/speak
+ros2 launch roscar_api speech_api.launch.py
+```
+
+该 launch 默认 `with_tts=false`，只启动 `/voice/say`；已有 TTS 必须启用 `enable_speech_action=true`。整机或语音试运行入口已提供 `/voice/say` 时，直接调用，不要再启动第二个服务节点。
+
+### 尚无 TTS：独立启动
+
+仅在没有任何 TTS 节点时使用：
+
+```bash
+ros2 launch roscar_api speech_api.launch.py with_tts:=true
+```
+
+前提是本机已经准备 `sherpa_onnx` 等离线依赖、MeloTTS 模型与 ALSA 播放设备。模型默认从 `/home/wheeltec/ROSCAR-offline/models/vits-melo-tts-zh_en` 加载；也可以在启动前设置 `ROSCAR_OFFLINE_MODEL_ROOT` 为本机模型根目录。不会自动下载模型。
+
+| launch 参数 | 默认 | 作用 |
+|---|---|---|
+| `with_tts` | false | 是否额外启动一个离线 TTS；已有 TTS 时保持 false |
+| `playback_timeout_sec` | 120.0 | 服务等待本次 action 的秒数，合法范围 1–300 |
+| `playback_device` | `plughw:CARD=Device,DEV=0` | `with_tts=true` 时使用的 ALSA 设备，不会改动已有 TTS 的设备 |
+
+独立播报入口不启动底盘、录音或 KWS，也不自动授权运动。
+
+## 3. 最简单的调用
+
+另一个已加载相同 ROS 环境的终端：
+
+```bash
+ros2 service call /voice/say roscar_interfaces/srv/SayText \
+  "{text: '你好，现在开始拍照。'}"
+```
+
+请求只有一个字段：`text`。正文去掉空白后须非空，原字符串最多 300 字符；超长直接拒绝，不截断后假报成功。命令行中的引号按 YAML 规则转义，程序调用可直接设置字符串。
+
+服务会等待合成与 ALSA 播放结束，然后返回：
+
+```yaml
 success: true
 status: completed
 utterance_id: say-<本次唯一编号>
 message: Playback completed
 ```
 
-服务会等合成和 ALSA 播放结束后返回。`success=true` 表示软件播放完成；扬声器是否可听、音量是否合适仍由现场确认。不同字符的实际读法由 TTS 决定，例如数字会按语音模型规则朗读。
-
-| status | 含义 |
+| 响应字段 | 含义 |
 |---|---|
-| `completed` | 合成与播放完成 |
-| `invalid_text` | 文字为空白或超过 300 字符 |
-| `busy` | 上一个 `/voice/say` 调用尚未结束，请稍后重试 |
-| `unavailable` | 现有 `/voice/speak` TTS action 未启动或未开启 |
-| `rejected` | TTS 拒绝接收，例如播放队列繁忙 |
-| `failed` / `cancelled` | 合成/播放失败，或被既有语音取消逻辑中断 |
-| `timeout` | 超过等待时间，已请求取消本次播报；不等同于已收到取消完成确认 |
+| `success` | 只有 action 成功且 status=completed 才为 true |
+| `status` | 业务状态，见下表 |
+| `utterance_id` | 服务生成的本次播报 ID；输入无效或服务 busy 时可能为空 |
+| `message` | 具体完成说明或错误原因 |
 
-默认播放等待上限 120 秒，超时只取消本次 action，不调用全局取消服务，也不取消其他舌苔播报。服务自身同时接收一个播报任务；与既有任务共用唯一 TTS 队列，可能排队或被拒绝。需要精细控制进度、取消或多客户端调度时，直接使用下面的 action。
+| status | 含义 / 建议 |
+|---|---|
+| `completed` | 软件合成与播放完成；现场是否能听到仍需确认 |
+| `invalid_text` | 空白或超过 300 字符；修正文字 |
+| `busy` | 前一次 `/voice/say` 调用尚未结束；服务不排队 |
+| `unavailable` | 约 2 秒内未找到 `/voice/speak`；检查 TTS 节点和 action 开关 |
+| `rejected` | TTS 拒绝接收，可能队列忙或节点正在退出 |
+| `failed` | 合成、播放或通信失败；看 message |
+| `cancelled` | 被取消，未完整播放 |
+| `timeout` | 等待超时，已请求取消自身 goal；不代表已经收到最终取消确认 |
 
-## 程序调用
+服务自身同时处理一个调用；与其他入口共用的 TTS 队列仍可能排队或拒绝。播放等待上限不包括前面的服务发现等待；默认发现最多约 2 秒，action 等待最多 120 秒。
+
+## 4. Python 调用
 
 ```python
 import rclpy
@@ -51,64 +104,60 @@ node = Node('my_speech_client')
 client = node.create_client(SayText, '/voice/say')
 try:
     if not client.wait_for_service(timeout_sec=5):
-        raise RuntimeError('文字播报服务未启动')
+        raise RuntimeError('文字播报服务未启动或 ROS 域不一致')
     request = SayText.Request()
-    request.text = '欢迎使用舌苔检测，请面向相机。'
+    request.text = '请面向相机，保持姿势。'
     future = client.call_async(request)
     rclpy.spin_until_future_complete(node, future)
     result = future.result()
-    print(result.success, result.status, result.message)
+    if result is None:
+        raise RuntimeError('未收到播报服务响应')
+    print(result.success, result.status, result.utterance_id, result.message)
 finally:
     node.destroy_node()
     rclpy.shutdown()
 ```
 
-客户端退出不会自动取消已经提交的 ROS service。需要自行取消时，直接用 action，并保存本次 goal handle。
+关闭客户端或客户端自行超时，不会自动撤回服务端收到的播报。`/voice/say` 没有按 ID 取消的公共服务；需要自行取消时，请直接使用下面的 action。
 
-## Action 和 topic
-
-已有 action 作为底层可调用接口公开：
+## 5. 获取反馈与取消：SpeakText Action
 
 ```bash
 ros2 action send_goal /voice/speak execution_mode_interfaces/action/SpeakText \
-  "{utterance_id: 'manual-001', text: '你好，这是直接通过 action 播报。'}" --feedback
+  "{utterance_id: 'manual-20261013-001', text: '你好，这是一次直接播报。'}" --feedback
 ```
 
-每个正在执行的任务使用不同 `utterance_id`。结果 `status=completed` 才表示播放结束；action 客户端可通过本次 goal handle 取消自身任务。底层最多同时保留两个 action 任务，最终仍顺序播放。
+| 字段所在部分 | 字段 | 含义 |
+|---|---|---|
+| 请求 | `utterance_id`、`text` | 自己指定本次唯一 ID 和正文 |
+| 反馈 | `phase` | 合成或播放阶段 |
+| 结果 | `status`、`detail` | completed / cancelled / failed 等结果及原因 |
 
-只需发送、不关心结果，也可以用已有 topic：
+程序端使用 `rclpy.action.ActionClient` 保存 `send_goal_async()` 返回的 goal handle，取消时调用该 handle 的 `cancel_goal_async()`；等最终结果确认。不要调用全局取消接口去取消别人的播报。
+
+底层最多同时保留两个 action 任务，播放依然按唯一队列顺序执行。每个在途任务使用不同 `utterance_id`。确认 action 成功状态和 `result.status=completed` 后，才把它当成完整播放。
+
+## 6. 不需要结果：topic
 
 ```bash
 ros2 topic pub --once /voice/tts_text std_msgs/msg/String \
-  "{data: '你好，这是 topic 播报。'}"
+  "{data: '你好，这是一次普通提示。'}"
 ```
 
-topic 不返回播放确认，原有 topic 逻辑对超过配置长度的内容会截断、队列满时会丢弃；需要可靠结果请选择 `/voice/say` 或 `/voice/speak`。
+topic 不返回播放确认，超过配置长度会截断，队列满时会丢弃。因此需要“读完后再做下一步”的场景，选择 service 或 action。
 
-## 构建和启动
+## 7. 使用边界与排查
 
-在项目根目录构建（使用当前工作区的 install 路径）：
+语音整机运行时，播放会暂停普通 ASR，常开 KWS 仍会监听。`/voice/say` 的正文不经过运动解析，但扬声器声音可能重新进入麦克风，包含“停止、停下、急停、别动”等词可能触发紧急监听。此服务不主动过滤这些词；自动准备提示应使用不含保护词的文字。
 
-```bash
-source /opt/ros/humble/setup.bash
-colcon build --base-paths ros2_ws/src --packages-up-to roscar_api \
-  --build-base build --install-base install --symlink-install --executor sequential
-source install/setup.bash
-export ROS_DOMAIN_ID=182 ROS_LOCALHOST_ONLY=0
-ros2 launch roscar_api speech_api.launch.py
-```
+| 现象 | 排查方向 |
+|---|---|
+| 看不到 `/voice/say` | 服务节点、overlay、域号、DDS 网络 |
+| unavailable | `/voice/speak` 是否存在，TTS 是否开启 action |
+| failed | 模型依赖、模型文件、ALSA 设备及权限；查看服务 message 和 TTS 日志 |
+| completed 但现场听不到 | 扬声器连接、实际播放设备和音量；软件确认不能代替现场听感 |
+| 超时后仍短暂有声音 | 取消请求与执行确认存在时间差；不要据此启动第二个 TTS |
 
-默认只启动 `/voice/say` 桥接节点，复用已运行的 TTS；TTS 必须启用 `enable_speech_action:=true`。车上语音舌苔试运行入口已启用该 action，并加入桥接节点。此入口不调用总运动开关，也不建立新的速度出口。
+本地模拟运行时回归已通过，真实小车历史播报记录见[实机记录](2026-10-12语音舌苔实机试运行.md)。本轮文档更新与本地主线合并没有重新部署或验证实际扬声器。
 
-如果尚未运行任何 TTS，可以独立启动播报和接口：
-
-```bash
-export PYTHONPATH=/home/wheeltec/ROSCAR-offline/venv/lib/python3.10/site-packages${PYTHONPATH:+:$PYTHONPATH}
-ros2 launch roscar_api speech_api.launch.py with_tts:=true
-```
-
-`with_tts:=true` 只用于没有现有 TTS 的情况。默认模型位置沿用 `/home/wheeltec/ROSCAR-offline/models/vits-melo-tts-zh_en`；播放设备默认 `plughw:CARD=Device,DEV=0`。可通过 `playback_device:=...` 和 `playback_timeout_sec:=120.0` 配置。
-
-电脑直接走 ROS 2 调用时，要安装/构建相同版本的 `roscar_interfaces` 和 `execution_mode_interfaces`，保持同一局域网、域 182、`ROS_LOCALHOST_ONLY=0`，并允许 DDS 发现通信。Windows 上没有 ROS 环境时，通过 SSH 在小车执行调用即可；Foxglove WebSocket 连接不能代替 ROS service 客户端。
-
-整车语音链路正在运行时，播放仍会暂停普通 ASR、保持紧急关键词监听；独立 `with_tts:=true` 入口本身不启动录音或 KWS。正文不会进入运动解析，但扬声器声音可能被麦克风再次收录；包含“停止、停下、急停、别动”等词的播报可能触发紧急监听，现有声学漏检/回声限制仍需现场验证。
+更多接口见[ROS 接口使用手册](ROS接口使用文档.md)。
