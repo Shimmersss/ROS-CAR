@@ -822,3 +822,6 @@ pub.publish(msg)
 ### 固定机位 2/5 秒找回配置
 
 当前 `run_robot_onboard.sh` 显式重启 ReID 找回：`pose_fixed_27cm.yaml` 的 `owner_continuity_reset_s=2.0`、入口 `OWNER_LOST_TIMEOUT_S=5.0` 从首次连续丢失起算，前者只清轨迹/VitTrack 连续性，后者清主人绑定并开放认领。`reid_owner_trial.yaml` 的 `forget_released_owner=true` 同时删除释放主人的外观库并作废旧推理结果。通用默认仍为十秒且连续性定时重置关闭；此配置不改变运动宽限、急停或故障授权。
+
+
+固定机位主链速度由板端 `FOLLOW_MAX_LINEAR_MPS` 显式配置（用户本轮选择 0.5），同时传到 follow.launch.py 的 `max_linear_mps` 与串口入口；`FOLLOW_DISTANCE_GAIN` / `FOLLOW_BEARING_GAIN` 对应控制增益，通用 launch 默认仍 0.6/1.2。不能只提高请求端而遗漏 guard/串口上限；目标失效与急停仍停车。

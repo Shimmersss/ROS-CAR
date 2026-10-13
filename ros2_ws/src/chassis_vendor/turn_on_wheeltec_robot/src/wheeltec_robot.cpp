@@ -792,8 +792,8 @@ turn_on_robot::turn_on_robot():rclcpp::Node ("wheeltec_robot")
     throw std::invalid_argument("Explicit car_mode and valid serial configuration required");
   for (auto value : {command_timeout_s_, feedback_timeout_s_, max_linear_, max_angular_})
     if (!std::isfinite(value) || value <= 0) throw std::invalid_argument("Invalid watchdog/limit");
-  if (max_linear_ > 0.2 || max_angular_ > 0.5)
-    throw std::invalid_argument("Route A serial limits must not exceed 0.2 m/s and 0.5 rad/s");
+  if (max_linear_ > 0.5 || max_angular_ > 0.5)
+    throw std::invalid_argument("Serial limits must not exceed 0.5 m/s and 0.5 rad/s");
   char canonical[PATH_MAX];
   if (!realpath(usart_port_name.c_str(), canonical)) throw std::runtime_error("Serial device missing");
   const std::string lock_path = "/tmp/roscar-serial-" +
