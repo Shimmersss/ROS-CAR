@@ -122,3 +122,5 @@
 - `scripts/run_robot_onboard.sh` / `deploy/systemd/roscar-robot.service` 是显式板端 C 入口，默认参数仍运动关闭。板端私有 env 按用户授权开机 FOLLOW 自动授权，并沿用 1.3 m、无避障；用户最新明确选择最高 0.5 m/s（私有 FOLLOW_MAX_LINEAR_MPS），距离/转向增益 1.0/1.6；三项确认仅表示本次临时授权，不作为正式标定验收。启动器不清 ESTOP，进程故障不自动重启授权。见 `docs/2026-10-13板端联调与开机跟随.md`。
 - 当前固定机位入口按用户最新确认重新开启 ReID 找回（REID_ENABLED / REID_REACQUIRE_ENABLED=true，锁定 false）：首次连续丢失 2 秒清轨迹/VitTrack，保留主人身份至同一次丢失 5 秒；期限内通过新鲜身份确认返回，5 秒到期清主人及该身份外观库并开放单人三帧新认领。通用默认仍十秒、连续性定时重置关闭；不改 0.6 秒运动宽限或非目标故障锁存。
 - 固定 27 cm / 上仰 15.1° / 横滚 0.5° 使用显式 `pose_fixed_27cm.yaml`；通用 pose.yaml 默认不变。身体高度线索无需头脚全入画；运动时关闭旧像素框延续。安装变化或非平坦地面须重新确认；已有标注录像复评不等于现场跌倒验收。
+
+- 用户在当前固定机位主链明确关闭语音自动急停：VOICE_ESTOP_ENABLED=false，不启动独立 KWS，FOLLOW_EMERGENCY_KWS_REQUIRED 随此开关关闭；ASR/VoiceCommand 的 ESTOP 转普通 STOP，不写急停锁存。通用语音入口默认仍开启；显式 /control/estop 接口保留，目标/测距/请求时效与串口看门狗仍停车。

@@ -825,3 +825,6 @@ pub.publish(msg)
 
 
 固定机位主链速度由板端 `FOLLOW_MAX_LINEAR_MPS` 显式配置（用户本轮选择 0.5），同时传到 follow.launch.py 的 `max_linear_mps` 与串口入口；`FOLLOW_DISTANCE_GAIN` / `FOLLOW_BEARING_GAIN` 对应控制增益，通用 launch 默认仍 0.6/1.2。不能只提高请求端而遗漏 guard/串口上限；目标失效与急停仍停车。
+
+
+当前固定机位入口按用户要求 VOICE_ESTOP_ENABLED=false：独立语音 KWS 关闭，语音 ESTOP 映射普通 STOP；ROS `/control/estop` 服务仍有效，显式锁存仍需 `/control/reset_estop`。普通 STOP 回 IDLE，不自动恢复跟随。通用语音启动参数 `voice_estop_enabled` 默认 true。

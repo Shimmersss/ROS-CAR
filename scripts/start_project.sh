@@ -248,6 +248,9 @@ if [[ "$WITH_CHASSIS" == true ]]; then
 fi
 if [[ "$WITH_VOICE" == true ]]; then
   voice_args=()
+  if [[ "${VOICE_BACKEND:-offline}" == offline ]]; then
+    voice_args+=(voice_estop_enabled:="${VOICE_ESTOP_ENABLED:-true}")
+  fi
   if [[ "${VOICE_TTS_ENABLED:-true}" == true ]]; then
     voice_args+=(enable_speech_action:=true)
   fi

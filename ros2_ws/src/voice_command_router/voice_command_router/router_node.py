@@ -1,4 +1,5 @@
 """Fixed intent router; global authorization belongs only to motion_guard."""
+import copy
 import json
 import math
 import os
@@ -28,7 +29,7 @@ from execution_mode_manager.catalog import Catalog
 class VoiceCommandRouter(Node):
     def __init__(self, **kwargs):
         super().__init__('voice_command_router', **kwargs)
-        for name, value in dict(enabled=True, local_parser_enabled=True,
+        for name, value in dict(enabled=True, local_parser_enabled=True, voice_estop_enabled=True,
                                 input_topic='/voice/asr_text', command_topic='/voice/command',
                                 result_topic='/voice/command_result', followup_window_s=8.0,
                                 continuous_wake_text='小车唤醒', execution_modes_config='').items():
@@ -205,6 +206,11 @@ class VoiceCommandRouter(Node):
     def _on_command(self, command):
         try:
             action = command.action
+            if action == 'ESTOP' and not self.get_parameter('voice_estop_enabled').value:
+                # Explicit voice switch: keep a spoken stop as an ordinary STOP,
+                # without creating a persisted emergency latch.
+                command = copy.deepcopy(command)
+                command.action = action = 'STOP'
             if action in ('STOP', 'DISARM', 'ESTOP'):
                 self._mode_voice_session = False
                 self._request_mode_exit()
