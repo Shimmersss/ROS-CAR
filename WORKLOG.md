@@ -1567,3 +1567,5 @@
 - 新增启动入口回归，验证运动许可打开或显式传入自动恢复选项时，拍照入口仍要求逐次授权。验证结果及 PR 链接在完成后补记；本轮未部署小车，未做 WSL ROS 编译或实车验证。
 
 - 5060wsl 本机验证：拍照包 113 项纯 Python 回归、完整 CI 脚本 2063 项 pytest 与 22 项录像工具测试、6 项 C 入口测试均通过；启动脚本 bash 语法、文档相对链接与 diff 空白检查通过。合并后的 C 感知、motion_guard、offline_voice、voice_command_router、roscar_api 源码与远端 main 一致；这些软件检查不代表 ROS 编译或实机验收。
+
+- 已从 WSL 推送分支并创建 PR #22：https://github.com/Shimmersss/ROS-CAR/pull/22 ，目标 main，未合并。原 WSL main 工作区仍保持 c97ed0e，本次远端兼容合并仅位于 PR 工作区。
