@@ -95,7 +95,8 @@ def main():
             nanoseconds=int(at*1e9)).to_msg()
         msg.persons = [to_state(p, track) for p in people]
         if locked is not None:
-            target = TargetState(target_id=locked)
+            target = TargetState(target_id=locked, source='yolo', status=TargetState.TRACKING)
+            target.header.stamp = stamp()
             target_pub.publish(target)
             spin(.05)
         pose_pub.publish(msg)
@@ -164,7 +165,9 @@ def main():
             p=synthetic(transform, posture=posture, ankles=not missing)
             msg.persons=[to_state(p)]
             good.on_persons(msg)
-            good.on_target(TargetState(target_id='0:7'))
+            target = TargetState(target_id='0:7', source='yolo', status=TargetState.TRACKING)
+            target.header.stamp = stamp()
+            good.on_target(target)
             return good.latest.persons[0], good.tick()
         good.filters.clear();good.seen_at.clear()
         direct(.35)
@@ -181,10 +184,10 @@ def main():
         p,target=direct(0., posture=3)
         assert not p.valid and not target.position_valid, 'Lying must clear prediction'
 
-        # Optional identity lock must gate the selected ground output, not all-person geometry.
+        # Every route gates selection, while all-person geometry remains independent.
         direct(0.)
         good.cfg['reid_lock_enabled'] = True
-        assert good.latest.persons[0].valid and not good.tick().position_valid
+        assert good.latest.persons[0].valid and good.tick().position_valid
         identity_target=TargetState(target_id='0:7', source='yolo', status=TargetState.TRACKING)
         identity_target.header.stamp=stamp(0.)
         good.on_target(identity_target)

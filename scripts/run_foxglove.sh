@@ -3,8 +3,8 @@
 set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source /opt/ros/humble/setup.bash
-if [[ -f "$ROOT/ros2_ws/install/setup.bash" ]]; then
-  source "$ROOT/ros2_ws/install/setup.bash"
+if [[ -f "${PERCEPTION_INSTALL:-$ROOT/install}/setup.bash" ]]; then
+  source "${PERCEPTION_INSTALL:-$ROOT/install}/setup.bash"
 fi
 BRIDGE_PREFIX="$ROOT/tools/foxglove-root/opt/ros/humble"
 if [[ ! -x "$BRIDGE_PREFIX/lib/foxglove_bridge/foxglove_bridge" ]]; then

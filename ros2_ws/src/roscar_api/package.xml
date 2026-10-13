@@ -13,6 +13,10 @@
   <exec_depend>ament_index_python</exec_depend><exec_depend>launch</exec_depend>
   <exec_depend>astra_body_adapter</exec_depend>
   <exec_depend>execution_mode_interfaces</exec_depend>
+  <exec_depend>person_interfaces</exec_depend>
   <exec_depend>offline_voice</exec_depend>
+  <exec_depend>tongue_mode</exec_depend>
+  <exec_depend>execution_mode_manager</exec_depend>
+  <exec_depend>gimbal_bridge</exec_depend>
   <export><build_type>ament_python</build_type></export>
 </package>

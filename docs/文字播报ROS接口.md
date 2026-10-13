@@ -1,6 +1,6 @@
 # 文字播报 ROS 2 接口
 
-分支：`codex/voice-speak-api`。你发送一段文字，小车用已有 MeloTTS 播放。无需先喊唤醒词，不经过 ASR、聊天模型或运动指令解析。
+当前源码接口（2026-10-13）。你发送一段文字，小车用已有 MeloTTS 播放。无需先喊唤醒词，不经过 ASR、聊天模型或运动指令解析。
 
 ## 最常用的调用方法
 
@@ -8,7 +8,8 @@
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/wheeltec/ROSCAR-voice-tongue-20261012-066c2ad/install/setup.bash
+# 在实际部署的 ROSCAR 目录中；本次本地更新尚未部署到板端
+source install/setup.bash
 export ROS_DOMAIN_ID=182 ROS_LOCALHOST_ONLY=0
 ros2 service call /voice/say roscar_interfaces/srv/SayText \
   "{text: '你好，我是小车，现在开始播报。'}"
@@ -114,3 +115,15 @@ ros2 launch roscar_api speech_api.launch.py with_tts:=true
 B/C 总入口 `scripts/start_project.sh` 在 `WITH_VOICE=true` 且 `VOICE_TTS_ENABLED=true`（默认）时也自动提供 `/voice/say`，复用同一个 TTS action；不要再叠加启动桥接或第二个 TTS。C 板端工作区使用 `/home/wheeltec/ROSCAR-c/install/setup.bash`，ROS 域必须与启动入口一致（现场调试使用 183）。
 
 整车语音链路正在运行时，播放仍会暂停普通 ASR、保持紧急关键词监听；独立 `with_tts:=true` 入口本身不启动录音或 KWS。正文不会进入运动解析，但扬声器声音可能被麦克风再次收录；包含“停止、停下、急停、别动”等词的播报可能触发紧急监听，现有声学漏检/回声限制仍需现场验证。
+
+## 自动阶段播报
+
+B/C 的 `start_project.sh` 在语音及 TTS 开启时自动接入；已启动的旧组合入口可以单独补桥：
+
+```bash
+ros2 launch roscar_api speech_api.launch.py with_announcements:=true
+```
+
+`phase_announcements` 订阅 `/perception/owner_state` 和 `/control/state`，通过 `/voice/say` 播报“已认领主人”“开始跟随”“主人丢失，等待返回”“主人已返回”“主人未返回，可重新认领”等。相同状态心跳只维持待播状态的新鲜度，不重复提交。语音暂不可用时等待当前状态；同来源新阶段替换未发送的旧阶段，心跳中断超过 4 秒丢弃待播内容。`/system/phase` 的 JSON 是阶段请求记录，不是播放成功证明。运动和感知不等待音频完成。
+
+舌苔通过原 `/voice/speak` action 顺序播报检查、提示、准备、拍摄、分析、结果及 READY 提示，等待每次播放完成；拍摄阶段播报完成后才接收新的 RGB 帧。最后一句“可重拍或退出”播放完成后才进入 READY；超时后晚到的语音 goal 仅取消自身。完整启动参数和接口见 [ROS 接口调用文档](ROS接口使用文档.md)。

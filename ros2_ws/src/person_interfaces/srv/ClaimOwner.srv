@@ -1,0 +1,5 @@
+# Empty selects the central fresh tracked candidate. Otherwise exact epoch:track_id.
+string target_id
+---
+bool success
+string message

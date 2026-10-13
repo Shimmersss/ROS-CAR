@@ -251,6 +251,7 @@ class XfyunAsrNode(Node):
             self._publish_state('LISTENING')
             started = time.monotonic()
             speech_started = False
+            truncated = False
             speech_candidate_ms = 0
             silence_elapsed = 0
             first_frame = True
@@ -291,10 +292,13 @@ class XfyunAsrNode(Node):
                 if speech_started and silence_elapsed >= silence_limit:
                     break
                 if elapsed >= max_utterance:
+                    truncated = True
                     break
 
             if self._cancel.is_set() or self._stop.is_set() or self._speaking:
                 return
+            if truncated:
+                raise RuntimeError('讯飞 ASR 录音达到时长上限，丢弃不完整语句')
             if not server_final:
                 self._phase = 'SENDING_FINAL'
                 ws.send(json.dumps(make_iat_frame(
@@ -315,6 +319,8 @@ class XfyunAsrNode(Node):
 
             if self._cancel.is_set() or self._stop.is_set() or self._speaking:
                 return
+            if not server_final:
+                raise RuntimeError('讯飞 ASR 最终结果等待超时，丢弃临时文本')
             text = assembler.text.strip()
             trusted_wake = trigger_source == 'trusted_wake'
             if not speech_started and not (trusted_wake and text):
@@ -330,8 +336,6 @@ class XfyunAsrNode(Node):
                 if trusted_wake and not speech_started:
                     self.get_logger().info('硬件唤醒已确认，接受低音量语音结果')
                 self.get_logger().info(f'识别结果: {text}')
-            elif not server_final:
-                raise RuntimeError('讯飞 ASR 最终结果等待超时')
             else:
                 self.get_logger().info('检测到语音，但讯飞未返回文本')
         finally:

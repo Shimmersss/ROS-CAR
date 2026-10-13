@@ -73,7 +73,7 @@ grep -Eq "^[[:space:]]{2}${CAR_MODE}:([[:space:]]*)$" "$MODEL_CONFIG" || {
 }
 
 source /opt/ros/humble/setup.bash
-source "$ROOT/ros2_ws/install/setup.bash"
+source "${PERCEPTION_INSTALL:-$ROOT/install}/setup.bash"
 [[ -f "$ROOT/ros2_ws/chassis_install/setup.bash" ]] || {
   echo '缺少底盘构建；请先运行 bash scripts/build_chassis.sh。' >&2
   exit 2

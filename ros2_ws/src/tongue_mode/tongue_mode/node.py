@@ -151,12 +151,12 @@ class TongueMode(Node):
         if msg.operation == 'EXIT':
             self.interrupt(ctx, True)
         elif msg.operation == 'RETAKE':
-            if ctx.phase != 'READY':
+            if ctx.phase not in ('READY', 'READY_PROMPT'):
                 ctx.retake = True
                 self.interrupt(ctx)
             else:
                 self.enqueue(ctx, 'RETAKE')
-        elif msg.operation == 'REPEAT' and ctx.phase == 'READY':
+        elif msg.operation == 'REPEAT' and ctx.phase in ('READY', 'READY_PROMPT'):
             self.enqueue(ctx, 'REPEAT')
 
     @staticmethod
@@ -304,7 +304,20 @@ class TongueMode(Node):
             except Exception:
                 pass
         accepted.add_done_callback(cancel_late)
-        handle = self.wait_future(ctx, accepted, 2.)
+        try:
+            handle = self.wait_future(ctx, accepted, 2.)
+        except Exception:
+            # The session may remain READY after a failed capture. Invalidate this
+            # request itself, even if its session/generation never changes.
+            def cancel_timed_out(f):
+                try:
+                    late = f.result()
+                    if late.accepted:
+                        late.cancel_goal_async()
+                except Exception:
+                    pass
+            accepted.add_done_callback(cancel_timed_out)
+            raise
         if not handle.accepted:
             raise AnalysisError('语音播报队列已满或请求被拒绝')
         ctx.speech_handle = handle
@@ -388,7 +401,7 @@ class TongueMode(Node):
             ctx.deadline = None
             # Failure to speak is recorded, never treated as successful playback.
             try:
-                self.speak('这次检测没有完成，请检查相机或网络，然后说重新拍摄。')
+                self.speak('检测未完成，请重拍。')
             except (Cancelled, SafetyError):
                 raise
             except Exception:
@@ -426,6 +439,17 @@ class TongueMode(Node):
                         first = False
                         continue
                     first, capture = False, False
+                    # One brief READY announcement per completed/failed capture, not per loop.
+                    ctx.phase = 'READY_PROMPT'
+                    self.feedback(ctx)
+                    try:
+                        self.speak('可重拍或退出')
+                    except (Cancelled, SafetyError):
+                        raise
+                    except AnalysisError:
+                        # Capture outcome is already recorded; keep the mode responsive.
+                        ctx.detail = (ctx.detail + '; ' if ctx.detail else '') + '续聊提示播报失败'
+                        self.get_logger().warning('续聊提示播报失败，保留检测结果并开放操作')
                 ctx.task_cancel.clear()
                 ctx.phase = 'READY'
                 self.feedback(ctx)

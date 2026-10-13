@@ -56,6 +56,7 @@ def launch_route(context):
                 parameters[0][name] = float(LaunchConfiguration(name).perform(context))
         else:
             parameters[0]['auto_lock_single'] = LaunchConfiguration('auto_lock_single').perform(context) == 'true'
+            parameters[0]['owner_lost_timeout_s'] = float(LaunchConfiguration('owner_lost_timeout_s').perform(context))
             calibration = LaunchConfiguration('registration_calibration_file').perform(context)
             if calibration:
                 # In-process registration subscribes native topics and publishes no rectified color.
@@ -185,6 +186,7 @@ def generate_launch_description():
         DeclareLaunchArgument('registration_calibration_file', default_value=''),
         DeclareLaunchArgument('registration_expected_serial', default_value=''),
         DeclareLaunchArgument('auto_lock_single', default_value='false', choices=['true', 'false']),
+        DeclareLaunchArgument('owner_lost_timeout_s', default_value='10.0'),
         DeclareLaunchArgument('color_topic', default_value='/camera/color/image_rect'),
         DeclareLaunchArgument('depth_topic', default_value='/camera/aligned_depth_to_color/image_raw'),
         DeclareLaunchArgument('camera_info_topic', default_value='/camera/color/camera_info'),
