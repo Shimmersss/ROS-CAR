@@ -146,11 +146,14 @@ class PersonFollowerNode(Node):
 
 
 def main(args=None):
+    stopping = []
+
     def terminate(signum, frame):
         # ros2 launch may forward a second signal after the process group received
         # the first one. Do not interrupt final zero publication or ROS cleanup.
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        stopping.append(signum)
         raise KeyboardInterrupt
     signal.signal(signal.SIGINT, terminate)
     signal.signal(signal.SIGTERM, terminate)
@@ -161,6 +164,11 @@ def main(args=None):
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
+    except RuntimeError:
+        # A stop signal landing inside rclpy's take_message surfaces as RuntimeError, not
+        # KeyboardInterrupt. Treat it as the requested stop; any other RuntimeError is real.
+        if not stopping:
+            raise
     finally:
         if node is not None:
             node.stop()

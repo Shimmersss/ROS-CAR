@@ -43,8 +43,12 @@ setsid ros2 launch astra_camera gemini.launch.xml camera_name:=camera \
   color_width:=640 color_height:=480 color_fps:=30 \
   depth_width:=640 depth_height:=400 depth_fps:=30 &
 PIDS+=("$!")
-setsid ros2 run yolo_person_tracker gemini_registration --ros-args \
-  -p calibration_file:="$GEMINI_CALIBRATION" -p expected_serial:="$GEMINI_SERIAL" &
-PIDS+=("$!")
+# GEMINI_INPROCESS_REGISTRATION=true: the Pose tracker registers native frames itself.
+if [[ "${GEMINI_INPROCESS_REGISTRATION:-false}" != true ]]; then
+  setsid ros2 run yolo_person_tracker gemini_registration --ros-args \
+    -p calibration_file:="$GEMINI_CALIBRATION" -p expected_serial:="$GEMINI_SERIAL" \
+    -p output_depth_encoding:="${GEMINI_DEPTH_ENCODING:-32FC1}" &
+  PIDS+=("$!")
+fi
 wait -n "${PIDS[@]}" || true
 exit 1

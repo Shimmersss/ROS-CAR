@@ -31,7 +31,7 @@ def test_robot_requires_explicit_guard_bench_disables_it(tmp_path):
     assert robot.returncode==1 and '+ CAPTURE_SAFETY_PROFILE=robot' in robot.stderr
     bench=run(tmp_path)
     assert bench.returncode==1 and '+ CAPTURE_SAFETY_PROFILE=bench' in bench.stderr
-    disabled=run(tmp_path,WITH_CAPTURE_TASKS='false',WITH_VOICE='false',WITH_FOLLOWER='true')
+    disabled=run(tmp_path,WITH_CAPTURE_TASKS='false',WITH_VOICE='false',WITH_FOLLOWER='true',FOLLOW_EMERGENCY_KWS_REQUIRED='false')
     assert disabled.returncode==1 and '+ CAPTURE_SAFETY_PROFILE=' not in disabled.stderr
 
 
@@ -46,3 +46,29 @@ def test_ros_api_default_closed_and_explicit_gate(tmp_path):
     assert default.returncode==1 and '+ CAPTURE_ROS_API=false' in default.stderr
     enabled=run(tmp_path,CAPTURE_ROS_API='true')
     assert enabled.returncode==1 and '+ CAPTURE_ROS_API=true' in enabled.stderr
+
+
+@pytest.mark.parametrize('follow_options', [
+    {},
+    {'FOLLOW_AUTO_ARM': 'true', 'FOLLOW_TARGET_AUTO_RECOVER': 'true',
+     'FOLLOW_EMERGENCY_KWS_REQUIRED': 'false'},
+])
+def test_capture_robot_preserves_explicit_authorization(tmp_path, follow_options):
+    result = run(tmp_path, WITH_CHASSIS='true', WITH_FOLLOWER='true',
+                 MOTION_ENABLED='true', **follow_options)
+    assert result.returncode == 1  # Stop at the deliberately missing model.
+    assert '+ CAPTURE_SAFETY_PROFILE=robot' in result.stderr
+    assert '+ FOLLOW_AUTO_ARM=false' in result.stderr
+    assert '+ FOLLOW_TARGET_AUTO_RECOVER=false' in result.stderr
+    assert '+ FOLLOW_EMERGENCY_KWS_REQUIRED=true' in result.stderr
+
+
+def test_capture_disabled_preserves_upstream_follow_options(tmp_path):
+    result = run(tmp_path, WITH_CAPTURE_TASKS='false', WITH_FOLLOWER='true',
+                 MOTION_ENABLED='true', FOLLOW_AUTO_ARM='true',
+                 FOLLOW_TARGET_AUTO_RECOVER='true', FOLLOW_EMERGENCY_KWS_REQUIRED='true')
+    assert result.returncode == 1
+    assert '+ FOLLOW_AUTO_ARM=true' in result.stderr
+    assert '+ FOLLOW_TARGET_AUTO_RECOVER=true' in result.stderr
+    assert '+ FOLLOW_AUTO_ARM=false' not in result.stderr
+    assert '+ FOLLOW_TARGET_AUTO_RECOVER=false' not in result.stderr

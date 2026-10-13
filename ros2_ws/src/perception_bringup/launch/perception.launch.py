@@ -56,6 +56,15 @@ def launch_route(context):
                 parameters[0][name] = float(LaunchConfiguration(name).perform(context))
         else:
             parameters[0]['auto_lock_single'] = LaunchConfiguration('auto_lock_single').perform(context) == 'true'
+            calibration = LaunchConfiguration('registration_calibration_file').perform(context)
+            if calibration:
+                # In-process registration subscribes native topics and publishes no rectified color.
+                if LaunchConfiguration('reid_enabled').perform(context) == 'true':
+                    raise ValueError('In-process registration publishes no rectified color; ReID needs the gemini_registration node')
+                parameters[0].update({
+                    'registration_calibration_file': calibration,
+                    'registration_expected_serial': ParameterValue(
+                        LaunchConfiguration('registration_expected_serial').perform(context), value_type=str)})
     elif route == 'astra':
         parameters = [{
             'akimbo_hand_above_base_min_mm': float(LaunchConfiguration(
@@ -76,6 +85,15 @@ def launch_route(context):
         if identity_lock and LaunchConfiguration('reid_enabled').perform(context) != 'true':
             raise ValueError('reid_lock_enabled requires reid_enabled:=true')
         parameters.append({'reid_lock_enabled': identity_lock})
+        reacquire = LaunchConfiguration('reid_reacquire_enabled').perform(context) == 'true'
+        if reacquire and (identity_lock or LaunchConfiguration('reid_enabled').perform(context) != 'true'
+                          or LaunchConfiguration('sot_enabled').perform(context) != 'true'):
+            raise ValueError('reid_reacquire_enabled requires reid_enabled:=true sot_enabled:=true and excludes reid_lock_enabled')
+        parameters.append({'reid_reacquire_enabled': reacquire})
+    if route in ('yolo', 'yolo_pose'):
+        sot = LaunchConfiguration('sot_enabled').perform(context) == 'true'
+        parameters.append({'sot_enabled': sot, 'sot_model_path': ParameterValue(
+            LaunchConfiguration('sot_model_path').perform(context), value_type=str)})
     node_options = {}
     if route in ('yolo', 'yolo_pose'):
         python = LaunchConfiguration('yolo_python').perform(context)
@@ -139,6 +157,9 @@ def generate_launch_description():
         DeclareLaunchArgument('reid_enabled', default_value='false', choices=['true', 'false']),
         DeclareLaunchArgument('reid_lock_enabled', default_value='false', choices=['true', 'false']),
         DeclareLaunchArgument('reid_model_path', default_value=''),
+        DeclareLaunchArgument('sot_enabled', default_value='false', choices=['true', 'false']),
+        DeclareLaunchArgument('reid_reacquire_enabled', default_value='false', choices=['true', 'false']),
+        DeclareLaunchArgument('sot_model_path', default_value=''),
         DeclareLaunchArgument('reid_config', default_value=PathJoinSubstitution([
             FindPackageShare('perception_bringup'), 'config', 'reid.yaml'])),
         DeclareLaunchArgument('pose_config', default_value=PathJoinSubstitution([FindPackageShare('perception_bringup'), 'config', 'pose.yaml'])),
@@ -160,6 +181,9 @@ def generate_launch_description():
         DeclareLaunchArgument('nms_free', default_value='true', choices=['true', 'false']),
         DeclareLaunchArgument('image_size', default_value='640'),
         DeclareLaunchArgument('depth_registered', default_value='false', choices=['true', 'false']),
+        # Non-empty: the tracker registers native Gemini RGB-D itself (no gemini_registration node).
+        DeclareLaunchArgument('registration_calibration_file', default_value=''),
+        DeclareLaunchArgument('registration_expected_serial', default_value=''),
         DeclareLaunchArgument('auto_lock_single', default_value='false', choices=['true', 'false']),
         DeclareLaunchArgument('color_topic', default_value='/camera/color/image_rect'),
         DeclareLaunchArgument('depth_topic', default_value='/camera/aligned_depth_to_color/image_raw'),

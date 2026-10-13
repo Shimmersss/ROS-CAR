@@ -1,6 +1,6 @@
 # 文字播报 ROS 接口使用手册
 
-更新日期：2026-10-13；对应本地 `main`。这个接口让程序发送一段文字，交给已有 MeloTTS 队列合成并播放。无需先喊唤醒词，也不会把正文交给语音意图或底盘运动解析。
+更新日期：2026-10-13；对应当前 PR 合并远端 `main` 后的代码。这个接口让程序发送一段文字，交给已有 MeloTTS 队列合成并播放。无需先喊唤醒词，也不会把正文交给语音意图或底盘运动解析。
 
 ## 1. 选择哪种调用方式
 
@@ -33,6 +33,8 @@ ros2 launch roscar_api speech_api.launch.py
 ```
 
 该 launch 默认 `with_tts=false`，只启动 `/voice/say`；已有 TTS 必须启用 `enable_speech_action=true`。整机或语音试运行入口已提供 `/voice/say` 时，直接调用，不要再启动第二个服务节点。
+
+B/C 整机 `scripts/start_project.sh` 在 `WITH_VOICE=true` 且 `VOICE_TTS_ENABLED=true` 时，已启用 `/voice/speak` 并同时启动 `/voice/say`，不必另外运行本节 launch。C 历史部署使用 `/home/wheeltec/ROSCAR-c/install/setup.bash` 和域号 183；调用时必须核对当前服务，不能套用本机示例域号。
 
 ### 尚无 TTS：独立启动
 

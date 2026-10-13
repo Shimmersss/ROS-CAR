@@ -49,6 +49,36 @@
       "local_path": "weights/osnet_x0_25_msmt17.onnx",
       "status": "mac_and_arm64_container_cpu_static_crop_smoke_passed_not_field_or_jetson_validated",
       "license_note": "Architecture MIT, original license included. Model/dataset usage follows upstream terms."
+    },
+    {
+      "name": "osnet_x1_0_msmt17.pth",
+      "origin": "Torchreid official MSMT17 OSNet-x1.0 checkpoint (same-domain table); local ONNX export if applicable",
+      "source": "https://github.com/KaiyangZhou/deep-person-reid/blob/f8cd150fdf77e8d9e1ed143b7f308c2c609ded50/docs/MODEL_ZOO.md",
+      "size_bytes": 10994685,
+      "sha256": "b7d73dc67c016fd044e4027ff856019496392a7aca8fa0ed56d862a1632c1cf2",
+      "local_path": "weights/osnet_x1_0_msmt17.pth",
+      "status": "offline_recording_comparison_only_not_default_not_field_or_jetson_validated",
+      "license_note": "Architecture MIT, original license included. Model/dataset usage follows upstream terms."
+    },
+    {
+      "name": "osnet_x1_0_msmt17.onnx",
+      "origin": "Torchreid official MSMT17 OSNet-x1.0 checkpoint (same-domain table); local ONNX export if applicable",
+      "source": "https://github.com/KaiyangZhou/deep-person-reid/blob/f8cd150fdf77e8d9e1ed143b7f308c2c609ded50/docs/MODEL_ZOO.md",
+      "size_bytes": 8728952,
+      "sha256": "a9443e20312920143938b8d39afd286c878ac6e5e9541fc1beaa2cfaf9e7a7df",
+      "local_path": "weights/osnet_x1_0_msmt17.onnx",
+      "status": "offline_recording_comparison_only_not_default_not_field_or_jetson_validated",
+      "license_note": "Architecture MIT, original license included. Model/dataset usage follows upstream terms."
+    },
+    {
+      "name": "object_tracking_vittrack_2023sep.onnx",
+      "origin": "OpenCV Zoo VitTrack (GSoC 2023), single-object tracker",
+      "source": "https://github.com/opencv/opencv_zoo/tree/fef72f8fa7c52eaf116d3df358d24e6e959ada0e/models/object_tracking_vittrack",
+      "size_bytes": 714726,
+      "sha256": "2990f0b7cd44d92afa48cd97db6de7be113fc1d9594fddb74e2725c10478e91d",
+      "local_path": "weights/object_tracking_vittrack_2023sep.onnx",
+      "status": "offline_recording_evaluation_and_synthetic_ros_only_not_field_or_jetson_validated",
+      "license_note": "Apache-2.0 (opencv_zoo model directory LICENSE). Runtime needs OpenCV>=4.8 DNN or onnxruntime; ROS Humble OpenCV 4.5.4 cannot load it."
     }
   ],
   "default_model": "yolo26s.pt"

@@ -1,6 +1,6 @@
 # ROS-CAR 接口使用手册
 
-更新日期：2026-10-13。本文以本地 `main` 的当前代码为准，包含新合并的拍照 ROS 接口。它说明软件如何接入；合并代码不等于已经更新小车上的程序。
+更新日期：2026-10-13。本文以当前 PR 合并远端 `main` 后的代码为准，包含新合并的拍照 ROS 接口。它说明软件如何接入；合并代码不等于已经更新小车上的程序。
 
 ## 1. 先选你需要的接口
 
@@ -106,7 +106,7 @@ robot 下任务结束会释放自己的租约，但不会恢复运动授权或�
 | `catalog` | 包内 `config/tasks.yaml` | 任务默认播报、准备时间和质检参数；门面与执行器应一致 |
 | `save_images` | false | 默认不把图像保存在执行器本地 |
 
-整机脚本的开关为 `WITH_CAPTURE_TASKS=true CAPTURE_ROS_API=true`，默认均为 false；后者不能脱离前者开启。接底盘还必须显式 `WITH_FOLLOWER=true` 以复用唯一 guard；该入口同时启动跟随器，但不会自动开启跟随或运动。整机配置见[实现与验收](云端拍照任务实现与验收.md)。
+整机脚本的开关为 `WITH_CAPTURE_TASKS=true CAPTURE_ROS_API=true`，默认均为 false；后者不能脱离前者开启。接底盘还必须显式 `WITH_FOLLOWER=true` 以复用唯一 guard；该入口同时启动跟随器；拍照启用时强制 `FOLLOW_AUTO_ARM=false`、`FOLLOW_TARGET_AUTO_RECOVER=false`、`FOLLOW_EMERGENCY_KWS_REQUIRED=true`，仍须显式切换模式并绑定 epoch 授权，租约释放不自动续跟。整机配置见[实现与验收](云端拍照任务实现与验收.md)。
 
 ### 3.2 四个服务怎么选
 
@@ -283,6 +283,8 @@ ros2 topic echo /control/state
 默认入口只启唯一 guard：`command_mode=IDLE`、运动关闭、不自动授权。相机、底盘、感知、跟随器和雷达分别由 `with_perception / with_chassis / with_follower / with_radar` 显式开启，全部默认 false。
 
 `with_chassis:=true` 还须显式填写已核对的 `serial_port` 和 `car_mode`；本项目实物按 `mini_akm` 配置。厂商底盘/雷达工作区分别由 `scripts/build_chassis.sh`、`scripts/build_radar.sh` 构建，不取消 `COLCON_IGNORE`。
+
+远端 C 跟随整机入口支持自动授权与目标恢复后自动续跟：`FOLLOW_AUTO_ARM`、`FOLLOW_TARGET_AUTO_RECOVER` 默认随 `MOTION_ENABLED`；STOP 仍回 IDLE，急停及其他故障保持保护。上述选项仅影响显式选择的跟随入口，不改变公共 API 默认行为。启用本次云端拍照组合时，两项强制关闭且紧急 KWS 心跳必须存在，以保持拍照和当前语音流程的逐次授权约定。
 
 ### 5.2 模式与服务
 

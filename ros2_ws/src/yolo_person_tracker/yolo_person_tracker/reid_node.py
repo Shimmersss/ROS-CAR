@@ -21,15 +21,16 @@ class ReIDNode(Node):
         defaults=dict(enabled=False, model_path='', color_topic='/camera/color/image_rect',
                       expected_frame='camera_color_optical_frame', max_age_s=.5,
                       sample_hz=5., max_people=8, min_crop_height=80, min_crop_width=32,
-                      blur_min=20.)
+                      blur_min=20., mask_overlap=False)
         defaults.update(vars(IdentityConfig()))
         for name, value in defaults.items():
             self.declare_parameter(name,value)
         self.cfg={k:self.get_parameter(k).value for k in defaults}
         c=self.cfg
         self.manager=IdentityManager(IdentityConfig(**{k:c[k] for k in vars(IdentityConfig())}))
-        if not isinstance(c['enabled'],bool):
-            raise ValueError('enabled must be boolean')
+        for name in ('enabled','mask_overlap'):
+            if not isinstance(c[name],bool):
+                raise ValueError(f'{name} must be boolean')
         for name in ('max_age_s','sample_hz','blur_min'):
             if not math.isfinite(c[name]) or c[name]<=0:
                 raise ValueError(f'{name} must be positive finite')
@@ -48,6 +49,9 @@ class ReIDNode(Node):
             self.sync=message_filters.TimeSynchronizer([self.pose_sub,self.color_sub],queue_size=20)
             self.sync.registerCallback(self.on_pair)
             self.create_subscription(PersonStateArray,'person_states',self.on_pose_gate,10)
+            # Owner following (C reid_reacquire): which identity is the owner and which track is followed.
+            self.create_subscription(PersonIdentity,'owner_focus',self.on_owner_focus,10)
+        self.owner_focus=None;self.owner_focus_at=-math.inf
         self.create_timer(.05,self.tick)
         if c['enabled'] and self.backend is None:
             self.loading=self.pool.submit(OSNetBackend,c['model_path'])
@@ -89,7 +93,8 @@ class ReIDNode(Node):
         observations={t:None for t in tracks};reasons={};crops=[];ids=[]
         for person in persons.persons:
             crop,reason=appearance_crop(image,person,persons.persons,
-                self.cfg['min_crop_height'],self.cfg['min_crop_width'],self.cfg['blur_min'])
+                self.cfg['min_crop_height'],self.cfg['min_crop_width'],self.cfg['blur_min'],
+                mask_overlap=self.cfg['mask_overlap'])
             reasons[person.track_id]=reason
             if crop is not None:
                 crops.append(crop);ids.append(person.track_id)
@@ -99,6 +104,20 @@ class ReIDNode(Node):
                 raise ValueError('Descriptor count differs from tracked crops')
             observations.update(zip(ids,features))
         return persons.header,observations,reasons,(time.monotonic()-start)*1000.,generation
+
+    def on_owner_focus(self,msg):
+        self.owner_focus=(msg.person_id,msg.track_id);self.owner_focus_at=time.monotonic()
+
+    def owner_hint(self):
+        """Fresh (owner_id, followed track or None); stale hints are ignored, not acted on."""
+        if self.owner_focus is None or time.monotonic()-self.owner_focus_at>1.:
+            return None
+        owner,track=self.owner_focus
+        if not owner:
+            self.manager.unpin()
+            return None
+        self.manager.pin(owner)
+        return track or None
 
     def tick(self):
         if self.loading is not None and self.loading.done():
@@ -114,7 +133,9 @@ class ReIDNode(Node):
                 stamp=stamp_seconds(header.stamp)
                 age=self.get_clock().now().nanoseconds*1e-9-stamp
                 if generation==self.generation and 0<=age<=self.cfg['max_age_s']:
-                    results=self.manager.update(stamp,observations)
+                    results=self.manager.update(stamp,observations,
+                        {t for t,r in reasons.items() if r=='overlapping people'},
+                        self.owner_hint())
                     msg=PersonIdentityArray(header=copy.deepcopy(header),enabled=True,valid=True,
                         detail='Appearance hypotheses only; no target lock or prior transfer',
                         processing_ms=float(elapsed),observation_age_s=float(age))

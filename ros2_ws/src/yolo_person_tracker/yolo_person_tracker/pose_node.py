@@ -13,15 +13,17 @@ from rclpy.time import Time
 from geometry_msgs.msg import Point
 from tf2_ros import Buffer, TransformListener, TransformException
 from visualization_msgs.msg import Marker, MarkerArray
-from person_interfaces.msg import (FloorPlane, PersonState, PersonStateArray, RuntimeMetrics,
-                                   PersonIdentityArray)
+from person_interfaces.msg import (FallAlarm, FloorPlane, PersonState, PersonStateArray, RuntimeMetrics,
+                                   PersonIdentity, PersonIdentityArray)
 from .node import TrackerNode, serialized
 from .pose import PoseConfig, EDGES, LABELS, JointJumpGate, points2d, joints3d
 from .input_contract import stamp_seconds
 from .fusion import FALLBACK_SOURCES, FusionConfig, fuse_depth
 from .identity_selection import IdentitySelection
+from .owner_selection import OwnerSelection
 from .pose3d import Pose3DConfig, EnhancedPostureTracker
 from .floor_plane import FloorConfig, FloorTracker, camera_angles, fit_floor
+from .fall_alarm import summarize as summarize_falls
 from .height_fall import HeightFallConfig, HeightFallTracker, at_side_edge, body_heights, clipped_at_top, skeleton_veto
 from .pose import FALLEN, SITTING_CROUCHING, STANDING
 from .ground import rotation_matrix
@@ -36,11 +38,25 @@ class PoseTrackerNode(TrackerNode):
         self.declare_parameter('reid_lock_enabled', False)
         self.declare_parameter('reid_lock_confirm_frames', 3)
         self.declare_parameter('reid_lock_max_age_s', .5)
+        # With sot_enabled: how long a continuously agreeing bridge may carry a ReID-confirmed
+        # identity while ReID lacks (but does not contradict) evidence.
+        self.declare_parameter('reid_lock_bridge_carry_s', 3.)
         self.reid_lock_enabled = self.get_parameter('reid_lock_enabled').value
+        # Bridge-primary owner following: ReID only re-acquires the owner and vetoes another person.
+        self.declare_parameter('reid_reacquire_enabled', False)
+        self.reid_reacquire_enabled = self.get_parameter('reid_reacquire_enabled').value
+        if self.reid_reacquire_enabled:
+            if self.reid_lock_enabled or not self.cfg['sot_enabled']:
+                raise ValueError('reid_reacquire_enabled requires sot_enabled and excludes reid_lock_enabled')
+            self.selection = OwnerSelection()
+            self.create_subscription(PersonIdentityArray, 'person_identities',
+                                     self.on_identities, 10, callback_group=self.state_group)
+            self.owner_pub = self.create_publisher(PersonIdentity, 'owner_focus', 10)
         if self.reid_lock_enabled:
             self.selection = IdentitySelection(
                 self.get_parameter('reid_lock_confirm_frames').value,
-                self.get_parameter('reid_lock_max_age_s').value)
+                self.get_parameter('reid_lock_max_age_s').value,
+                carry_s=float(self.get_parameter('reid_lock_bridge_carry_s').value) if self.cfg['sot_enabled'] else 0.)
             self.create_subscription(PersonIdentityArray, 'person_identities',
                                      self.on_identities, 10, callback_group=self.state_group)
         values = {}
@@ -91,6 +107,16 @@ class PoseTrackerNode(TrackerNode):
         self.height_tracker=HeightFallTracker(HeightFallConfig(**height_values))
         self.height_boxes={}
         self.person_pub = self.create_publisher(PersonStateArray, 'person_states', 10)
+        # Optional: people the detector lost while falling or down keep being measured in place of
+        # their last detected box (height_continue_s). They go to their own topic, never into
+        # person_states, whose consumers (ReID, ground localisation) expect real detections.
+        self.height_continue=self.height_tracker.cfg.continue_s>0
+        if self.height_continue and not self.height_enabled:
+            raise ValueError('height_continue_s requires height_fall_enabled')
+        self.continued_pub=(self.create_publisher(PersonStateArray,'person_states_continued',10)
+                            if self.height_continue else None)
+        # One fall summary per frame over both topics (consumers need not merge or time-match them).
+        self.alarm_pub=self.create_publisher(FallAlarm,'fall_alarm',10)
         self.skeleton_pub = self.create_publisher(MarkerArray, 'skeleton_markers', 10)
         self.metrics_pub = self.create_publisher(RuntimeMetrics, 'performance', 10)
         self.samples = deque(maxlen=120)
@@ -157,6 +183,12 @@ class PoseTrackerNode(TrackerNode):
         if self.reid_lock_enabled and (self.error or self.snapshot is None or not self.fresh_snapshot()):
             self.selection.invalidate()
         super().tick()
+        if self.reid_reacquire_enabled:
+            s = self.selection
+            self.owner_pub.publish(PersonIdentity(
+                person_id=s.owner_id, track_id=':'.join(map(str, s.target_id)) if s.target_id else '',
+                state='SEARCHING' if s.searching else ('FOLLOWING' if s.target_id else 'IDLE'),
+                appearance_distance=math.nan, last_seen_age_s=math.nan, detail=s.detail))
         if self.error or self.snapshot is None or not self.fresh_snapshot():
             self.postures.reset()
             self.floor_tracker.reset()
@@ -168,6 +200,9 @@ class PoseTrackerNode(TrackerNode):
                 msg.header.frame_id=self.pose_frame
                 msg.detail=self.error or 'Stale RGB-D inference'
                 self.person_pub.publish(msg)
+                if self.continued_pub is not None:self.continued_pub.publish(copy.deepcopy(msg))
+                alarm=FallAlarm(header=copy.deepcopy(msg.header),detail=msg.detail);alarm.box=[math.nan]*4
+                self.alarm_pub.publish(alarm)
                 self.delete_markers(set(), self.get_clock().now().to_msg(), self.pose_frame)
                 self.last_invalid_at=now
             self.pose_valid=False
@@ -182,7 +217,7 @@ class PoseTrackerNode(TrackerNode):
         self.active_markers=current
 
     def publish_image(self, color, image, detections):
-        if self.reid_lock_enabled:
+        if self.reid_lock_enabled or self.reid_reacquire_enabled:
             self.selection.record_frame(
                 color.header.stamp.sec*1000000000+color.header.stamp.nanosec,
                 color.header.frame_id)
@@ -192,7 +227,7 @@ class PoseTrackerNode(TrackerNode):
         msg=PersonStateArray(); msg.header=copy.deepcopy(color.header); msg.valid=True
         self.pose_frame=color.header.frame_id
         msg.detail='COCO17; camera-relative heuristic; initial thresholds'
-        annotated=image.copy(); markers=MarkerArray(); current=set()
+        annotated=image.copy(); markers=MarkerArray(); current=set(); extra_labels={}
         stamp=stamp_seconds(color.header.stamp)
         gravity=self.frame_gravity(color,stamp)
         # Falls often break the tracker ID; a lost track may hand over to one new track (pose_handover_s).
@@ -248,8 +283,7 @@ class PoseTrackerNode(TrackerNode):
             for a,b in EDGES:
                 if valid[a] and valid[b]:
                     cv2.line(annotated,tuple(map(int,points[a,:2])),tuple(map(int,points[b,:2])),tint,2)
-            x,y=map(int,detection.box[:2])
-            cv2.putText(annotated,f'{LABELS[person.posture]} fall={person.fall_stage} {person.detail.split(chr(59),1)[0]}',(x,max(30,y+18)),cv2.FONT_HERSHEY_SIMPLEX,.5,tint,1)
+            extra_labels[detection.track_id]=(f'{LABELS[person.posture]} fall={person.fall_stage}',tint)
             marker=Marker(); marker.header=copy.deepcopy(color.header)
             marker.ns=identity; marker.id=0; marker.type=Marker.LINE_LIST; marker.action=Marker.ADD
             marker.pose.orientation.w=1.; marker.scale.x=.025
@@ -260,42 +294,105 @@ class PoseTrackerNode(TrackerNode):
                     marker.points.extend([person.keypoints_3d[a],person.keypoints_3d[b]])
             if marker.points: markers.markers.append(marker); current.add(identity)
         self.person_pub.publish(msg); self.pose_valid=True
+        continued=(self.publish_continued(color,annotated,stamp,gravity,present)
+                   if self.continued_pub is not None else [])
+        self.publish_alarm(msg,continued)
         self.previous_joints=next_joints
         self.delete_markers(current,color.header.stamp,color.header.frame_id)
         if markers.markers: self.skeleton_pub.publish(markers)
         age=(self.get_clock().now().nanoseconds*1e-9-stamp)*1000.
         if self.performance_enabled:
             self.output_samples.append((time.monotonic(),age))
-        super().publish_image(color,image,detections,overlay_image=annotated)
+        super().publish_image(color,image,detections,overlay_image=annotated,extra_labels=extra_labels)
 
     def apply_height_fall(self, person, identity, stamp, box, gravity):
         """Raise fall_stage from the body-top height cue; a skeleton standing/crouching posture
         in a tall box vetoes it. Without confirmed gravity and ground it can only report suspected."""
-        s=self.spatial_config
         top=head=None
-        if self.cfg['depth_registered']:
-            if s.up_source=='static':
-                up,height=np.array([s.up_x,s.up_y,s.up_z]),s.camera_height_m
-            elif gravity is not None and gravity[1] is not None:
-                up,height=gravity
-            else:
-                up=None
-            if up is not None:
-                measured=body_heights(self.snapshot[1],box,self.snapshot[3],up,height,self.height_tracker.cfg,head=True)
-                top,head=(None,None) if measured is None else (measured[0],measured[2])
+        geometry=self.height_geometry(gravity)
+        if geometry is not None:
+            measured=body_heights(self.snapshot[1],box,self.snapshot[3],*geometry,self.height_tracker.cfg,head=True)
+            top,head=(None,None) if measured is None else (measured[0],measured[2])
         self.height_boxes[identity]=tuple(map(float,box))
         upright=person.posture in (STANDING,SITTING_CROUCHING)
         phase,reason=self.height_tracker.update(identity,stamp,top,
             upright_hint=skeleton_veto(upright,box,self.height_tracker.cfg),posture_upright=person.posture==STANDING,
             clipped=clipped_at_top(box,self.height_tracker.cfg),
             side=self.snapshot is not None and at_side_edge(box,self.snapshot[0].width,self.height_tracker.cfg))
-        if phase==2 and not (s.gravity_confirmed and s.ground_confirmed):
-            phase,reason=1,reason+'; gravity/ground unconfirmed: suspected only'
+        phase,reason=self.cap_height_phase(phase,reason)
         if phase>person.fall_stage:
             person.fall_stage=phase
             if phase==2:person.posture=FALLEN
         # head: display-only estimate of the head top; the rules use the lower, steadier top.
         person.detail+=f'; height_fall={phase} ({reason})'+('' if head is None else f'; head~{head:.2f}m')
+
+    def height_geometry(self, gravity):
+        """(up, camera height) for the body-top measurement, or None (no registered depth or no
+        gravity this frame)."""
+        s=self.spatial_config
+        if not self.cfg['depth_registered']:
+            return None
+        if s.up_source=='static':
+            return np.array([s.up_x,s.up_y,s.up_z]),s.camera_height_m
+        if gravity is not None and gravity[1] is not None:
+            return gravity
+        return None
+
+    def cap_height_phase(self, phase, reason):
+        s=self.spatial_config
+        if phase==2 and not (s.gravity_confirmed and s.ground_confirmed):
+            return 1,reason+'; gravity/ground unconfirmed: suspected only'
+        return phase,reason
+
+    def publish_continued(self, color, annotated, stamp, gravity, present):
+        """person_states_continued: people the detector lost while falling or down, measured in
+        their last detected box (HeightFallTracker.continuable). No keypoints, confidence 0;
+        handover to a returning detection still goes through person_states."""
+        msg=PersonStateArray(); msg.header=copy.deepcopy(color.header); msg.valid=True
+        msg.detail='height-fall continuation; no detection, box = last detected box, no keypoints'
+        tracker=self.height_tracker
+        geometry=self.height_geometry(gravity)
+        for identity in tracker.continuable(stamp,present):
+            box=self.height_boxes.get(identity)
+            if box is None or tracker.yields(identity,box,present):
+                continue
+            top=None
+            if geometry is not None:
+                measured=body_heights(self.snapshot[1],box,self.snapshot[3],*geometry,tracker.cfg)
+                top=None if measured is None else measured[0]
+            phase,reason=tracker.update(identity,stamp,top,continued=True,
+                                        side=at_side_edge(box,self.snapshot[0].width,tracker.cfg))
+            phase,reason=self.cap_height_phase(phase,reason)
+            person=PersonState(); person.track_id=identity
+            person.box=list(map(float,box)); person.confidence=0.
+            person.keypoints_2d=[Point(x=math.nan,y=math.nan,z=math.nan) for _ in range(17)]
+            person.keypoint_confidences=[0.]*17
+            person.keypoints_3d=[Point(x=math.nan,y=math.nan,z=math.nan) for _ in range(17)]
+            person.keypoints_3d_valid=[False]*17
+            person.posture=PersonState.FALLEN if phase==2 else PersonState.UNKNOWN
+            person.fall_stage=phase
+            person.body_depth_m=math.nan
+            person.detail=f'continued (no detection); height_fall={phase} ({reason})'
+            msg.persons.append(person)
+            x1,y1,x2,y2=map(int,box)
+            cv2.rectangle(annotated,(x1,y1),(x2,y2),(0,0,255),1)
+            cv2.putText(annotated,f'continued fall={phase}',(x1,max(30,y2-6)),cv2.FONT_HERSHEY_SIMPLEX,.5,(0,0,255),1)
+        self.continued_pub.publish(msg)
+        return msg.persons
+
+    def publish_alarm(self, people, continued):
+        """fall_alarm: highest stage of this frame's person_states and person_states_continued."""
+        s=self.spatial_config
+        summary=summarize_falls(people.persons,continued)
+        alarm=FallAlarm(header=copy.deepcopy(people.header),valid=True,stage=summary.stage,
+                        continued=summary.continued,geometry_confirmed=bool(s.gravity_confirmed and s.ground_confirmed),
+                        suspected_count=summary.suspected,confirmed_count=summary.confirmed)
+        if summary.person is None:
+            alarm.box=[math.nan]*4;alarm.detail='no fall'
+        else:
+            alarm.track_id=summary.person.track_id;alarm.box=[float(v) for v in summary.person.box]
+            alarm.detail=('continued; ' if summary.continued else '')+summary.person.detail[:300]
+        self.alarm_pub.publish(alarm)
 
     def frame_gravity(self, color, stamp):
         """Per-frame (up, camera height) in the optical frame, or None; never a stale value."""

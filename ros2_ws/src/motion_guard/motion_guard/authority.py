@@ -72,6 +72,13 @@ class MotionAuthority:
         self.state, self.command_mode, self.reason = 'DISARMED', 'IDLE', 'estop_reset_disarmed'
         self.epoch += 1
 
+    def recover_follow(self):
+        """FAULT from a target loss -> ARMED_FOLLOW; the caller verified every input this tick."""
+        if self.state != 'FAULT' or self.command_mode != 'FOLLOW':
+            raise AuthorityError('Only a FOLLOW-mode fault can recover by itself')
+        self.state, self.reason = 'ARMED_FOLLOW', 'target_recovered'
+        self.epoch += 1
+
     def reset_fault(self, ready):
         if self.state != 'FAULT' or ready is not True:
             raise AuthorityError('FAULT reset requires recovered inputs')

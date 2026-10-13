@@ -27,13 +27,28 @@ class Entrypoints(unittest.TestCase):
 
     def test_configuration_and_layout(self):
         layout=json.loads((ROOT/'foxglove/c-layout.json').read_text())
-        self.assertEqual(layout['configById']['RawMessages!persons']['topicPath'],'/perception/person_states')
+        panels=layout['configById']
+        self.assertEqual(panels['Image!detections']['topic'],'/perception/detections_preview/compressed')
+        self.assertEqual(panels['RawMessages!target']['topicPath'],'/perception/target_state.detail')
+        self.assertEqual(panels['RawMessages!guard']['topicPath'],'/control/state.data')
+        self.assertEqual(panels['Plot!cmd']['paths'][0]['value'],'/cmd_vel.linear.x')
         calibration=json.loads((ROOT/'ros2_ws/src/perception_bringup/config/gemini_AY2755200PW.json').read_text())
         self.assertFalse(calibration['registration_verified'])
         self.assertEqual(calibration['depth_intrinsic']['height'],400)
         launch=(ROOT/'ros2_ws/src/perception_bringup/launch/perception.launch.py').read_text()
         self.assertIn("'yolo_pose': ('yolo_person_tracker', 'pose_tracker')",launch)
         self.assertIn("default_value='yolo'",launch)
+
+    def test_inprocess_registration_switch(self):
+        env=dict(GEMINI_SERIAL='test', GEMINI_CALIBRATION='not-used.json')
+        r=self.run_script('start_c.sh', **env, GEMINI_INPROCESS_REGISTRATION='yes')
+        self.assertNotEqual(r.returncode,0);self.assertIn('true/false',r.stderr)
+        r=self.run_script('start_c.sh', **env, GEMINI_INPROCESS_REGISTRATION='true', REID_ENABLED='true')
+        self.assertNotEqual(r.returncode,0);self.assertIn('不能同时开启',r.stderr)
+        launch=(ROOT/'ros2_ws/src/perception_bringup/launch/perception.launch.py').read_text()
+        self.assertIn("DeclareLaunchArgument('registration_calibration_file', default_value='')",launch)
+        camera=(ROOT/'scripts/run_gemini_camera.sh').read_text()
+        self.assertIn('"${GEMINI_INPROCESS_REGISTRATION:-false}" != true',camera)
 
     def test_tongue_entry_rejects_missing_guard_or_unsafe_profile(self):
         env=dict(GEMINI_SERIAL='test', GEMINI_CALIBRATION='not-used.json', WITH_TONGUE_MODE='true')

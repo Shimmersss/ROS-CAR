@@ -3,7 +3,7 @@ import time
 
 
 class Selection:
-    def __init__(self, hold_s=.35, reacquire_s=.8, reacquire_center_fraction=.25):
+    def __init__(self, hold_s=.35, reacquire_s=.8, reacquire_center_fraction=.25, nearest_reacquire=True):
         if hold_s < 0:
             raise ValueError('hold_s must be non-negative')
         if reacquire_s < 0 or reacquire_center_fraction <= 0:
@@ -11,6 +11,8 @@ class Selection:
         self.hold_s = float(hold_s)
         self.reacquire_s = float(reacquire_s)
         self.reacquire_center_fraction = float(reacquire_center_fraction)
+        # False: only an external, evidence-based handover() may move the target to another track.
+        self.nearest_reacquire = bool(nearest_reacquire)
         self.target_id = None
         self.epoch = 0
         self.candidates = []
@@ -35,7 +37,7 @@ class Selection:
                 self.last_selected = current
                 self.last_selected_at = received_at
                 self.last_box = tuple(current.box)
-            elif (self.last_box is not None
+            elif (self.nearest_reacquire and self.last_box is not None
                   and received_at - self.last_selected_at <= self.reacquire_s):
                 replacement = self._nearest_replacement()
                 if replacement is not None:
@@ -61,6 +63,17 @@ class Selection:
             if distance <= max_dx and .35 <= ratio <= 2.8:
                 matches.append((distance, abs(ratio-1.), candidate.track_id, candidate))
         return min(matches)[3] if matches else None
+
+    def handover(self, track_id, received_at):
+        """Move the current target to a candidate confirmed by external evidence (same epoch)."""
+        candidate = next((d for d in self.candidates if d.track_id == track_id), None)
+        if self.target_id is None or candidate is None:
+            return False
+        self.target_id = (self.epoch, track_id)
+        self.last_selected = candidate
+        self.last_selected_at = received_at
+        self.last_box = tuple(candidate.box)
+        return True
 
     def lock(self, now=None, max_age=.5):
         now = time.monotonic() if now is None else now
