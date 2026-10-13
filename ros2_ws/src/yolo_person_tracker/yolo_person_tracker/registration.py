@@ -1,4 +1,7 @@
 """Explicit native-depth -> rectified-color projection with a nearest-surface z-buffer."""
+import copy
+import json
+from pathlib import Path
 import cv2
 import numpy as np
 
@@ -74,3 +77,44 @@ class Registration:
             hit=np.isfinite(nearest)
             aligned[hit]=nearest[hit]
         return corrected,aligned.reshape(height,width)
+
+
+def load_registration(path, expected_serial):
+    """Device calibration for the explicitly selected Gemini; a serial mismatch refuses to start."""
+    calibration=json.loads(Path(path).read_text())
+    if not expected_serial or calibration['serial']!=expected_serial:
+        raise ValueError('Calibration serial must match explicitly selected Gemini')
+    return Registration(calibration)
+
+
+def rectified_camera_info(registration, header):
+    """CameraInfo of the rectified color image (zero distortion, P=[K|0]) with the given header."""
+    from sensor_msgs.msg import CameraInfo
+    info=CameraInfo(); info.header=copy.deepcopy(header)
+    info.width=registration.color['width']; info.height=registration.color['height']
+    info.distortion_model='plumb_bob'; info.d=[0.]*5
+    k=registration.kc; info.k=list(map(float,k.reshape(-1))); info.r=list(map(float,np.eye(3).reshape(-1)))
+    info.p=list(map(float,np.column_stack((k,np.zeros(3))).reshape(-1)))
+    return info
+
+
+def validate_raw_pair(color, depth, now, max_age, sync_slop, color_frame, depth_frame, registration):
+    """Checks for native Gemini RGB-D before in-process registration; returns rectified intrinsics."""
+    from .input_contract import stamp_seconds
+    for msg in (color, depth):
+        stamp=stamp_seconds(msg.header.stamp)
+        if stamp<=0 or not 0<=now-stamp<=max_age:
+            raise ValueError('Expired, zero or future raw timestamp')
+    if abs(stamp_seconds(color.header.stamp)-stamp_seconds(depth.header.stamp))>sync_slop:
+        raise ValueError('RGB-D skew exceeds tolerance')
+    if color.header.frame_id!=color_frame or depth.header.frame_id!=depth_frame:
+        raise ValueError('Unexpected native optical frames')
+    if ((color.width,color.height)!=(registration.color['width'],registration.color['height'])
+            or (depth.width,depth.height)!=(registration.depth['width'],registration.depth['height'])):
+        raise ValueError('Native RGB-D dimensions differ from device calibration')
+    if color.encoding not in ('rgb8','bgr8','rgba8','bgra8'):
+        raise ValueError('Expected color RGB/BGR image')
+    if depth.encoding not in ('16UC1','32FC1'):
+        raise ValueError('Unsupported depth unit/encoding')
+    k=registration.kc
+    return (k[0,0],k[1,1],k[0,2],k[1,2])

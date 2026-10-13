@@ -15,6 +15,7 @@ docker run --rm --platform linux/arm64 -e ROS_LOCALHOST_ONLY=1 \
     ROS_DOMAIN_ID=188 python3 /workspace/tests/test_pose_runtime.py
     ROS_DOMAIN_ID=187 python3 /workspace/tests/test_pose_runtime.py --fusion-off
     ROS_DOMAIN_ID=189 python3 /workspace/tests/test_gemini_registration_runtime.py
+    ROS_DOMAIN_ID=213 python3 /workspace/tests/test_inprocess_registration_runtime.py
     ROS_DOMAIN_ID=190 python3 /workspace/tests/test_yolo_runtime.py
     ROS_DOMAIN_ID=191 python3 /workspace/tests/test_target_tf_runtime.py
     ROS_DOMAIN_ID=192 python3 /workspace/tests/test_yolo_concurrency.py

@@ -1,5 +1,14 @@
 # 工作记录
 
+## 2026-10-13：无车准备——帧率选项、测速探针、同步路由检查
+
+- 本地 main 快进到 `3b40939`（PR #19 合并）。在本机 Linux ARM64 / ROS 2 Humble 容器补跑急停修复回归 `test_motion_guard_grace_runtime.py` 并通过（此前仅云端 x86 容器）。板端 `ROSCAR-c` 仍为 `57a6fb7`，不含该修复；小车关机，未同步或部署。
+- 新增默认关闭的 `GEMINI_INPROCESS_REGISTRATION=true`：Pose/B tracker 用 `registration_calibration_file`/`registration_expected_serial` 直接订阅原生 RGB-D，在推理工作线程里配准，并在 `camera_info_topic` 发布校正 CameraInfo，相机脚本不再起 `gemini_registration`。与 ReID 互斥（launch 和 start_project 均拒绝）。`load_registration`/`rectified_camera_info`/`validate_raw_pair` 抽到 registration.py，独立节点共用前两者，行为不变。对齐移入同一工作线程会失去跨进程流水并行，是否更快待板上实测，不设默认。
+- 新增只读 `scripts/measure_c_rates.py`：驱动彩色/深度及校正 CameraInfo 速率、Pose RuntimeMetrics、目标测量龄、按 argv 名匹配的进程 CPU，输出 JSON，不解码图像、不发布。
+- `sync_to_jetson.py` 在 rsync 前检查局域网目标是否被代理 TUN 接管（`utun`/`tun` 接口或 198.18.0.0/15 假 IP 网关/解析），是则直接提示，`--allow-tunnel` 可跳过；rsync 失败改为一行说明，不再抛 Python 堆栈。起因：本机路由经 `utun6`（网关 198.18.0.1），SSH 握手被代理关闭，预览误以为端口可达。
+- 更新 C 交接文档（PR 已合并、板端缺修复、4.2 新选项与探针）和 AGENTS 两条长期说明。
+- 验证：本机 `.venv` 补装 CI 版本的 pytest 9.1.1 / websocket-client 1.9.2 后，纯 Python CI 全部通过（numpy 1.26.4、OpenCV 4.10 与 CI 固定版本不同）；`tests/test_sync.py` 5 项、`tests/test_c_entrypoints.py` 6 项通过。容器（colima 只挂主目录，源码以 tar 送入）19 包构建，`scripts/test_c_container.sh` 全套含新增 `test_inprocess_registration_runtime.py` 通过：合成 Gemini 帧下进程内配准与独立节点的目标位置（1e-6 m）、推理用校正图像、CameraInfo 一致，错误原生 frame 不推理且 NOT_READY，序列号不符拒绝启动；探针以假 CameraInfo 发布者冒烟。日志 `artifacts/offline-prep-20261013-*.log`。均为合成输入，不是 Jetson 帧率或实机验证。
+
 ## 2026-10-12：修复 FOLLOW 自动恢复误解除急停通道故障（PR #19 评审）
 
 - Copilot 评审指出并经核实：`motion_guard` 自动恢复按历史 `last_fault` 判断；目标故障恢复后 `last_fault` 仍为 `target_invalid`，之后 `/voice/emergency_healthy=false` 异步置 FAULT 不改写它，心跳恢复即被自动重新授权，违反急停健康失效锁存约定。改为按 authority 当前故障原因判断，急停心跳失效同时写入 `last_fault`。
