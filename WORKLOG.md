@@ -1480,3 +1480,9 @@
 - 清除旧文档中的无 epoch arm 操作、缺失 SetControlMode.authority_epoch、DeepSeek 控车描述及雷达检查固定关闭的过时结论；补齐当前 STOP/ESTOP/FAULT 与复位语义、固定规则链路、B/C 感知接口和坐标区分。明确 prepare_sec 负数采用目录默认、ROS 字段省略为 0、bench 与 guard 入口不能并开、取消归属及两层时限。
 - 拍照质检对照代码说明：宽度也是质量警告之一，默认 warn 可上传，fail 才拒绝；上传回执不是图片 URL 或推理结果，ROS 自建 task_id 仍须正式云端确认。HTTP 文档分开两种任务来源，列出方法方向、必填字段、回执/幂等与事件可靠性边界。
 - 最小审查：三个文档的 3 个 Python 块 AST、22 个 Bash 块语法、7 个 JSON 块和 21 个本地链接通过；请求/结果与 srv/action 原文核对，git diff --check 通过。拍照纯 Python 回归 110/110 通过（从包目录使用 PYTHONPATH=.；首次从仓库根调用未设置路径造成导入失败，已纠正）。合并后语音、guard、tongue_mode 和 YOLO 包相对原 main@62a7c59 无改动。未重新编译或进行 ROS 运行时/实车验收，没有 push 或更新小车。
+
+### 重写版文档下载同步
+
+- 延续用户已授权的 wlcb 文档托管，发布 main@dab98ed 快照到 `/var/www/download/roscar/20261013-dab98ed/`，旧 c6d23f1 下载路径保留，Nginx 配置和其他服务不变。
+- 新下载前缀 `http://8.130.12.77/d/roscar/20261013-dab98ed/`；ZIP 为 `roscar-interface-docs-20261013-dab98ed.zip`（38 文件、96695 字节），另有 `ros-api.md`、`capture-http-api.md`、`speech-api.md`。ZIP SHA256：`0b67707f026fe06af48d6ff92e8a47336a750d78e2a7055b0867417bbbf0de79`。
+- ZIP CRC 和逐文件 SHA256 检查通过；本机无代理直连公网，四个文件均 HTTP 200、attachment，逐字节匹配本地。只发布文档，未更新小车程序或正式拍照云端业务实现。
