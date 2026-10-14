@@ -49,6 +49,12 @@
 
 # 工作记录
 
+## 2026-10-14：ASR 开关板端测试与 PR 准备（等待网络）
+
+- 用户要求本地测试后到小车验证，通过后经 WSL 推送 PR。已从最新 origin/main 创建 `codex/asr-runtime-switch`，仅包含 ASR 功能改动，不夹带此前拍照门面部署记录；尚未推送或创建 PR。
+- 核对专用 Humble 验证副本与当前识别/路由源码，补同步进程测试的 Linux 平台跳过条件后重跑：1614 项相关单测及 6 项 ROS 开关回归全部通过。日志为 `artifacts/asr-switch-20261014/retest-before-car.log`；验证挂载已清理。
+- Windows 和 WSL 均无法连接文档中的 `192.168.31.145:22`（超时/No route to host），历史 Wi-Fi/网线地址也不可达，电脑物理有线网卡显示未连接。已询问当前网络或新 IP；没有连接小车、上传、停止服务或进行板端测试，实机结果仍待验证，因此尚不满足用户设定的 PR 推送条件。
+
 ## 2026-10-14：ROS 控制 ASR 启停并释放模型内存
 
 - 按用户要求修改项目，新增 `/voice/set_asr_enabled`（std_srvs/SetBool）及 `/voice/asr_enabled`、`/voice/asr_status`。本轮仅本地实现与验证，未上传或重启小车，未修改此前已运行的拍照/播报服务或车辆配置。
