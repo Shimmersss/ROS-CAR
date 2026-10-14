@@ -1667,3 +1667,8 @@
 
 - 新增 `docs/Agent控制接口速查.md`，简述模式切换/epoch 授权、外部速度顺序、停车与急停、主人认领、文字播报、停车租约和必要状态监测；同步 README 索引。限速和主人等待时间以运行配置/消息为准，避免沿用历史值。
 - 最小审查核对 srv 字段、guard 入口与参数、请求时间戳/唯一发布者及复位边界；检查文档链接与 diff 空白。本次仅文档，不修改代码、板端服务或运动状态，不把文档检查描述为实机验证。
+
+## 2026-10-13：ROS 接口文档补充远程连接说明
+
+- `docs/ROS接口使用文档.md` 新增 2.5 节“远程连接小车”：小车当前地址 192.168.31.145、SSH 用户 wheeltec（密码不入库）、Humble、域 182、`ROS_LOCALHOST_ONLY=0`；SSH 登录调用与同网段 DDS 直连两种方式、只编译接口包的命令、先查看实际运行接口、单人控制与不重复调用等注意事项；常见问题表增加远程无节点排查。
+- 2026-10-14 只读核对小车 192.168.31.145：roscar-robot.service 运行固定机位主链（/home/wheeltec/ROSCAR-current，域 182、ROS_LOCALHOST_ONLY=0、fastdds_robot.xml 为 SHM+UDPv4 不限地址）；文档列出实查的服务/话题，/capture/* 未运行（开机入口 WITH_CAPTURE_TASKS=false），主链 motion_enabled=true。从 NAT 后的电脑可 SSH 但 DDS 发现不到节点（小车无法回连），同网段直连未实测。仅文档改动，未调用任何服务、未改板端配置。

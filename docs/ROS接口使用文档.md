@@ -1,6 +1,6 @@
 # ROS-CAR 接口使用手册
 
-更新日期：2026-10-13。本文按当前工作区的消息定义、服务实现和启动入口核对，覆盖感知、跌倒、主人认领、语音、控制、舌苔及拍照上传。接口契约与现场验收范围分别说明；实际启用的接口以运行图为准。
+更新日期：2026-10-14。本文按当前工作区的消息定义、服务实现和启动入口核对，覆盖感知、跌倒、主人认领、语音、控制、舌苔及拍照上传；从其他电脑远程调用见 [2.5 远程连接小车](#25-远程连接小车)。接口契约与现场验收范围分别说明；实际启用的接口以运行图为准。
 
 ## 1. 先选你需要的接口
 
@@ -49,7 +49,7 @@ export ROS_LOCALHOST_ONLY=1
 export FASTRTPS_DEFAULT_PROFILES_FILE=/absolute/path/fastdds-profile.xml
 ```
 
-Foxglove 的 WebSocket 连接只负责展示，不能替代 `rclpy` 或 `ros2 service call`。Windows 没有 ROS 环境时，可以通过 SSH 在已经安装 ROS 的小车终端调用。
+Foxglove 的 WebSocket 连接只负责展示，不能替代 `rclpy` 或 `ros2 service call`。Windows 没有 ROS 环境时，可以通过 SSH 在已经安装 ROS 的小车终端调用。从另一台电脑远程调用小车接口的完整步骤见 [2.5 远程连接小车](#25-远程连接小车)。
 
 ### 2.2 服务不会因构建完成而自动启动
 
@@ -115,6 +115,93 @@ ros2 launch roscar_api speech_api.launch.py with_announcements:=true
 # 没有其他整车入口时，显式启动语音和舌苔；其依赖、模型、录音设备须先就绪
 ros2 launch roscar_api api.launch.py with_voice:=true with_tongue:=true
 ```
+
+### 2.5 远程连接小车
+
+本节给"在另一台电脑上调用小车 ROS 接口"的使用者。
+
+| 项 | 值 |
+|---|---|
+| 小车地址 | `192.168.31.145`（当前局域网，地址变化以现场为准） |
+| SSH 用户 | `wheeltec`，端口 22；密码向项目负责人单独索取，不写入仓库 |
+| ROS 版本 | ROS 2 Humble（Ubuntu 22.04） |
+| ROS 域号 | `ROS_DOMAIN_ID=182` |
+| 本机限制 | 小车入口设置 `ROS_LOCALHOST_ONLY=0`，允许局域网发现 |
+| DDS | Fast DDS（Humble 默认 RMW）；小车加载 `perception_bringup/config/fastdds_robot.xml`，启用共享内存 + UDPv4，不限制网卡或地址 |
+| 运行目录 | `/home/wheeltec/ROSCAR-current`，由用户服务 `roscar-robot.service` 开机启动固定机位主链 |
+
+接口能否远程访问，取决于小车上**实际启动了哪些节点**，不是代码里有就一定在运行。部分功能可能尚未部署到小车或默认关闭。连上后请先按下面的"第 0 步"查看实际运行的接口，再调用。
+
+**2026-10-14 在小车上实查到的运行接口**（固定机位主链；之后重新部署或改启动参数会变化）：
+
+| 类别 | 当前可用 |
+|---|---|
+| 控制服务 | `/control/set_mode`、`/control/authorize`、`/control/arm`、`/control/disarm`、`/control/stop`、`/control/estop`、`/control/reset_estop`、`/control/reset_fault`、`/control/task_hold` |
+| 感知服务 | `/perception/claim_owner`、`/perception/lock_target`、`/perception/release_target` |
+| 语音 | 服务 `/voice/say`、`/voice/start_listening`、`/voice/cancel_listening`、`/voice/cancel_speech`；action `/voice/speak` |
+| 常用话题 | `/perception/target_state`、`/perception/detections`、`/perception/person_states`、`/perception/fall_alarm`、`/perception/owner_state`、`/control/state`、`/system/phase`、`/odom`、`/imu/data_raw`、`/PowerVoltage`、`/camera/color/image_raw`、`/perception/detections_preview/compressed` |
+| **尚未运行** | 拍照服务 `/capture/*` 及 `/capture_task/run`：小车上已有 capture_task 包，但开机入口 `run_robot_onboard.sh` 固定 `WITH_CAPTURE_TASKS=false`，需要按 3.1 另行启动 |
+
+当前主链的运动总开关是打开的（`motion_enabled:=true`），跟随仍需显式切换模式并授权；远程调用控制类服务前请先读第 5 节。
+
+#### 方式 A：SSH 登录小车，在小车终端调用（最简单，推荐先用）
+
+不需要在自己电脑上装 ROS，Windows 也可以用。
+
+```bash
+ssh wheeltec@192.168.31.145
+# 登录后在小车上：
+source /opt/ros/humble/setup.bash
+source ~/ROSCAR-current/install/setup.bash     # 以小车上实际部署目录为准
+export ROS_DOMAIN_ID=182 ROS_LOCALHOST_ONLY=0
+```
+
+之后本文中的所有 `ros2 service call`、`ros2 topic echo` 示例都可以直接在这个终端运行。
+
+#### 方式 B：自己的电脑装 ROS 2 Humble，通过局域网直接通信
+
+适合要在自己电脑上运行 Python 客户端或长时间订阅数据的情况。
+
+1. **网络**：电脑必须**直接**接入小车所在的 `192.168.31.x` 网段，双方能互相 ping 通。经过另一台路由器或 NAT（例如电脑在 `10.0.0.x` 子网、只能单向 ping 到小车）时 DDS 无法通信：小车回不到电脑。2026-10-14 实测从 NAT 后的电脑能 SSH 但发现不到任何节点，这种情况请用方式 A。DDS 依赖 UDP 组播，部分路由器或访客 Wi-Fi 会隔离客户端或拦截组播，也请改用方式 A 或网线直连。关闭电脑防火墙对 UDP 的拦截（Ubuntu 可先 `sudo ufw status` 检查）。
+2. **系统**：Ubuntu 22.04 + ROS 2 Humble，与小车一致。Windows 下的 WSL2 默认 NAT 网络收不到组播；需要用 WSL 的 mirrored 网络模式，否则请用方式 A。
+3. **消息定义**：电脑上必须有与小车**同一版本**的自定义接口包。克隆本仓库并切换到与小车部署一致的提交，然后只编译接口包：
+
+   ```bash
+   source /opt/ros/humble/setup.bash
+   sudo apt install -y ros-humble-vision-msgs
+   colcon build --base-paths ros2_ws/src --packages-select \
+     roscar_interfaces capture_task_interfaces execution_mode_interfaces person_interfaces gimbal_interfaces
+   source install/setup.bash
+   ```
+
+4. **环境变量**（每个终端都要设置）：
+
+   ```bash
+   export ROS_DOMAIN_ID=182
+   export ROS_LOCALHOST_ONLY=0
+   ```
+
+   小车未设置 `RMW_IMPLEMENTATION`，即 Humble 默认的 Fast DDS；电脑端也保持默认即可，不需要复制小车的 XML。
+   图像话题（如 `/camera/color/image_raw`）数据量大，经 Wi-Fi 订阅会占满带宽，远程查看画面优先订阅 `/perception/detections_preview/compressed`。
+
+#### 第 0 步：确认能看到哪些接口
+
+```bash
+ros2 node list
+ros2 service list -t
+ros2 topic list -t
+ros2 action list -t
+```
+
+- 方式 B 下 `ros2 node list` 为空：多半是网络/组播或域号问题，先排查网络，不要反复调用业务服务。
+- 看不到某个接口（例如 `/capture/face`）：说明小车上没有启动对应功能，需要在小车上按 2.2 和 3.1 的入口启动，或联系部署人员。
+
+#### 远程调用注意事项
+
+- **同一时间只让一个人控制小车**。远程客户端也能发送 `/chassis/cmd_vel`、调用 `/control/authorize`，运动仍受 motion_guard 授权和运动开关约束，但多人同时操作容易互相干扰。随时可以调用 `/control/stop` 停车。
+- 拍照、播报等服务调用会一直等到任务结束才返回（最长约 95 秒），不要因为终端暂时没返回就重复调用，重复调用会得到 `busy`。
+- 时间相关的新鲜度检查都在小车端完成，电脑与小车不需要精确对时；但长时间订阅时建议两端时间大致一致，便于看日志。
+- 不要在命令行、脚本或日志中写入 SSH 密码和云端 token。
 
 
 ## 3. 拍照并上传：最常用的新增接口
@@ -787,6 +874,7 @@ pub.publish(msg)
 
 | 现象 | 先检查什么 |
 |---|---|
+| 远程电脑 `ros2 node list` 为空 | 是否同网段能 ping 通、路由器是否隔离客户端或拦截组播、防火墙、两端 `ROS_DOMAIN_ID=182` 与 `ROS_LOCALHOST_ONLY=0`；不行就改用 SSH 登录小车调用（2.5 方式 A） |
 | 服务列表没有 `/capture/*` | `with_ros_api` 默认关闭；确认 api_node、overlay、域号与 DDS |
 | 拍照返回 busy | 是否已有 ROS、云端或直接 Action 任务占执行器；本接口不排队 |
 | rejected / voice_mode_active | 语音舌苔任务尚未退出；先等其清理完成 |
