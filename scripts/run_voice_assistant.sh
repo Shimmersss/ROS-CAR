@@ -85,6 +85,10 @@ fi
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-182}"
 export ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}"
 voice_tts_enabled="${VOICE_TTS_ENABLED:-true}"
+voice_asr_enabled="${VOICE_ASR_ENABLED:-true}"
+if [[ "${voice_asr_enabled}" != true && "${voice_asr_enabled}" != false ]]; then
+  echo 'VOICE_ASR_ENABLED 必须为 true 或 false。' >&2; exit 2
+fi
 if [[ "${voice_tts_enabled}" != true && "${voice_tts_enabled}" != false ]]; then
   echo 'VOICE_TTS_ENABLED 必须为 true 或 false。' >&2
   exit 2
@@ -108,6 +112,6 @@ use_xfyun_asr=false
 [[ "${asr_backend}" == xfyun ]] && use_xfyun_asr=true
 echo "语音后端: ASR=${asr_backend}, 控制=固定规则, TTS=本地"
 setsid ros2 launch offline_voice offline_voice.launch.py \
-  use_xfyun_asr:="${use_xfyun_asr}" enable_wake_driver:=true enable_tts:="${voice_tts_enabled}" "$@" &
+  use_xfyun_asr:="${use_xfyun_asr}" asr_enabled:="${voice_asr_enabled}" enable_wake_driver:=true enable_tts:="${voice_tts_enabled}" "$@" &
 launch_pid=$!
 wait "${launch_pid}"

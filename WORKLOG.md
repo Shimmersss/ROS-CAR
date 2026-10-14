@@ -49,6 +49,33 @@
 
 # 工作记录
 
+## 2026-10-14：ASR 开关板端部署与验证通过
+
+- 用户重新开机后恢复 `wheeltec@192.168.31.145` 连接。沿用 Windows 已知主机密钥和 SSH 密钥登录；WSL 缺少该主机的信任记录，没有绕过校验。分支仍为 `codex/asr-runtime-switch`，按用户要求实机通过后再通过 WSL 推送 PR。
+- 在独立目录 `/home/wheeltec/ROSCAR-asr-switch-20261014-e12e389` 原生构建 offline_voice、voice_command_router、roscar_api 三包通过。板端首次单测缺少模式配置 fixture，导致 1 失败/3 错误；补齐现有 modes.yaml 后 **1614 项单测和 6 项隔离 ROS 开关回归全部通过**，未为此更改产品源码。原始失败与成功日志均保留。
+- 确认 `/control/stop` 返回成功后暂停原主链，domain 195 上使用原有真实 Qwen3/Silero 和 MeloTTS/ALSA。两轮模型 RSS 1,283,348 / 1,252,860 KiB，加载 7.37 / 6.77 秒，关闭 0.684 / 0.683 秒；关闭成功后 PID 消失、worker RSS 为零。ASR 关闭时正在播放的 `/voice/say` 正常完成，随后新的播报也完成；第二轮重载后的合成数字音频识别到“停止。”。这是板端真实模型与播放软件完成确认，未取得本轮人工听感或真人识别准确率验收。
+- 部署前逐项校验车上原文件与 origin/main 基线及待部署文件哈希一致，只替换 10 个语音/启动相关文件；备份为 `/home/wheeltec/ROSCAR-backups/asr-switch-20261014-e12e389/source-before.tar` 及 manifest。没有改变 current 指向、私有服务配置、跟随/急停参数、相机或模型权重；正式目录三包原生增量构建通过。
+- 正式 `roscar-robot.service` 重启后立即确认 STOP，domain 182 上复核关闭释放、关闭期间真实麦克风继续流式采集与 `/voice/say` 完成、重载后监听/取消和播报通过。新模型 PID 与旧 PID 不同，CPU 亲和性为 0、1；`/cmd_vel`、`/voice/audio`、`/voice/asr_text`、`/voice/tts_state` 发布者均为 1，观测速度峰值为 0。显式取消监听产生原识别器的 `Listening cancelled` 日志，服务返回成功，模型仍可用，未修改原取消实现。
+- 测试收尾正式服务 active，ASR ENABLED，车辆 IDLE/DISARMED，无残留隔离模型/TTS 进程。此前拍照门面服务重启后本就 inactive，本轮保持该状态；云端地址仍暂缓配置。同步接口表、入口说明和 README。证据为 `artifacts/asr-switch-20261014/board-{build,retest,real,deploy,main-smoke}.log`、`board-real-result.json`、`board-main-result.json`，同样保存在车端隔离目录。最小审查覆盖基线/备份、唯一音频与速度出口、CPU 继承、内存释放确认及验证边界；本次不进行运动、真人识别准确率或云端拍照验收。
+
+## 2026-10-14：ASR 开关板端测试与 PR 准备（等待网络）
+
+- 用户要求本地测试后到小车验证，通过后经 WSL 推送 PR。已从最新 origin/main 创建 `codex/asr-runtime-switch`，仅包含 ASR 功能改动，不夹带此前拍照门面部署记录；尚未推送或创建 PR。
+- 核对专用 Humble 验证副本与当前识别/路由源码，补同步进程测试的 Linux 平台跳过条件后重跑：1614 项相关单测及 6 项 ROS 开关回归全部通过。日志为 `artifacts/asr-switch-20261014/retest-before-car.log`；验证挂载已清理。
+- Windows 和 WSL 均无法连接文档中的 `192.168.31.145:22`（超时/No route to host），历史 Wi-Fi/网线地址也不可达，电脑物理有线网卡显示未连接。已询问当前网络或新 IP；没有连接小车、上传、停止服务或进行板端测试，实机结果仍待验证，因此尚不满足用户设定的 PR 推送条件。
+
+## 2026-10-14：ROS 控制 ASR 启停并释放模型内存
+
+- 按用户要求修改项目，新增 `/voice/set_asr_enabled`（std_srvs/SetBool）及 `/voice/asr_enabled`、`/voice/asr_status`。本轮仅本地实现与验证，未上传或重启小车，未修改此前已运行的拍照/播报服务或车辆配置。
+- 轻量 `asr_manager` 保留开关及原监听/取消服务，独立 worker 加载 ASR/VAD；关闭先禁止转发、使旧代次失效，再确认工作进程退出，回收原生模型会话/缓冲。原生计算不响应时有界终止，只在确认退出后返回成功；重新开启等待真实加载握手，失败/超时清理，不自动重启崩溃模型。Linux parent-death signal 防止控制进程异常退出后遗留模型。
+- 结果/状态及内部监听服务使用每次启动唯一且合法的 ROS 名称，外部 `/voice/start_listening` 和 `/voice/cancel_listening` 由 manager 稳定转发；避免重载时命中旧 DDS 服务实例。默认仍开启，`VOICE_ASR_ENABLED`/launch `asr_enabled` 可指定初值；参数只读、运行中用服务。保留 Qwen3 CPU 两线程、讯飞显式回退与原识别实现；CPU 布局识别 manager/worker，重载继承亲和性。
+- router 关闭普通会话、撤销尚在等待的语音授权、拒绝关闭期间唤醒与迟到结果；恢复需重新唤醒，manager 心跳丢失也关闭普通会话。保留 TTS、共享录音、独立 KWS 的原配置，不取消任务播报、不增加速度出口或恢复运动。同步 README、接口手册、入口说明、长期约定及流程回归入口。
+- 本机专用 Humble x86_64 根文件系统内，独立工作区原生构建四个语音/模式依赖包通过；与改动相关的 **1614 项单测通过**，新增 **6 项真实 ROS 开关回归通过**（工作进程为有真实内存的替身、播报为模拟），覆盖重复开关、关闭释放、重载/旧代次、加载中关闭、失败/超时、进程崩溃及播报持续。进程单测包含真实强制退出和父进程异常后的内存释放，属于 1614 项之内。
+- 使用既有真实 Qwen3-ASR/Silero 权重在同一隔离环境完成两轮加载/关闭：worker RSS 分别 1,274,740 / 1,287,252 KiB，加载约 4.61 / 3.64 秒，关闭约 0.52 / 0.48 秒，关闭后 PID 消失、worker RSS 为零；第二轮合成数字音频回放识别到“停止。”。这是本机 x86_64/CPU 的进程占用，不代表系统空闲内存必定增加同样数量，也不是 Jetson 或真人识别验收。
+- 验证环境边界：本机 Fast DDS 跨进程监听请求超时；真实模型/数字回放改用已安装的 Cyclone DDS 通过，仅作用于测试环境，未改变产品/小车默认 RMW。原有五项流程脚本在旧验证 underlay 缺 roscar_api 时未能运行，本轮没有将整套流程记为通过；针对性语音包与新增开关检查均通过。
+- 中间修复与证据保留：唯一内部 topic 最初可能以 UUID 数字开头，现统一加字母前缀；修复状态检测与启停竞争。新增测试曾因方法分段错误在关闭后取得 PID 0，导致本轮验证进程被误结束，现归回正确场景并在发送信号前断言 PID>1；不涉及小车或生产控制。正常 SIGTERM 的 Humble wait-set 关闭异常也已妥善处理。最后源码测试没有诊断注入。
+- 最小审查核对模型只在 worker、进程确认后返回、父进程死亡/加载取消/失败资源清理、代次和会话门禁、播报独立、只读启动参数、旧服务兼容、CPU 继承及文档边界。Python/XML/Bash 语法与 Git 空白检查通过；源模型只读绑定，结束清理本轮挂载。证据在 `artifacts/asr-switch-20261014/`，不 push GitHub。
+
 ## 2026-10-13：完善 ROS 接口调用手册
 
 - 按当前消息定义、启动参数与服务实现补齐 `docs/ROS接口使用文档.md`：FallAlarm 全字段/阶段/有效性与断流处理、PersonState 枚举及关节单位、CLI/Python 跌倒订阅、相机/身份/性能话题，以及 TaskHold 申请/续期/释放和急停输入。纠正进程内配准与 ReID 不能同开的过时说明，明确 CUDA/辅助模块选项属于感知入口，公共 API 尚未透传；同步 README 文档索引。

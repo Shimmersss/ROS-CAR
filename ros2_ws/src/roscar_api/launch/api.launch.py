@@ -58,6 +58,7 @@ def start(context):
         include('offline_voice', 'offline_voice.launch.py', {
             'config': get('voice_config'), 'enable_speech_action': 'true',
             'enable_wake_driver': get('enable_wake_driver'), 'use_xfyun_asr': get('use_xfyun_asr'),
+            'asr_enabled': get('asr_enabled'),
             'execution_modes_config': get('modes_config') if yes('with_tongue') else ''})
     if yes('with_speech') or yes('with_voice'):
         include('roscar_api', 'speech_api.launch.py', {'with_tts': get('speech_with_tts'),
@@ -86,7 +87,7 @@ def generate_launch_description():
         sot_enabled='false', sot_model_path='', reid_reacquire_enabled='false',
         registration_calibration_file='', registration_expected_serial='',
         with_voice='false', with_speech='false', speech_with_tts='false', with_announcements='true',
-        enable_wake_driver='true', use_xfyun_asr='false', with_tongue='false',
+        enable_wake_driver='true', use_xfyun_asr='false', asr_enabled='true', with_tongue='false',
         tongue_safety_profile='robot', tongue_server_url='http://172.19.128.171:8096',
         tongue_camera_topic='/camera/color/image_raw', tongue_camera_profile='',
         with_gimbal='false', gimbal_port='', gimbal_mock='false',
