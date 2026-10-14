@@ -25,6 +25,8 @@ def test_emergency_capture_and_guard_have_reserved_cores():
     assert module.cores_for({'audio_node'})=={5}
     assert module.cores_for({'guard'})=={5}
     assert module.cores_for({'tts_node'})=={0,1}
+    assert module.cores_for({'asr_manager'})=={0,1}
+    assert module.cores_for({'python3','offline_voice.asr_worker'})=={0,1}
     assert module.cores_for({'reid_observer'})=={0,1}
     assert module.cores_for({'pose_tracker'})=={2,3}
     assert module.cores_for({'other'})=={0,1,2,3}

@@ -35,6 +35,8 @@
 - Qwen3-ASR CPU2、MeloTTS 不替换；热词、阿克曼转向、微动标定及总运动开关默认关闭，未经真人实车验收不得默认开启。测试中的校准/免 KWS 参数只用于隔离模拟域。
 - 主入口 `VOICE_BACKEND=offline`；讯飞 ASR 仅通过显式 `ASR_BACKEND=xfyun` 回退，不能通过旧 online 路径恢复 LLM 控制。
 
+- ASR 运行开关为 `/voice/set_asr_enabled`（SetBool），由轻量 asr_manager 管理独立识别进程；关闭成功须确认进程退出，释放 ASR/VAD 及原生会话内存。TTS、共享录音和 KWS 原配置独立保留；关闭清普通会话，重新开启须重新唤醒，不自动加载崩溃进程或恢复旧动作。完整入口使用 manager，直接 `asr_node` 仅保留兼容/隔离测试。`VOICE_ASR_ENABLED`/`asr_enabled` 只设置启动初值，运行时状态及 PID/RSS 见 `/voice/asr_status`。
+
 ## 语音与舌苔执行模式整合约定（2026-10-04）
 
 - 新分支以 `docs/语音舌苔流程整合与验收.md` 为整合入口；原舌苔模块来自 `codex/tongue-execution-mode` / `1b422eb`，来源分支的旧验证记录不作为本分支验收。
