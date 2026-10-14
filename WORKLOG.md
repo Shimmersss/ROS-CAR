@@ -1720,3 +1720,11 @@
 
 - 拉取并合并 origin/main c897d3f（PR #26），保留此前本地同步记录，无冲突。更新包括默认 TTS 切换为 Matcha 中文女声 + Vocos、模型准备及启动检查，保持唯一播报队列与既有 ROS 接口。
 - 最小审查核对模型加载及失败清理、启动依赖清单；offline_voice 软件测试 19 项通过、1 项因运行依赖缺失跳过，C 入口测试 6 项通过；改动 Python/shell 语法与远端 diff 空白检查通过。未进行 ROS 编译、实际模型合成或小车部署，未推送本地同步记录。
+
+
+## 2026-10-14：Matcha 新语音部署到小车
+
+- 经停车服务确认后停止旧服务，白名单部署 d5f2096 到 ROSCAR-matcha-20261014-d5f2096；617 个源码文件校验一致，排除厂商包/权重/私有配置。车端原生构建 21 包通过，现有驱动/底盘 overlay/Pose Python/权重复用；官方 Matcha-baker + Vocos 资产下载、传输及哈希校验通过。新 current 切换，保留旧目录与 before-matcha 备份。
+- 原用户服务增加试运行 ExecStart 覆盖，强制 MOTION_ENABLED/FOLLOW_AUTO_ARM/FOLLOW_TARGET_AUTO_RECOVER=false，私有 env 未改；本次未恢复运动。首次启动的日志目录缺失已补齐，服务最终 active。
+- 车端隔离 ASR ROS 回归 6 项、TTS 加载清理 7 项通过。真实 ASR 关闭后旧进程退出，RSS 1,285,200 KiB→0；再开启新进程成功。新女声测试句 SayText 返回 completed，用户现场确认声音正常、唤醒后查询状态播报与原逻辑一致。真实相机 587 帧 640×480 rgb8，787 条速度样本全零，IDLE/DISARMED/运动关闭。官方词典 shei2 token 警告保留，未据本次测试声称全词汇读音验收。
+- 新增部署验证文档并维护 README 索引；AGENTS 仅更新当前部署入口/运动关闭覆盖事实。证据取回 artifacts/deploy-matcha-20261014/evidence，最小审查核对源码差异、模型来源哈希、服务/运动边界及文档链接。上述隔离合成测试与实际相机/语音测试分别记录，不声称跟随、制动、避障、测距标定或急停验收。
