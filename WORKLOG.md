@@ -1707,3 +1707,31 @@
 
 - `docs/ROS接口使用文档.md` 新增 2.5 节“远程连接小车”：小车当前地址 192.168.31.145、SSH 用户 wheeltec（密码不入库）、Humble、域 182、`ROS_LOCALHOST_ONLY=0`；SSH 登录调用与同网段 DDS 直连两种方式、只编译接口包的命令、先查看实际运行接口、单人控制与不重复调用等注意事项；常见问题表增加远程无节点排查。
 - 2026-10-14 只读核对小车 192.168.31.145：roscar-robot.service 运行固定机位主链（/home/wheeltec/ROSCAR-current，域 182、ROS_LOCALHOST_ONLY=0、fastdds_robot.xml 为 SHM+UDPv4 不限地址）；文档列出实查的服务/话题，/capture/* 未运行（开机入口 WITH_CAPTURE_TASKS=false），主链 motion_enabled=true。从 NAT 后的电脑可 SSH 但 DDS 发现不到节点（小车无法回连），同网段直连未实测。仅文档改动，未调用任何服务、未改板端配置。
+
+
+## 2026-10-14：拉取远端最新主线
+
+- 当前工作区原为已合入远端的 docs/remote-ros-access（4525776），无未提交改动；拉取 origin 后切回本地 main，将 38fe105 快进至 1faea7a，保留原文档分支及历史，未发生冲突。同步范围包含远程连接说明及 PR #25 的 ASR 运行开关、独立进程管理和内存释放逻辑；拍照、舌苔及其余现有功能保留。
+- 最小审查：核对 ASR 入口、进程停止与路由会话清理；11 个 Python 文件及 2 个 shell 脚本语法检查通过，远端变更 diff 空白检查通过。完整 scripts/ci_unit_tests.sh 本机运行通过（2102 项 pytest、2 项跳过，另 22 项录像工具和 1 项入口路径测试）；日志位于忽略的 artifacts/remote-update-20261014/ci.log。
+- 本次仅更新当前本地仓库并记录验证，未推送 GitHub、未同步另一台 WSL、未部署或操作小车。上述软件回归不代表 ROS 编译或实机验收。
+
+
+## 2026-10-14：再次同步远端主线
+
+- 拉取并合并 origin/main c897d3f（PR #26），保留此前本地同步记录，无冲突。更新包括默认 TTS 切换为 Matcha 中文女声 + Vocos、模型准备及启动检查，保持唯一播报队列与既有 ROS 接口。
+- 最小审查核对模型加载及失败清理、启动依赖清单；offline_voice 软件测试 19 项通过、1 项因运行依赖缺失跳过，C 入口测试 6 项通过；改动 Python/shell 语法与远端 diff 空白检查通过。未进行 ROS 编译、实际模型合成或小车部署，未推送本地同步记录。
+
+
+## 2026-10-14：Matcha 新语音部署到小车
+
+- 经停车服务确认后停止旧服务，白名单部署 d5f2096 到 ROSCAR-matcha-20261014-d5f2096；617 个源码文件校验一致，排除厂商包/权重/私有配置。车端原生构建 21 包通过，现有驱动/底盘 overlay/Pose Python/权重复用；官方 Matcha-baker + Vocos 资产下载、传输及哈希校验通过。新 current 切换，保留旧目录与 before-matcha 备份。
+- 原用户服务增加试运行 ExecStart 覆盖，强制 MOTION_ENABLED/FOLLOW_AUTO_ARM/FOLLOW_TARGET_AUTO_RECOVER=false，私有 env 未改；本次未恢复运动。首次启动的日志目录缺失已补齐，服务最终 active。
+- 车端隔离 ASR ROS 回归 6 项、TTS 加载清理 7 项通过。真实 ASR 关闭后旧进程退出，RSS 1,285,200 KiB→0；再开启新进程成功。新女声测试句 SayText 返回 completed，用户现场确认声音正常、唤醒后查询状态播报与原逻辑一致。真实相机 587 帧 640×480 rgb8，787 条速度样本全零，IDLE/DISARMED/运动关闭。官方词典 shei2 token 警告保留，未据本次测试声称全词汇读音验收。
+- 新增部署验证文档并维护 README 索引；AGENTS 仅更新当前部署入口/运动关闭覆盖事实。证据取回 artifacts/deploy-matcha-20261014/evidence，最小审查核对源码差异、模型来源哈希、服务/运动边界及文档链接。上述隔离合成测试与实际相机/语音测试分别记录，不声称跟随、制动、避障、测距标定或急停验收。
+
+
+### Matcha 部署验证记录提交 PR
+
+- 使用 codex/matcha-deployment-validation 分支提交本次车端部署文档、README 索引、当前运动关闭入口说明及同步/验证记录；无模型、凭据或构建产物。提交前检查文档索引、证据一致性与 diff 空白；代码实现已在远端 PR #25/#26 合并，本 PR 只补充部署结果与操作边界。通过已授权的 WSL GitHub 登录推送，不改变其现有工作区，不操作小车服务。
+
+- 已推送 codex/matcha-deployment-validation 并创建 PR #27：https://github.com/Shimmersss/ROS-CAR/pull/27 ，目标 main，未合并。本次使用既有 WSL GitHub 授权；未修改车端服务或运动状态。
