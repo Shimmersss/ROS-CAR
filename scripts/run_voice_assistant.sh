@@ -38,7 +38,12 @@ fi
 if [[ "${voice_backend}" == offline ]]; then
   export ROSCAR_OFFLINE_MODEL_ROOT="${ROSCAR_OFFLINE_MODEL_ROOT:-${offline_root}/models}"
   kws_model="${ROSCAR_OFFLINE_MODEL_ROOT}/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20"
-  model_files=("${ROSCAR_OFFLINE_MODEL_ROOT}/vits-melo-tts-zh_en/model.onnx"
+  model_files=("${ROSCAR_OFFLINE_MODEL_ROOT}/matcha-icefall-zh-baker/model-steps-3.onnx"
+    "${ROSCAR_OFFLINE_MODEL_ROOT}/matcha-icefall-zh-baker/lexicon.txt"
+    "${ROSCAR_OFFLINE_MODEL_ROOT}/matcha-icefall-zh-baker/tokens.txt"
+    "${ROSCAR_OFFLINE_MODEL_ROOT}/matcha-icefall-zh-baker/date.fst"
+    "${ROSCAR_OFFLINE_MODEL_ROOT}/matcha-icefall-zh-baker/number.fst"
+    "${ROSCAR_OFFLINE_MODEL_ROOT}/vocos-22khz-univ.onnx"
     "${ROSCAR_OFFLINE_MODEL_ROOT}/silero_vad.onnx"
     "${kws_model}/encoder-epoch-13-avg-2-chunk-8-left-64.int8.onnx"
     "${kws_model}/decoder-epoch-13-avg-2-chunk-8-left-64.onnx"
