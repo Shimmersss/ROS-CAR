@@ -32,7 +32,7 @@
 - 固定规则运行链使用 `parse_intent -> MotionRequest -> Capability Validator/Ackermann adapter`；旧 `parse_local_text` 仅供兼容文本回归。禁止 LLM 生成底盘运动控制。
 - `motion_guard` 是唯一最终 `/cmd_vel` 发布者和运动授权来源。默认启动 IDLE/DISARMED、不自动授权；显式授权必须绑定当前模式返回的 epoch，且有新鲜零请求与 KWS 健康心跳。停止/故障/模式切换/重启使旧票据失效。例外（用户 10-12 合并 PR #18 时确认保留）：跟随入口可 `command_mode=FOLLOW` 启动并 `auto_arm`，仅从 DISARMED+FOLLOW 且全部检查通过时授权；STOP 回 IDLE 后不会被自动授权撤销，ESTOP/急停通道/非目标故障仍按锁存与显式复位处理。
 - ESTOP 锁存持久化，普通 STOP/模式切换不能清除；复位仅回到未授权状态。KWS 常开，包括 TTS 期间；共享录音只允许一个 ALSA 所有者。
-- Qwen3-ASR CPU2、MeloTTS 不替换；热词、阿克曼转向、微动标定及总运动开关默认关闭，未经真人实车验收不得默认开启。测试中的校准/免 KWS 参数只用于隔离模拟域。
+- Qwen3-ASR CPU2 保留；用户 2026-10-14 选择 Matcha 中文女声，源码默认 TTS 改为 Matcha-baker + Vocos、CPU 两线程，仍复用唯一队列与原 ROS 接口。模型缺失须明确失败，不静默恢复旧 Melo；历史数字音频工具仍可显式准备 Melo 权重。热词、阿克曼转向、微动标定及总运动开关默认关闭，未经真人实车验收不得默认开启。测试中的校准/免 KWS 参数只用于隔离模拟域。
 - 主入口 `VOICE_BACKEND=offline`；讯飞 ASR 仅通过显式 `ASR_BACKEND=xfyun` 回退，不能通过旧 online 路径恢复 LLM 控制。
 
 - ASR 运行开关为 `/voice/set_asr_enabled`（SetBool），由轻量 asr_manager 管理独立识别进程；关闭成功须确认进程退出，释放 ASR/VAD 及原生会话内存。TTS、共享录音和 KWS 原配置独立保留；关闭清普通会话，重新开启须重新唤醒，不自动加载崩溃进程或恢复旧动作。完整入口使用 manager，直接 `asr_node` 仅保留兼容/隔离测试。`VOICE_ASR_ENABLED`/`asr_enabled` 只设置启动初值，运行时状态及 PID/RSS 见 `/voice/asr_status`。
@@ -98,7 +98,7 @@
 - 主动构建和 B/C 运行统一使用仓库根目录 `install/`；API 可选启动语音、舌苔及云台，导航保留独立且互斥的 guard 入口。`roscar_api interfaces` 枚举运行中接口，`target claim --id epoch:track_id` 和 `mode` 提供认领与模式调用。
 - 主人生命周期由 `/perception/owner_state` 发布，`/perception/claim_owner` 支持中央/精确轨迹认领。丢失默认等待 10 秒，期限内找回保留主人，到期清除旧绑定和联动代次并开放重新认领；仅原先启用的单人自动认领策略恢复三帧确认，主动释放仍抑制自动认领。这个窗口不得延长 motion_guard 的目标运动宽限或直接授予运动权限。主选择 LOST/陈旧/冲突时，地面及统一定位的选中输出也必须无效。
 - V5.1 语音入口保留 V5 的本地控制与 DeepSeek 结构化控制工具，但不再声明或接受蜂鸣器动作；`voice_assistant.launch.py` 不启动蜂鸣器适配节点。独立 `voice_command_router` 包内的蜂鸣器解析与 GPIO 源码保留，历史条目中关于语音蜂鸣器的描述不代表当前入口行为。
-- 本地合并主线采用共享录音 + Qwen3-ASR / Silero VAD + 固定语义规则 + 常开 KWS + 唯一 MeloTTS；8 秒有界续聊，运动显式绑定 epoch 授权，不能由方向口令自动授权。ASR_BACKEND=xfyun 只替换识别，仍消费共享音频。远端旧 continuous_asr 实现不合入，CONTINUOUS_ASR 不切换录音方案。本地 C 新鲜 FallAlarm 可触发阶段语音，不触发底盘动作。
+- 本地源码采用共享录音 + Qwen3-ASR / Silero VAD + 固定语义规则 + 常开 KWS + 唯一 Matcha 中文女声/Vocos；8 秒有界续聊，运动显式绑定 epoch 授权，不能由方向口令自动授权。ASR_BACKEND=xfyun 只替换识别，仍消费共享音频。远端旧 continuous_asr 实现不合入，CONTINUOUS_ASR 不切换录音方案。本地 C 新鲜 FallAlarm 可触发阶段语音，不触发底盘动作。
 
 ## 测试与 CI
 

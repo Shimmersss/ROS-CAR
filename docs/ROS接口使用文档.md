@@ -530,7 +530,7 @@ publisher.publish(msg)  # 放在周期回调中，每次生成新时戳
 
 ### 5.5 语音与这些接口的关系
 
-正式语音入口使用共享录音、Qwen3-ASR、Silero VAD、固定语义规则、常开 KWS 和唯一 MeloTTS。固定规则经 `MotionRequest` 和车辆能力适配后提交请求；`motion_guard` 是最终授权和速度出口。方向口令不会自动授权，不允许 LLM 生成底盘运动控制。
+源码语音入口使用共享录音、Qwen3-ASR、Silero VAD、固定语义规则、常开 KWS 和唯一 Matcha 中文女声（Vocos）播报器。2026-10-14 此次模型替换尚未部署，小车此前运行的仍是 Melo；模型准备见 [文字播报接口](文字播报ROS接口.md)。固定规则经 `MotionRequest` 和车辆能力适配后提交请求；`motion_guard` 是最终授权和速度出口。方向口令不会自动授权，不允许 LLM 生成底盘运动控制。
 
 `/voice/command` 与 `/voice/command_result` 是结构化控制/结果接口，不是文字播报服务，也不是任意自然语言的聊天接口。日常语音操作见[语音控制说明书](语音控制使用说明书.md)，开发边界见[语音优化无车实施与验收](语音优化无车实施与验收.md)。
 
