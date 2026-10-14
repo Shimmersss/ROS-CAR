@@ -1733,3 +1733,5 @@
 ### Matcha 部署验证记录提交 PR
 
 - 使用 codex/matcha-deployment-validation 分支提交本次车端部署文档、README 索引、当前运动关闭入口说明及同步/验证记录；无模型、凭据或构建产物。提交前检查文档索引、证据一致性与 diff 空白；代码实现已在远端 PR #25/#26 合并，本 PR 只补充部署结果与操作边界。通过已授权的 WSL GitHub 登录推送，不改变其现有工作区，不操作小车服务。
+
+- 已推送 codex/matcha-deployment-validation 并创建 PR #27：https://github.com/Shimmersss/ROS-CAR/pull/27 ，目标 main，未合并。本次使用既有 WSL GitHub 授权；未修改车端服务或运动状态。
