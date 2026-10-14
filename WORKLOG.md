@@ -1699,3 +1699,10 @@
 
 - `docs/ROS接口使用文档.md` 新增 2.5 节“远程连接小车”：小车当前地址 192.168.31.145、SSH 用户 wheeltec（密码不入库）、Humble、域 182、`ROS_LOCALHOST_ONLY=0`；SSH 登录调用与同网段 DDS 直连两种方式、只编译接口包的命令、先查看实际运行接口、单人控制与不重复调用等注意事项；常见问题表增加远程无节点排查。
 - 2026-10-14 只读核对小车 192.168.31.145：roscar-robot.service 运行固定机位主链（/home/wheeltec/ROSCAR-current，域 182、ROS_LOCALHOST_ONLY=0、fastdds_robot.xml 为 SHM+UDPv4 不限地址）；文档列出实查的服务/话题，/capture/* 未运行（开机入口 WITH_CAPTURE_TASKS=false），主链 motion_enabled=true。从 NAT 后的电脑可 SSH 但 DDS 发现不到节点（小车无法回连），同网段直连未实测。仅文档改动，未调用任何服务、未改板端配置。
+
+
+## 2026-10-14：拉取远端最新主线
+
+- 当前工作区原为已合入远端的 docs/remote-ros-access（4525776），无未提交改动；拉取 origin 后切回本地 main，将 38fe105 快进至 1faea7a，保留原文档分支及历史，未发生冲突。同步范围包含远程连接说明及 PR #25 的 ASR 运行开关、独立进程管理和内存释放逻辑；拍照、舌苔及其余现有功能保留。
+- 最小审查：核对 ASR 入口、进程停止与路由会话清理；11 个 Python 文件及 2 个 shell 脚本语法检查通过，远端变更 diff 空白检查通过。完整 scripts/ci_unit_tests.sh 本机运行通过（2102 项 pytest、2 项跳过，另 22 项录像工具和 1 项入口路径测试）；日志位于忽略的 artifacts/remote-update-20261014/ci.log。
+- 本次仅更新当前本地仓库并记录验证，未推送 GitHub、未同步另一台 WSL、未部署或操作小车。上述软件回归不代表 ROS 编译或实机验收。
