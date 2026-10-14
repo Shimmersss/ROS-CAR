@@ -1728,3 +1728,8 @@
 - 原用户服务增加试运行 ExecStart 覆盖，强制 MOTION_ENABLED/FOLLOW_AUTO_ARM/FOLLOW_TARGET_AUTO_RECOVER=false，私有 env 未改；本次未恢复运动。首次启动的日志目录缺失已补齐，服务最终 active。
 - 车端隔离 ASR ROS 回归 6 项、TTS 加载清理 7 项通过。真实 ASR 关闭后旧进程退出，RSS 1,285,200 KiB→0；再开启新进程成功。新女声测试句 SayText 返回 completed，用户现场确认声音正常、唤醒后查询状态播报与原逻辑一致。真实相机 587 帧 640×480 rgb8，787 条速度样本全零，IDLE/DISARMED/运动关闭。官方词典 shei2 token 警告保留，未据本次测试声称全词汇读音验收。
 - 新增部署验证文档并维护 README 索引；AGENTS 仅更新当前部署入口/运动关闭覆盖事实。证据取回 artifacts/deploy-matcha-20261014/evidence，最小审查核对源码差异、模型来源哈希、服务/运动边界及文档链接。上述隔离合成测试与实际相机/语音测试分别记录，不声称跟随、制动、避障、测距标定或急停验收。
+
+
+### Matcha 部署验证记录提交 PR
+
+- 使用 codex/matcha-deployment-validation 分支提交本次车端部署文档、README 索引、当前运动关闭入口说明及同步/验证记录；无模型、凭据或构建产物。提交前检查文档索引、证据一致性与 diff 空白；代码实现已在远端 PR #25/#26 合并，本 PR 只补充部署结果与操作边界。通过已授权的 WSL GitHub 登录推送，不改变其现有工作区，不操作小车服务。
