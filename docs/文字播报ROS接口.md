@@ -1,6 +1,6 @@
 # 文字播报 ROS 接口使用手册
 
-更新日期：2026-10-13；对应当前 PR 合并远端 `main` 后的代码。这个接口让程序发送一段文字，交给已有 MeloTTS 队列合成并播放。无需先喊唤醒词，也不会把正文交给语音意图或底盘运动解析。
+更新日期：2026-10-14；源码默认播报器已按用户选择改为 Matcha 中文女声（Matcha-baker + Vocos），此次模型替换尚未部署到小车。这个接口让程序发送一段文字，交给唯一 TTS 队列合成并播放。无需先喊唤醒词，也不会把正文交给语音意图或底盘运动解析。
 
 ## 1. 选择哪种调用方式
 
@@ -44,7 +44,15 @@ B/C 整机 `scripts/start_project.sh` 在 `WITH_VOICE=true` 且 `VOICE_TTS_ENABL
 ros2 launch roscar_api speech_api.launch.py with_tts:=true
 ```
 
-前提是本机已经准备 `sherpa_onnx` 等离线依赖、MeloTTS 模型与 ALSA 播放设备。模型默认从 `/home/wheeltec/ROSCAR-offline/models/vits-melo-tts-zh_en` 加载；也可以在启动前设置 `ROSCAR_OFFLINE_MODEL_ROOT` 为本机模型根目录。不会自动下载模型。
+前提是本机已经准备 `sherpa_onnx` 等离线依赖、Matcha 中文模型、Vocos 声码器与 ALSA 播放设备。默认模型目录为 `/home/wheeltec/ROSCAR-offline/models/matcha-icefall-zh-baker`，包含 `model-steps-3.onnx`、`lexicon.txt`、`tokens.txt`、`date.fst`、`number.fst`；声码器为模型根目录的 `vocos-22khz-univ.onnx`。可在启动前设置 `ROSCAR_OFFLINE_MODEL_ROOT`，或在 `voice_config` 的 `offline_tts.ros__parameters` 中指定 `model_dir`、`vocoder_model`。CPU 两线程、语速 1.0，输出 22.05 kHz 单声道。运行节点不自动下载，也不静默回退 Melo。
+
+显式准备官方模型（有网络时执行一次）：
+
+```bash
+python3 scripts/prepare_voice_frontend.py --root /home/wheeltec/ROSCAR-offline/models --include-tts --download
+```
+
+`--include-tts` 默认准备 Matcha 和 Vocos；历史 Melo 合成音频复现可显式加 `--tts-model melo`。Matcha-baker 的官方文档标注训练数据仅限非商业用途，选用时核对项目用途，见 [官方模型说明](https://k2-fsa.github.io/sherpa/onnx/tts/pretrained_models/matcha.html#matcha-icefall-zh-baker-chinese-1-female-speaker)。
 
 | launch 参数 | 默认 | 作用 |
 |---|---|---|

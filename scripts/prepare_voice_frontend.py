@@ -50,6 +50,11 @@ def prepare(root, download):
     if download:
         files = [root / 'silero_vad.onnx', root / KWS_NAME / 'tokens.txt']
         files.extend(sorted((root / KWS_NAME).glob('*.onnx')))
+        if 'matcha-icefall-zh-baker.tar.bz2' in ASSETS:
+            files.extend([root / 'matcha-icefall-zh-baker/model-steps-3.onnx',
+                          root / 'vocos-22khz-univ.onnx'])
+        elif 'vits-melo-tts-zh_en.tar.bz2' in ASSETS:
+            files.append(root / 'vits-melo-tts-zh_en/model.onnx')
         (root / 'voice-frontend-manifest.json').write_text(json.dumps(
             {'assets': records, 'files': {str(p.relative_to(root)): digest(p)
                                          for p in files}}, indent=2) + '\n')
@@ -61,12 +66,17 @@ if __name__ == '__main__':
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--download', action='store_true')
     parser.add_argument('--include-asr', action='store_true', help='Also prepare the existing Qwen3-ASR 0.6B INT8 baseline')
-    parser.add_argument('--include-tts', action='store_true', help='Also prepare existing MeloTTS for synthetic WAV tests')
+    parser.add_argument('--include-tts', action='store_true', help='Also prepare the default Matcha Chinese female TTS and Vocos vocoder')
+    parser.add_argument('--tts-model', choices=['matcha', 'melo'], default='matcha',
+                        help='TTS assets to prepare; melo is only for historical synthetic fixtures')
     args = parser.parse_args()
     if args.include_asr:
         name = 'sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25.tar.bz2'
         ASSETS[name] = BASE + 'asr-models/' + name
     if args.include_tts:
-        name = 'vits-melo-tts-zh_en.tar.bz2'
+        name = ('matcha-icefall-zh-baker.tar.bz2' if args.tts_model == 'matcha'
+                else 'vits-melo-tts-zh_en.tar.bz2')
         ASSETS[name] = BASE + 'tts-models/' + name
+        if args.tts_model == 'matcha':
+            ASSETS['vocos-22khz-univ.onnx'] = BASE + 'vocoder-models/vocos-22khz-univ.onnx'
     print(json.dumps(prepare(args.root, args.download), indent=2))

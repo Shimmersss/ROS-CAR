@@ -49,6 +49,14 @@
 
 # 工作记录
 
+## 2026-10-14：按用户选择改用 Matcha 中文女声
+
+- 在独立本地分支 `codex/matcha-chinese-tts` 实施，不向仍开放的 ASR PR #25 混入 TTS 改动。源码默认从 Melo 改为 Matcha-baker 的 `model-steps-3.onnx` + Vocos 22 kHz 声码器，保留 CPU 两线程、语速 1.0、唯一队列、`/voice/say`、SpeakText、播放状态及取消语义。模型/声码器缺失明确失败，加载失败销毁节点并清理原队列线程。
+- 同步语音/整机启动文件预检、官方模型准备脚本、README、当前入口/接口手册和长期约定。`--include-tts` 默认准备 Matcha + Vocos 并记录模型哈希；历史合成工具仍使用原 Melo，历史复现命令显式加 `--tts-model melo`。没有更改权重或添加音频后处理；模型与生成音频均留在忽略的缓存/artifacts。正式小车此时仍运行此前 Melo，本轮未上传或重启车端服务，也未推送 GitHub。
+- 本机私有 Humble x86_64 环境三包（roscar_interfaces、offline_voice、roscar_api）原生构建通过，**1619 项相关单测通过**，包含六种缺失模型文件和原生加载异常后的队列线程清理。真实 Matcha + ROS SayText/SpeakText/唯一队列、模拟 ALSA sink 的专项验证通过：ASR 关闭时播报 completed、空文本拒绝、action 取消确认并关闭 sink、取消后的新播报 completed。实际项目节点生成 22.05 kHz 单声道音频约 5.57 秒，数字样本为 `artifacts/matcha-migration-20261014/matcha-project.wav`。
+- 首次专项运行使用旧 underlay 的 roscar_interfaces，缺少 SayText；已补构建当前接口后通过，保留失败日志。官方词典加载提示四个含 `shei2` 的短语 token 未知；单字“谁”有合法 `shui2`，本次常用提示及取消回归完成，不把这些检查记为完整多音字/真人识别/实车听感验收。Matcha-baker 的数据用途限制已链接官方说明。
+- 最小审查核对默认模型路径/声码器、启动依赖、模型准备与历史复现、取消/完成状态及线程回收；Python/Bash 语法、下载计划、文档链接及 Git 空白检查通过。证据为 `artifacts/matcha-migration-20261014/validation.log`、`runtime-result.json`，验证专用挂载已清理。没有新增文档入口，README 索引无需新增条目。
+
 ## 2026-10-14：ASR 开关板端部署与验证通过
 
 - 用户重新开机后恢复 `wheeltec@192.168.31.145` 连接。沿用 Windows 已知主机密钥和 SSH 密钥登录；WSL 缺少该主机的信任记录，没有绕过校验。分支仍为 `codex/asr-runtime-switch`，按用户要求实机通过后再通过 WSL 推送 PR。

@@ -18,24 +18,33 @@ DEFAULT_MODEL_ROOT = Path(os.environ.get(
 class OfflineTtsNode(XfyunTtsNode):
     def __init__(self):
         super().__init__()
-        self.declare_parameter('model_dir', str(DEFAULT_MODEL_ROOT / 'vits-melo-tts-zh_en'))
+        self.declare_parameter('model_dir', str(DEFAULT_MODEL_ROOT / 'matcha-icefall-zh-baker'))
+        self.declare_parameter('vocoder_model', str(DEFAULT_MODEL_ROOT / 'vocos-22khz-univ.onnx'))
         self.declare_parameter('num_threads', 2)
         self.declare_parameter('speech_speed', 1.0)
-        self._tts = self._load_tts()
-        self.get_logger().info('离线 TTS 模型已加载')
+        try:
+            self._tts = self._load_tts()
+        except Exception:
+            self.destroy_node()  # Do not leave the shared queue worker alive after failed loading.
+            raise
+        self.get_logger().info('离线 TTS 模型已加载：Matcha 中文女声 + Vocos')
 
     def _load_tts(self):
         import sherpa_onnx
 
         model_dir = Path(self.get_parameter('model_dir').value)
-        names = ('model.onnx', 'lexicon.txt', 'tokens.txt', 'date.fst', 'number.fst')
+        names = ('model-steps-3.onnx', 'lexicon.txt', 'tokens.txt', 'date.fst', 'number.fst')
+        vocoder = Path(self.get_parameter('vocoder_model').value)
         missing = [name for name in names if not (model_dir / name).is_file()]
         if missing:
             raise RuntimeError(f'离线 TTS 模型文件缺失: {model_dir}: {missing}')
+        if not vocoder.is_file():
+            raise RuntimeError(f'Matcha 声码器文件缺失: {vocoder}')
         config = sherpa_onnx.OfflineTtsConfig(
             model=sherpa_onnx.OfflineTtsModelConfig(
-                vits=sherpa_onnx.OfflineTtsVitsModelConfig(
-                    model=str(model_dir / names[0]),
+                matcha=sherpa_onnx.OfflineTtsMatchaModelConfig(
+                    acoustic_model=str(model_dir / names[0]),
+                    vocoder=str(vocoder),
                     lexicon=str(model_dir / names[1]),
                     tokens=str(model_dir / names[2]),
                 ),
