@@ -139,7 +139,7 @@ ros2 launch roscar_api api.launch.py with_voice:=true with_tongue:=true
 |---|---|
 | 控制服务 | `/control/set_mode`、`/control/authorize`、`/control/arm`、`/control/disarm`、`/control/stop`、`/control/estop`、`/control/reset_estop`、`/control/reset_fault`、`/control/task_hold` |
 | 感知服务 | `/perception/claim_owner`、`/perception/lock_target`、`/perception/release_target` |
-| 语音 | 服务 `/voice/say`、`/voice/start_listening`、`/voice/cancel_listening`、`/voice/cancel_speech`；action `/voice/speak` |
+| 语音 | 服务 `/voice/say`、`/voice/set_asr_enabled`、`/voice/start_listening`、`/voice/cancel_listening`、`/voice/cancel_speech`；action `/voice/speak`；ASR 状态 `/voice/asr_enabled`、`/voice/asr_status` |
 | 常用话题 | `/perception/target_state`、`/perception/detections`、`/perception/person_states`、`/perception/fall_alarm`、`/perception/owner_state`、`/control/state`、`/system/phase`、`/odom`、`/imu/data_raw`、`/PowerVoltage`、`/camera/color/image_raw`、`/perception/detections_preview/compressed` |
 | **尚未运行** | 拍照服务 `/capture/*` 及 `/capture_task/run`：小车上已有 capture_task 包，但开机入口 `run_robot_onboard.sh` 固定 `WITH_CAPTURE_TASKS=false`，需要按 3.1 另行启动 |
 
@@ -810,9 +810,9 @@ ros2 topic echo /voice/command_result
 
 B/C 整机入口开启语音及 TTS 时自动启动阶段观察器，通过 `/voice/say` 播报：等待认领、认领成功、开始跟随、主人丢失、主人返回、10 秒到期重新认领、主动释放。相同阶段心跳不重复播，目标故障恢复不重复“开始跟随”。播报忙时短暂重试并合并同来源未发送状态；当前阶段心跳持续时等待语音就绪，心跳中断超过 4 秒的过时内容丢弃，接口不可用不阻塞感知/控制。故障可查看播报节点日志和 `/system/phase`。
 
-#### ASR 开关与内存释放（2026-10-14 新增源码接口）
+#### ASR 开关与内存释放（2026-10-14 已部署验证）
 
-需要重新构建并启动新版语音入口；本次项目改动尚未部署到小车，第 2.5 节的此前实机接口表不包含此开关。
+小车 `/home/wheeltec/ROSCAR-current` 已更新并原生构建新版语音入口，`roscar-robot.service` 正在提供此接口，ROS 域号仍为 182。其他部署需要先构建：
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -821,6 +821,8 @@ source install/setup.bash
 ```
 
 随后使用原有完整语音/整机入口加载新版本。只启动旧 `asr_node` 不会提供新的开关，不能与 manager 管理的识别进程同时启动。
+
+板端两轮真实 Qwen3/Silero 加载占用约 1.2 GiB RSS，关闭约 0.68 秒后进程消失；重载后的数字音频回放识别到“停止。”。真实 MeloTTS/ALSA 在关闭 ASR 时完成正在播放的内容，关闭期间的新 `/voice/say` 请求也完成。正式主链另外验证了麦克风继续采集、重载后监听/取消服务及 CPU 亲和性 0、1，且语音/速度发布者各只有一份。测试结束 ASR 已开启，小车保持 IDLE/DISARMED；这不代表真人识别准确率或运动/制动验收。
 
 ```bash
 # 关闭识别，等待识别进程退出并释放 ASR/VAD 模型内存

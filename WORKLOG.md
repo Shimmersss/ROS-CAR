@@ -49,6 +49,15 @@
 
 # 工作记录
 
+## 2026-10-14：ASR 开关板端部署与验证通过
+
+- 用户重新开机后恢复 `wheeltec@192.168.31.145` 连接。沿用 Windows 已知主机密钥和 SSH 密钥登录；WSL 缺少该主机的信任记录，没有绕过校验。分支仍为 `codex/asr-runtime-switch`，按用户要求实机通过后再通过 WSL 推送 PR。
+- 在独立目录 `/home/wheeltec/ROSCAR-asr-switch-20261014-e12e389` 原生构建 offline_voice、voice_command_router、roscar_api 三包通过。板端首次单测缺少模式配置 fixture，导致 1 失败/3 错误；补齐现有 modes.yaml 后 **1614 项单测和 6 项隔离 ROS 开关回归全部通过**，未为此更改产品源码。原始失败与成功日志均保留。
+- 确认 `/control/stop` 返回成功后暂停原主链，domain 195 上使用原有真实 Qwen3/Silero 和 MeloTTS/ALSA。两轮模型 RSS 1,283,348 / 1,252,860 KiB，加载 7.37 / 6.77 秒，关闭 0.684 / 0.683 秒；关闭成功后 PID 消失、worker RSS 为零。ASR 关闭时正在播放的 `/voice/say` 正常完成，随后新的播报也完成；第二轮重载后的合成数字音频识别到“停止。”。这是板端真实模型与播放软件完成确认，未取得本轮人工听感或真人识别准确率验收。
+- 部署前逐项校验车上原文件与 origin/main 基线及待部署文件哈希一致，只替换 10 个语音/启动相关文件；备份为 `/home/wheeltec/ROSCAR-backups/asr-switch-20261014-e12e389/source-before.tar` 及 manifest。没有改变 current 指向、私有服务配置、跟随/急停参数、相机或模型权重；正式目录三包原生增量构建通过。
+- 正式 `roscar-robot.service` 重启后立即确认 STOP，domain 182 上复核关闭释放、关闭期间真实麦克风继续流式采集与 `/voice/say` 完成、重载后监听/取消和播报通过。新模型 PID 与旧 PID 不同，CPU 亲和性为 0、1；`/cmd_vel`、`/voice/audio`、`/voice/asr_text`、`/voice/tts_state` 发布者均为 1，观测速度峰值为 0。显式取消监听产生原识别器的 `Listening cancelled` 日志，服务返回成功，模型仍可用，未修改原取消实现。
+- 测试收尾正式服务 active，ASR ENABLED，车辆 IDLE/DISARMED，无残留隔离模型/TTS 进程。此前拍照门面服务重启后本就 inactive，本轮保持该状态；云端地址仍暂缓配置。同步接口表、入口说明和 README。证据为 `artifacts/asr-switch-20261014/board-{build,retest,real,deploy,main-smoke}.log`、`board-real-result.json`、`board-main-result.json`，同样保存在车端隔离目录。最小审查覆盖基线/备份、唯一音频与速度出口、CPU 继承、内存释放确认及验证边界；本次不进行运动、真人识别准确率或云端拍照验收。
+
 ## 2026-10-14：ASR 开关板端测试与 PR 准备（等待网络）
 
 - 用户要求本地测试后到小车验证，通过后经 WSL 推送 PR。已从最新 origin/main 创建 `codex/asr-runtime-switch`，仅包含 ASR 功能改动，不夹带此前拍照门面部署记录；尚未推送或创建 PR。

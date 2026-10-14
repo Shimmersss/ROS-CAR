@@ -49,7 +49,7 @@ bash scripts/start_project.sh
 
 主人认领使用 `ros2 run roscar_api target claim [--id epoch:track_id]`；丢失满 10 秒释放旧主人并允许重新认领，不延长运动保护宽限。启用语音/TTS 后，主人和跟随阶段自动简短播报，舌苔逐阶段播报并等待播放完成。`ros2 run roscar_api interfaces --json` 可枚举全部运行中接口；API 可选接入语音、舌苔和云台，参数及调用示例集中在上述手册。
 
-ASR 可通过 `/voice/set_asr_enabled`（`std_srvs/srv/SetBool`）独立启停：关闭退出识别进程并释放 ASR/VAD 模型内存，播报与共享录音保持原配置；重新开启加载模型后再唤醒。启动初值可用 `VOICE_ASR_ENABLED=false`，运行状态见 `/voice/asr_status`。这是 2026-10-14 新增源码功能，尚未部署到小车，详见 [ROS 接口手册 9.1](docs/ROS接口使用文档.md#91-语音与阶段播报)。
+ASR 可通过 `/voice/set_asr_enabled`（`std_srvs/srv/SetBool`）独立启停：关闭退出识别进程并释放 ASR/VAD 模型内存，播报与共享录音保持原配置；重新开启加载模型后再唤醒。启动初值可用 `VOICE_ASR_ENABLED=false`，运行状态见 `/voice/asr_status`。2026-10-14 已部署并通过板端启停、内存释放和播报共存验证，详见 [ROS 接口手册 9.1](docs/ROS接口使用文档.md#91-语音与阶段播报)。
 
 ## 构建与测试
 
