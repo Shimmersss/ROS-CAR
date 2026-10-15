@@ -1,12 +1,13 @@
 # ROS-CAR 接口使用手册
 
-更新日期：2026-10-13。本文按当前工作区的消息定义、服务实现和启动入口核对，覆盖感知、跌倒、主人认领、语音、控制、舌苔及拍照上传。接口契约与现场验收范围分别说明；实际启用的接口以运行图为准。
+更新日期：2026-10-16。本文按当前工作区的消息定义、服务实现和启动入口核对，覆盖感知、跌倒、主人认领、语音、控制、舌苔及拍照上传。接口契约与现场验收范围分别说明；实际启用的接口以运行图为准。
 
 ## 1. 先选你需要的接口
 
 | 你想做的事 | 应调用的接口 | 返回什么 |
 |---|---|---|
 | 拍面部、舌体、安全帽场景或电路板并上传 | `/capture/face`、`/capture/tongue`、`/capture/helmet`、`/capture/pcb` | 等任务结束，返回上传成功或失败及回执 |
+| 拍照后在 5060 分析并取回标注图（显式 infer） | `/inspect/face`、`/inspect/tongue`、`/inspect/helmet`、`/inspect/pcb` | JSON 分析结果与 CompressedImage JPEG；面诊暂无模型 |
 | 取消自己通过上述服务发起的拍照 | `/capture/cancel` | 是否已请求取消；最终结果由原拍照调用返回 |
 | 让小车读出一段文字 | `/voice/say` | 等合成与播放结束，返回完成或失败 |
 | 订阅检测框、锁定目标的位置 | `/perception/detections`、`/perception/target_state` | 持续发布的 ROS 消息 |
@@ -23,7 +24,7 @@
 - **ROS 接口**给本机或局域网内的 ROS 2 程序使用，本文说明它们的调用方法。
 - **HTTP 接口**给云端服务使用。云端下发任务、小车上传 JPEG 的协议见[云端拍照任务接口协议](云端拍照任务接口协议.md)。服务器上提供的文档下载链接只是静态文件地址，不是拍照业务接口。
 
-拍照接口只负责“播报、准备、拍照、上传”。`/capture/tongue` 不返回舌苔分类或诊断；语音口令“舌苔检测”走另一套 `tongue_mode` 流程，两者共享相机和播报资源并互斥。
+默认 `/capture/*` 接口只负责“播报、准备、拍照、上传”；显式 infer 使用独立 `/inspect/*`（见第 3 节增补），不会改变 `/capture/*` 的含义。`/capture/tongue` 不返回舌苔分类或诊断；语音口令“舌苔检测”走另一套 `tongue_mode` 流程，两者共享相机和播报资源并互斥。
 
 ## 2. 调用前先准备环境
 
@@ -308,6 +309,48 @@ ros2 topic echo /capture_task/result
 Action 请求为 `task_id / task_type / source / params_json / ttl_sec`；反馈为 `phase / detail`；结果为 `status / detail / capture_id / upload_json`。`source` 只接受 `cloud / ros_api / local_test`。直接 Action 拒绝时没有 action result，原因另发到 `/capture_task/result`。
 
 直接 Action 的发起方须保存 goal handle，以它取消自己的任务；`/capture/cancel` 不拥有该 goal。相机、TTS 和 robot 租约仍由同一个执行器管理，换用 Action 不会绕过互斥条件。
+
+### 3.8 拍照推理闭环：/inspect/*（显式启用）
+
+这是新增接口版本，服务端与调用端都须重新编译 `capture_task_interfaces` 并加载同一 overlay。默认 upload 不启动这些服务。infer 时只注册 `/inspect/*`，不注册 `/capture/*`。两种模式的执行器都沿用原相机、TTS、停车租约与互斥条件。
+
+```bash
+# 相机和唯一 TTS 已存在；有底盘时选择 robot 并复用唯一 guard
+ros2 launch capture_task capture_task.launch.py \
+  pipeline_mode:=infer inference_url:=http://127.0.0.1:18200 \
+  inference_token_file:=/absolute/private/gateway.token \
+  with_ros_api:=true with_bridge:=false safety_profile:=bench
+ros2 service call /inspect/pcb capture_task_interfaces/srv/RunInspection \
+  "{task_id: 'pcb-001', announce: '', prepare_sec: -1.0, timeout_sec: 180.0}"
+```
+
+18200 是开发 SSH 隧道示例，实际网关默认 8200。请使用本次部署实际地址。bench 要求 `/cmd_vel` 零发布者；不能与已有 guard 简单并开。
+
+`RunInspection` 请求和 `RunCapture` 一致：空 task_id 自动生成；空 announce 用目录文本；prepare_sec < 0 用目录值；timeout_sec=0 用 60 秒默认，最多 600 秒。舌诊建议调用方显式给 180 秒，单次模型请求还受目录 inference.timeout_sec 的 120 秒限制。
+
+| 响应字段 | 含义 |
+|---|---|
+| success | 只有 status=analyzed 为 true |
+| status | analyzed / retake / failed / cancelled / rejected / busy / unavailable / invalid / timeout |
+| detail | 固定原因码，例如 inference_model_unavailable、inference_busy、task_timeout |
+| task_id / capture_id | 本次任务与选中帧 ID |
+| result_json | 网关响应的 JSON 字符串，去掉 annotated_image.data_b64；含模型/结构化结果/摘要/耗时/图片哈希 |
+| annotated_image | sensor_msgs/CompressedImage；成功时 format=jpeg，data 为标注 JPEG；失败或重拍为空 |
+
+网关 ok/uncertain 均返回 analyzed；retake 表示需要重拍。PCB 保留原始 640×480 画面，模型 imgsz=640；标注尺寸不变，只有大图最长边超过 1280 才缩小。面诊无模型会失败，不能当成识别人脸已通过。
+
+推荐用脚本保存返回值，避免在终端打印大段 JPEG 数组：
+
+```bash
+python3 scripts/inspect_client.py pcb --timeout 180 --output artifacts/inspection
+ros2 service call /inspect/cancel capture_task_interfaces/srv/CancelCapture "{task_id: 'pcb-001'}"
+```
+
+取消只影响本门面拥有的匹配任务，不会取消云端或直接 Action 的任务。客户端调用超时不等于服务器任务已取消，应调用上述取消服务或使用脚本的超时清理。
+
+`CaptureTask.action` 的原 Result 字段不变，末尾追加 `result_json` 与 `sensor_msgs/CompressedImage annotated_image`；upload 模式两者为空。`/capture_task/state` 增加 pipeline_mode。机器人总入口通过 `CAPTURE_PIPELINE_MODE`、`CAPTURE_INFERENCE_URL`、`CAPTURE_INFERENCE_TOKEN_FILE` 传入。infer 缺少 URL 会启动失败。
+
+结果播报只用本地模板：PCB 疑似缺陷数量、安全帽未佩戴数量、舌象特征数量；不播放模型自由文本，不作医疗诊断。原有语音“舌苔检测”仍走独立 tongue_mode，不被本接口替换。部署证据与边界见 [闭环验收记录](拍照推理闭环实现与验收.md)。
 
 ## 4. 文字播报
 

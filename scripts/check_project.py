@@ -24,7 +24,8 @@ def main():
         'execution_mode_interfaces', 'execution_mode_manager', 'tongue_mode',
         'gimbal_interfaces', 'gimbal_bridge', 'capture_task_interfaces', 'capture_task',
     }
-    python_files = list(packages.rglob('*.py')) + list((root / 'scripts').glob('*.py')) + list((root / 'tests').glob('*.py'))
+    python_files = (list(packages.rglob('*.py')) + list((root / 'scripts').glob('*.py'))
+                    + list((root / 'tests').glob('*.py')) + list((root / 'services').rglob('*.py')))
     for path in python_files:
         ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
     for path in (root / 'models').glob('*.json'):

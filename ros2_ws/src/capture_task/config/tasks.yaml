@@ -8,6 +8,7 @@ tasks:
     min_width: 640
     quality: {brightness: [40, 220], min_sharpness: 30, rb_ratio: [0.6, 1.6]}
     require_hold: true
+    inference: {timeout_sec: 120.0, speak_summary: true}
   tongue:
     name: 舌诊检测
     announce: 收到舌诊检测任务。请正对相机，伸出舌头，保持姿势，即将拍照。
@@ -17,6 +18,7 @@ tasks:
     min_width: 640
     quality: {brightness: [40, 220], min_sharpness: 30, rb_ratio: [0.6, 1.6]}
     require_hold: true
+    inference: {timeout_sec: 120.0, speak_summary: true}
   helmet:
     name: 安全帽检测
     announce: 收到安全帽检测任务，正在拍摄前方画面。
@@ -26,6 +28,7 @@ tasks:
     min_width: 640
     quality: {brightness: [30, 230], min_sharpness: 0, rb_ratio: [0.5, 2.0]}
     require_hold: true
+    inference: {timeout_sec: 120.0, speak_summary: true}
   pcb:
     name: PCB缺陷检测
     announce: 收到电路板缺陷检测任务。请把电路板放在相机正前方，保持稳定，即将拍照。
@@ -35,6 +38,7 @@ tasks:
     min_width: 640
     quality: {brightness: [40, 220], min_sharpness: 80, rb_ratio: [0.6, 1.6]}
     require_hold: true
+    inference: {timeout_sec: 120.0, speak_summary: true}
 defaults:
   task_timeout_sec: 60.0
   speech_timeout_sec: 30.0
@@ -43,5 +47,7 @@ defaults:
   jpeg_quality: 95
   quality_policy: warn
   done_announce: 拍摄完成，图像已上传。
+  analysis_done_announce: 图像分析完成，详细结果已返回。
+  retake_announce: 这次没有拍清楚，请重新发起检测。
   fail_announce: 这次拍摄没有完成，请稍后重试。
 params_whitelist: [announce, prepare_sec]

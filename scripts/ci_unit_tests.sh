@@ -24,6 +24,8 @@ for dir in ros2_ws/src/*/test; do
   # 5: every test of the package needs ROS and was ignored.
   if [ $code -ne 0 ] && [ $code -ne 5 ]; then status=1; fi
 done
+echo "== inference gateway (fake backends, no models)"
+PYTHONPATH=. "$PY" -m pytest -q -p no:cacheprovider services/inference_gateway/tests || status=1
 echo "== recording tools"
 "$PY" tests/test_recording_tools.py || status=1
 "$PY" tests/test_demo_fall_replay.py || status=1

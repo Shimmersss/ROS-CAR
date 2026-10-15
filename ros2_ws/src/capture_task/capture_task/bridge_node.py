@@ -13,6 +13,9 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from rcl_interfaces.msg import ParameterDescriptor
 from capture_task_interfaces.action import CaptureTask
+from capture_task_interfaces.msg import ResultImage
+from .result_outbox import ImageOutbox
+from .inference_client import inference_loads
 from .bridge_logic import CommandCache, remaining_ttl, validate_poll_wait, poll_request
 from .state import fresh, mode_active, EXECUTOR_MAX_AGE
 from .catalog import Catalog
@@ -24,7 +27,8 @@ class CaptureBridge(Node):
     def __init__(self,**kwargs):
         super().__init__('capture_cloud_bridge',**kwargs)
         defaults=dict(poll_wait_sec=1,cloud_url='http://127.0.0.1:8090',robot_id='roscar-01',token_file='',
-                      catalog=str(Path(get_package_share_directory('capture_task'))/'config/tasks.yaml'))
+                      catalog=str(Path(get_package_share_directory('capture_task'))/'config/tasks.yaml'),
+                      pipeline_mode='upload',return_original_image=False)
         for key,value in defaults.items():
             self.declare_parameter(key,value,ParameterDescriptor(read_only=True))
         self.cfg={key:self.get_parameter(key).value for key in defaults};identifier(self.cfg['robot_id'])
@@ -32,6 +36,11 @@ class CaptureBridge(Node):
         self.catalog=Catalog.load(self.cfg['catalog'])
         self.cloud=CloudClient(self.cfg['cloud_url'],token_from_env(self.cfg['token_file']),timeout=2.)
         self.stop_event=threading.Event();self.lock=threading.RLock()
+        if self.cfg['pipeline_mode'] not in ('upload','infer'):
+            raise ValueError('invalid_pipeline_mode')
+        self.image_batches=OrderedDict();self.originals={};self.result_sent=OrderedDict()
+        self.image_outbox=ImageOutbox(self.cfg['cloud_url'],token_from_env(self.cfg['token_file']),
+            lambda task,reason:self.event(task,'IMAGE_RETURN_FAILED',reason)) if self.cfg['pipeline_mode']=='infer' else None
         self.cache=CommandCache();self.outbox=deque();self.sequences=OrderedDict()
         self.current=None;self.rejections={};self.executor_state={};self.executor_at=0.;self.mode={};self.mode_at=0.
         self.state='backoff';self.last_poll=0.;self.current_command='';self.backoff=1.;self.retry_at=0.;self.heartbeat_at=0.
@@ -40,6 +49,8 @@ class CaptureBridge(Node):
         self.create_subscription(String,'/capture_task/result',self.on_rejection,10,callback_group=self.group)
         self.create_subscription(String,'/capture_task/state',self.on_executor_state,10,callback_group=self.group)
         self.create_subscription(String,'/execution_mode/state',self.on_mode,10,callback_group=self.group)
+        if self.image_outbox and self.cfg['return_original_image']:
+            self.create_subscription(ResultImage,'/capture_task/original_image',self.on_original,1,callback_group=self.group)
         self.pub=self.create_publisher(String,'/capture_task/bridge_state',10)
         self.timer=self.create_timer(.25,self.publish_state,callback_group=self.group,clock=Clock(clock_type=ClockType.STEADY_TIME))
         self.worker=threading.Thread(target=self.loop,name='capture_cloud_http',daemon=True);self.worker.start()
@@ -66,6 +77,29 @@ class CaptureBridge(Node):
             self.mode=loads(message.data);self.mode_at=time.monotonic()
         except ValueError:
             self.mode={'active':True};self.mode_at=time.monotonic()
+
+    def on_original(self,message):
+        with self.lock:
+            task=message.task_id
+            known=self.current and self.current['task_id']==task or task in self.result_sent or task in self.image_batches
+            if not known or message.image.format!='jpeg' or len(message.image.data)>12*1024*1024:
+                return
+            if len(self.originals)>=4:
+                self.originals.pop(next(iter(self.originals)))
+            self.originals[task]=(message.capture_id,bytes(message.image.data))
+            self.release_images(task)
+
+    def release_images(self,task_id):
+        if task_id not in self.result_sent or not self.image_outbox:
+            return
+        batch=self.image_batches.pop(task_id,None)
+        if batch:
+            self.image_outbox.put(task_id,batch[0],batch[1])
+        original=self.originals.pop(task_id,None)
+        if original:
+            expected=self.result_sent[task_id]
+            if original[0]==expected:
+                self.image_outbox.put(task_id,original[0],original[1],'original')
 
     def executor_stale(self):
         return not fresh(self.executor_at,EXECUTOR_MAX_AGE)
@@ -145,6 +179,8 @@ class CaptureBridge(Node):
         with self.lock:
             if self.executor_stale():
                 self.ack(cmd,False,'unavailable');return
+            if self.executor_state.get('pipeline_mode',self.cfg['pipeline_mode'])!=self.cfg['pipeline_mode']:
+                self.ack(cmd,False,'pipeline_mode_mismatch');return
             if self.current or self.executor_state.get('active'):
                 self.ack(cmd,False,'busy');return
             if mode_active(self.mode,self.mode_at):
@@ -182,7 +218,17 @@ class CaptureBridge(Node):
                     result=done.result().result
                     record=dict(status=result.status,detail=result.detail,capture_id=result.capture_id,
                                 upload_json=loads('{"receipts":'+(result.upload_json or '[]')+'}')['receipts'])
-                    self.event(cmd['task_id'],result.status.upper(),result.detail,record)
+                    with self.lock:
+                        if self.image_outbox and result.result_json:
+                            record['analysis']=inference_loads(result.result_json)
+                            if result.status=='analyzed' and result.annotated_image.format=='jpeg':
+                                if len(self.image_batches)>=4:
+                                    self.image_batches.popitem(last=False)
+                                    self.event(cmd['task_id'],'IMAGE_RETURN_FAILED','pending_image_limit')
+                                self.image_batches[cmd['task_id']]=(result.capture_id,bytes(result.annotated_image.data))
+                            else:
+                                self.originals.pop(cmd['task_id'],None)
+                        self.event(cmd['task_id'],result.status.upper(),result.detail,record)
                     if result.detail in ('upload_http_401','upload_http_403'):
                         self.auth_failed()
                 except Exception:
@@ -233,6 +279,13 @@ class CaptureBridge(Node):
                     continue
                 raise
             with self.lock:
+                data=pending[1]
+                if self.image_outbox and data.get('result',{}).get('status')=='analyzed':
+                    task_id=pending[0].split('/')[-2]
+                    self.result_sent[task_id]=data['result']['capture_id']
+                    if len(self.result_sent)>16:
+                        self.result_sent.popitem(last=False)
+                    self.release_images(task_id)
                 if self.outbox and self.outbox[0] is pending:
                     self.outbox.popleft()
 
@@ -279,6 +332,9 @@ class CaptureBridge(Node):
                     self.cloud.request('POST',path,data,cancel=temporary,deadline=time.monotonic()+.1)
             except Exception:
                 pass
+        if self.image_outbox:
+            self.image_outbox.close()
+        self.image_batches.clear();self.originals.clear();self.result_sent.clear()
 
     def destroy_node(self):
         self.stop();self.client.destroy()

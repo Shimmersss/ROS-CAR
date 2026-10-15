@@ -128,3 +128,9 @@
 - 固定 27 cm / 上仰 15.1° / 横滚 0.5° 使用显式 `pose_fixed_27cm.yaml`；通用 pose.yaml 默认不变。身体高度线索无需头脚全入画；运动时关闭旧像素框延续。安装变化或非平坦地面须重新确认；已有标注录像复评不等于现场跌倒验收。
 
 - 用户在当前固定机位主链明确关闭语音自动急停：VOICE_ESTOP_ENABLED=false，不启动独立 KWS，FOLLOW_EMERGENCY_KWS_REQUIRED 随此开关关闭；ASR/VoiceCommand 的 ESTOP 转普通 STOP，不写急停锁存。通用语音入口默认仍开启；显式 /control/estop 接口保留，目标/测距/请求时效与串口看门狗仍停车。
+
+## 拍照推理闭环
+
+- 独立 services/inference_gateway 只运行 5060 端推理，不启动 ROS 或控制运动；冻结舌诊 passthrough_debug 的 digest/八标签不得修改；GPU/CPU 数值比较未达指南要求须暂停该项并报告，CPU 替代方案不得未经确认当作已接入。第三方 .pt 仅在已确认可信来源的隔离环境加载。
+- capture_task 默认 pipeline_mode=upload；infer 必须显式配置 inference_url，API 仅注册 /inspect/*，upload 仅 /capture/*，同进程禁止混用。Action 新增 JSON/JPEG 字段后消费者须整体重编译。
+- 结果须核对请求/任务/图像 ID、结构化字段、JPEG 尺寸与哈希；播报由本地固定模板生成，不接受任意模型文本。默认只返回标注图，原图传输须显式选择，不默认落盘；独立有界图片队列不阻塞命令轮询。指南 B4 车端部署须另行授权，不改主服务。

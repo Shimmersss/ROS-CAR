@@ -116,6 +116,8 @@ docs/      方案、接口、计划；docs/archive/ 为历史文档
 ## 文档索引
 
 **Demo 展示分支（`demo/showcase-20261016`，展示后删除）**：[Demo 文档入口](docs/demo/README.md) · [跌倒暂停与静止延续验收](docs/demo/跌倒暂停与静止延续验收.md) · [T2.6 离线优化评估](docs/demo/T2.6离线检测优化评估.md) · [相对运动 ROS 接口](docs/demo/相对运动ROS接口.md) · [Codex 任务清单](docs/demo/Codex任务清单.md)
+- [拍照推理闭环实现与验收](docs/拍照推理闭环实现与验收.md)：5060 网关、增量 ROS/HTTP 合同与分层验证记录
+- [推理网关使用说明](services/inference_gateway/README.md)：隔离部署、认证和模型状态
 
 - [拍照推理闭环执行指南](docs/拍照推理闭环执行指南.md)：5060 隔离推理与增量闭环实施入口
 
