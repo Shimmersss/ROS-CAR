@@ -1,0 +1,4 @@
+ultralytics==8.4.174
+PyYAML>=6,<7
+Pillow>=10,<13
+# Install torch==2.8.0 torchvision==0.23.0 separately from the official cu128 index.

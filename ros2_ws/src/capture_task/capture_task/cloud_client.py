@@ -26,8 +26,8 @@ class CloudError(Exception):
         super().__init__(detail)
 
 
-def token_from_env(path=''):
-    value = os.environ.get('CAPTURE_CLOUD_TOKEN', '')
+def token_from_env(path='', env_name='CAPTURE_CLOUD_TOKEN'):
+    value = os.environ.get(env_name, '')
     if path and not value:
         source = Path(path).expanduser()
         fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
@@ -55,6 +55,8 @@ def path_prefix(path):
 
 
 class CloudClient:
+    response_limit = MAX_JSON
+    parse_response = staticmethod(loads)
     def __init__(self, url, token='', timeout=3.):
         parsed = urlsplit(url)
         if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment or any(c.isspace() for c in url) or '?' in url or '#' in url:
@@ -117,14 +119,14 @@ class CloudClient:
                 conn.request(method, self.prefix + path, data, fields)
                 check()
                 response = conn.getresponse()
-                raw = response.read(MAX_JSON + 1)
+                raw = response.read(self.response_limit + 1)
                 check()
-                if len(raw) > MAX_JSON:
+                if len(raw) > self.response_limit:
                     raise CloudError(response.status, 'response_too_large')
                 if response.status == 204:
                     return 204, {}
                 try:
-                    value = loads(raw)
+                    value = self.parse_response(raw)
                 except ValueError as exc:
                     raise CloudError(response.status, 'invalid_response') from exc
                 return response.status, value

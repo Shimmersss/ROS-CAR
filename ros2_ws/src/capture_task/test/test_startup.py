@@ -48,6 +48,22 @@ def test_ros_api_default_closed_and_explicit_gate(tmp_path):
     assert enabled.returncode==1 and '+ CAPTURE_ROS_API=true' in enabled.stderr
 
 
+@pytest.mark.parametrize('changes',[
+    {'CAPTURE_PIPELINE_MODE':'infer','CAPTURE_INFERENCE_URL':''},
+    {'CAPTURE_PIPELINE_MODE':'invalid'},
+    {'CAPTURE_RETURN_ORIGINAL_IMAGE':'yes'},
+])
+def test_inference_requires_explicit_valid_configuration(tmp_path,changes):
+    result=run(tmp_path,**changes)
+    assert result.returncode==2
+    assert 'start_module' not in result.stderr
+
+
+def test_inference_url_passes_early_gate(tmp_path):
+    result=run(tmp_path,CAPTURE_PIPELINE_MODE='infer',CAPTURE_INFERENCE_URL='http://127.0.0.1:8200')
+    assert result.returncode==1 and '缺少 b 模型' in result.stderr
+
+
 @pytest.mark.parametrize('follow_options', [
     {},
     {'FOLLOW_AUTO_ARM': 'true', 'FOLLOW_TARGET_AUTO_RECOVER': 'true',

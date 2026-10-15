@@ -67,7 +67,8 @@ WITH_CHASSIS=true 开启底盘串口收发。
 WITH_TONGUE_MODE=true 将舌苔流程接入现有语音，要求 WITH_VOICE/WITH_FOLLOWER=true。
 WITH_CAPTURE_TASKS=true 启用独立云端拍照；要求语音/TTS；接底盘使用 robot，须显式 WITH_FOLLOWER=true。
 拍照入口的 WITH_FOLLOWER=true 同时启动跟随器；强制关闭自动授权/自动续跟，要求紧急 KWS 心跳及逐次授权。
-CAPTURE_ROS_API=true 显式打开 /capture/* 服务门面，要求 WITH_CAPTURE_TASKS=true；默认 false。
+CAPTURE_PIPELINE_MODE=upload 保留上传；infer 要求 CAPTURE_INFERENCE_URL，可指定 CAPTURE_INFERENCE_TOKEN_FILE。
+CAPTURE_ROS_API=true 显式打开 /capture/*（upload）或 /inspect/*（infer）服务门面，要求 WITH_CAPTURE_TASKS=true；默认 false。
 无底盘拍照为 bench，要求 WITH_FOLLOWER=false / MOTION_ENABLED=false；默认关闭。
 CAPTURE_CLOUD_URL / CAPTURE_ROBOT_ID / CAPTURE_TOKEN_FILE 配置云端；CAPTURE_POLL_WAIT_SEC 为 0–20 整数，默认 1；默认原始 RGB。
 TONGUE_SAFETY_PROFILE=robot 要求底盘回传；bench 仅允许运动关闭的台架。
@@ -96,6 +97,16 @@ if [[ "$CAPTURE_ROS_API" == true && "$WITH_CAPTURE_TASKS" != true ]]; then
   echo "CAPTURE_ROS_API=true 要求 WITH_CAPTURE_TASKS=true。" >&2; exit 2
 fi
 if [[ "$WITH_CAPTURE_TASKS" == true ]]; then
+  case "${CAPTURE_PIPELINE_MODE:-upload}" in
+    upload) ;;
+    infer) [[ -n "${CAPTURE_INFERENCE_URL:-}" ]] || {
+      echo 'CAPTURE_PIPELINE_MODE=infer 要求 CAPTURE_INFERENCE_URL。' >&2; exit 2;
+    };;
+    *) echo 'CAPTURE_PIPELINE_MODE 必须为 upload 或 infer。' >&2; exit 2;;
+  esac
+  [[ "${CAPTURE_RETURN_ORIGINAL_IMAGE:-false}" == true || "${CAPTURE_RETURN_ORIGINAL_IMAGE:-false}" == false ]] || {
+    echo 'CAPTURE_RETURN_ORIGINAL_IMAGE 必须为 true/false。' >&2; exit 2;
+  }
   # 拍照组合入口要求显式授权；租约释放不自动恢复跟随。
   FOLLOW_AUTO_ARM=false
   FOLLOW_TARGET_AUTO_RECOVER=false
@@ -273,6 +284,9 @@ if [[ "$WITH_VOICE" == true ]]; then
 fi
 if [[ "$WITH_CAPTURE_TASKS" == true ]]; then
   start_module capture ros2 launch capture_task capture_task.launch.py \
+    pipeline_mode:="${CAPTURE_PIPELINE_MODE:-upload}" \
+    inference_url:="${CAPTURE_INFERENCE_URL:-}" inference_token_file:="${CAPTURE_INFERENCE_TOKEN_FILE:-}" \
+    return_original_image:="${CAPTURE_RETURN_ORIGINAL_IMAGE:-false}" \
     with_ros_api:="$CAPTURE_ROS_API" \
     safety_profile:="$CAPTURE_SAFETY_PROFILE" \
     poll_wait_sec:="${CAPTURE_POLL_WAIT_SEC:-1}" \

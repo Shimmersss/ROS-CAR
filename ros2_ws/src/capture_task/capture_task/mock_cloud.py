@@ -29,6 +29,7 @@ class MockCloud(ThreadingHTTPServer):
         self.issued_task_ids = set()
         self.upload_sources = {}
         self.upload_attempts = 0
+        self.result_images = {}
         self.stopping = threading.Event()
 
     def stop(self):
@@ -42,7 +43,8 @@ class MockCloud(ThreadingHTTPServer):
         with self.condition:
             return dict(acks=dict(self.acks), events={k:list(v) for k,v in self.events.items()},
                         images=list(self.images.values()), heartbeats=self.heartbeats[-20:],
-                        queued=len(self.commands), upload_attempts=self.upload_attempts)
+                        queued=len(self.commands), upload_attempts=self.upload_attempts,
+                        result_images=list(self.result_images.values()))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -98,6 +100,14 @@ class Handler(BaseHTTPRequestHandler):
         if path.path == '/admin/status':
             self.reply(200, self.server.snapshot())
             return
+        result_match = re.fullmatch(r'/admin/result/([A-Za-z0-9_-]{1,64})', path.path)
+        if result_match:
+            task_id = result_match.group(1)
+            with self.server.condition:
+                rows = self.server.events.get(task_id, [])
+                result = next((e['result'] for e in reversed(rows) if 'result' in e), None)
+                images = [v for (t, _, _), v in self.server.result_images.items() if t == task_id]
+            return self.reply(200, dict(task_id=task_id, result=result, images=images))
         if not re.fullmatch(r'/v1/robots/[A-Za-z0-9_-]{1,64}/commands/next', path.path):
             self.reply(404, {'error':'not_found'}); return
         if self.server.drop_poll:
@@ -152,6 +162,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.server.acks[ack.group(1)] = data
                 elif event:
                     task_id = event.group(1)
+                    if self.server.reject_unknown_task and task_id not in self.server.issued_task_ids:
+                        self.reply(404, {'error':'unknown_task'}); return
                     seq = data.get('seq')
                     if type(seq) is not int or seq < 1:
                         raise ValueError()
@@ -163,6 +175,8 @@ class Handler(BaseHTTPRequestHandler):
                     events.append(data)
                     folder = self.server.store / task_id
                     folder.mkdir(exist_ok=True)
+                    if 'result' in data:
+                        (folder/'result.json').write_text(json.dumps(data['result'], ensure_ascii=False), encoding='utf-8')
                     with (folder/'events.jsonl').open('a', encoding='utf-8') as handle:
                         handle.write(json.dumps(data, ensure_ascii=False)+'\n')
                 elif tail == 'heartbeat':
@@ -171,6 +185,9 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self.reply(404, {'error':'not_found'}); return
             self.reply(200, {'received':True}); return
+        match = re.fullmatch(r'/v1/tasks/([A-Za-z0-9_-]{1,64})/result-image', path)
+        if match:
+            return self.result_image(match.group(1))
         match = re.fullmatch(r'/v1/tasks/([A-Za-z0-9_-]{1,64})/images', path)
         if not match:
             self.reply(404, {'error':'not_found'}); return
@@ -208,3 +225,28 @@ class Handler(BaseHTTPRequestHandler):
             (folder/(capture_id+'.json')).write_text(json.dumps(value), encoding='utf-8')
             self.server.images[key] = value
         self.reply(409 if self.server.fail_upload == 409 else 200, value)
+
+    def result_image(self, task_id):
+        capture_id = identifier(self.headers.get('X-Capture-Id'))
+        kind = self.headers.get('X-Image-Kind')
+        if kind not in ('original', 'annotated'):
+            raise ValueError()
+        image = self.read_body(MAX_IMAGE)
+        digest = hashlib.sha256(image).hexdigest()
+        if self.headers.get('Content-Type') != 'image/jpeg' or not image.startswith(b'\xff\xd8') or digest != self.headers.get('X-Image-Sha256'):
+            raise ValueError()
+        with self.server.condition:
+            if self.server.reject_unknown_task and task_id not in self.server.issued_task_ids:
+                return self.reply(404, {'error':'unknown_task'})
+            key = (task_id, capture_id, kind)
+            previous = self.server.result_images.get(key)
+            if previous:
+                return self.reply(409, previous)
+            folder = self.server.store/task_id
+            folder.mkdir(exist_ok=True)
+            path = folder/(capture_id+'-'+kind+'.jpg')
+            path.write_bytes(image)
+            value = dict(status='received', task_id=task_id, capture_id=capture_id, sha256=digest,
+                         kind=kind, path=str(path))
+            self.server.result_images[key] = value
+        self.reply(200, value)
