@@ -1764,3 +1764,5 @@
 ### PCB 640×480 修正与云端联调提交 PR
 
 - 使用 codex/wsl-cloud-capture-trial 提交 PCB 最小宽度 1280→640 的配置/回归/文档更新及四类真实拍照联调记录，目标 main。图片、临时凭据、测试脚本和构建产物均位于忽略的 artifacts，不提交。已有 113 项 capture_task 回归、旧实拍复评及板端配置加载验证通过；提交前复核差异、验证边界和 diff 空白，不重复改变小车服务或运动状态。
+
+- 已推送分支并创建 PR #28：https://github.com/Shimmersss/ROS-CAR/pull/28 ，目标 main，未合并；未操作或重启车端服务。
