@@ -39,8 +39,19 @@ def test_flow_order_best_quality_policy(catalog):
     with pytest.raises(ValueError,match='tts_not_completed'):
         CaptureFlow().run(failed,job,catalog.tasks['face'],catalog.defaults)
     assert failed.count==0
-    with pytest.raises(ValueError,match='quality_failed'):
-        CaptureFlow().run(Ports(),job,catalog.tasks['pcb'],{**catalog.defaults,'quality_policy':'fail'})
+    pcb_job=dict(task_id='pcb-test',task_type='pcb')
+    records=CaptureFlow().run(Ports(),pcb_job,catalog.tasks['pcb'],{**catalog.defaults,'quality_policy':'fail'})
+    assert records[0]['quality']['width']==640 and records[0]['quality']['height']==480
+    assert records[0]['warnings']==[]
+
+    class Undersized(Ports):
+        def capture(self,after,ros_after):
+            frame=super().capture(after,ros_after)
+            frame.rgb=frame.rgb[::2,::2].copy()
+            return frame
+
+    with pytest.raises(ValueError,match='quality_failed:width_below_minimum'):
+        CaptureFlow().run(Undersized(),pcb_job,catalog.tasks['pcb'],{**catalog.defaults,'quality_policy':'fail'})
 
 
 @pytest.mark.parametrize('failure,expected,attempts',[(0,200,1),(409,200,1),(401,401,1),(500,500,3)])
