@@ -11,7 +11,7 @@
 | C 跌倒检测 | 已在 Mac 上用车载机位重拍并人工标注 20 次跌倒和 19 个反例动作，正在做离线评估与规则调整；Jetson 真人/跌倒实测未做。见 [整体逻辑](docs/跌倒检测整体逻辑.md)、[评估记录](docs/跌倒检测评估记录.md) |
 | C 定位、三维姿态、ReID | 软件已实现，安装外参、重力和地面确认开关默认关闭；ReID 默认关闭 |
 | B 人体检测/跟踪 | Jetson 上 YOLO26s/ByteTrack 有真人在线检测；RGB-D 配准、外参和绝对测距精度待验收 |
-| 语音 | 共享录音 + 常开 KWS + Qwen3-ASR / Silero VAD + 固定规则 + MeloTTS；8 秒续聊、显式授权；舌苔流程和文字播报接口保留，讯飞仅识别回退 |
+| 语音 | 共享录音 + 常开 KWS + Qwen3-ASR / Silero VAD + 固定规则 + Matcha 中文女声（Vocos）；8 秒续聊、显式授权；舌苔流程和文字播报接口保留，讯飞仅识别回退 |
 | 底盘、N10P、运动保护、导航 | 底盘串口在 Jetson 收发里程计；`start_robot.sh` 启动底盘和保护层，运动默认关闭、禁止自动授权（无雷达）。motion_guard、N10P、SLAM/Nav2 有软件和本机测试，实车跟随效果、避障与停车距离未验收 |
 | 云台 | 设计与串口协议草案、桥接软件（仅仿真），无硬件 |
 
@@ -48,6 +48,8 @@ bash scripts/start_project.sh
 **对外 ROS 2 接口**：`ros2 launch roscar_api api.launch.py` 默认 IDLE、运动关闭、不启动硬件。外部速度只发 `/chassis/cmd_vel`，由唯一的 motion_guard 输出 `/cmd_vel`。不要与已包含 motion_guard 的入口叠加启动。详见 [ROS 接口使用文档](docs/ROS接口使用文档.md)。
 
 主人认领使用 `ros2 run roscar_api target claim [--id epoch:track_id]`；丢失满 10 秒释放旧主人并允许重新认领，不延长运动保护宽限。启用语音/TTS 后，主人和跟随阶段自动简短播报，舌苔逐阶段播报并等待播放完成。`ros2 run roscar_api interfaces --json` 可枚举全部运行中接口；API 可选接入语音、舌苔和云台，参数及调用示例集中在上述手册。
+
+ASR 可通过 `/voice/set_asr_enabled`（`std_srvs/srv/SetBool`）独立启停：关闭退出识别进程并释放 ASR/VAD 模型内存，播报与共享录音保持原配置；重新开启加载模型后再唤醒。启动初值可用 `VOICE_ASR_ENABLED=false`，运行状态见 `/voice/asr_status`。2026-10-14 已部署并通过板端启停、内存释放和播报共存验证，详见 [ROS 接口手册 9.1](docs/ROS接口使用文档.md#91-语音与阶段播报)。
 
 ## 构建与测试
 
@@ -117,6 +119,7 @@ docs/      方案、接口、计划；docs/archive/ 为历史文档
 
 **Demo 展示分支（`demo/showcase-20261016`，展示后删除）**：[Demo 文档入口](docs/demo/README.md) · [跌倒暂停与静止延续验收](docs/demo/跌倒暂停与静止延续验收.md) · [T2.6 离线优化评估](docs/demo/T2.6离线检测优化评估.md) · [相对运动 ROS 接口](docs/demo/相对运动ROS接口.md) · [Codex 任务清单](docs/demo/Codex任务清单.md)
 
+- [10-15 WSL 模拟云端拍照联调](docs/2026-10-15WSL模拟云端拍照联调.md)：四类真实采集上传、播报、PCB 分辨率告警与测试清理
 - [云端拍照任务修复说明](docs/云端拍照任务修复说明.md)（验收后七项修复要求）
 - [云端拍照任务 ROS 接口方案](docs/云端拍照任务ROS接口方案.md)（可选服务门面实施入口）
 - [云端拍照任务实现与验收](docs/云端拍照任务实现与验收.md)（独立链路、本机联调与待现场项）
@@ -133,6 +136,7 @@ docs/      方案、接口、计划；docs/archive/ 为历史文档
 - [云台跟随设计与串口协议](docs/云台跟随设计与串口协议.md)（草案）
 
 **语音与本次合并**
+- [10-14 Matcha 语音部署与验证](docs/2026-10-14Matcha语音部署与验证.md)：新女声、ASR 开关、车端验证及当前运动关闭状态
 - [语音控制说明书](docs/语音控制使用说明书.md) · [当前语音入口与回退](docs/语音入口与回退.md)
 - [舌苔整合与验收](docs/语音舌苔流程整合与验收.md) · [文字播报 ROS 接口](docs/文字播报ROS接口.md)（启动、CLI/Python、完成确认与取消）
 - [远端 C 与语音合并说明](docs/远端C与语音合并说明20261012.md) · [原语音舌苔实机记录](docs/2026-10-12语音舌苔实机试运行.md)

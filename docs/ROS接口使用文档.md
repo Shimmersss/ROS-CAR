@@ -1,6 +1,6 @@
 # ROS-CAR 接口使用手册
 
-更新日期：2026-10-13。本文按当前工作区的消息定义、服务实现和启动入口核对，覆盖感知、跌倒、主人认领、语音、控制、舌苔及拍照上传。接口契约与现场验收范围分别说明；实际启用的接口以运行图为准。
+更新日期：2026-10-14。本文按当前工作区的消息定义、服务实现和启动入口核对，覆盖感知、跌倒、主人认领、语音、控制、舌苔及拍照上传；从其他电脑远程调用见 [2.5 远程连接小车](#25-远程连接小车)。接口契约与现场验收范围分别说明；实际启用的接口以运行图为准。
 
 ## 1. 先选你需要的接口
 
@@ -50,7 +50,7 @@ export ROS_LOCALHOST_ONLY=1
 export FASTRTPS_DEFAULT_PROFILES_FILE=/absolute/path/fastdds-profile.xml
 ```
 
-Foxglove 的 WebSocket 连接只负责展示，不能替代 `rclpy` 或 `ros2 service call`。Windows 没有 ROS 环境时，可以通过 SSH 在已经安装 ROS 的小车终端调用。
+Foxglove 的 WebSocket 连接只负责展示，不能替代 `rclpy` 或 `ros2 service call`。Windows 没有 ROS 环境时，可以通过 SSH 在已经安装 ROS 的小车终端调用。从另一台电脑远程调用小车接口的完整步骤见 [2.5 远程连接小车](#25-远程连接小车)。
 
 ### 2.2 服务不会因构建完成而自动启动
 
@@ -99,6 +99,7 @@ ros2 interface show roscar_interfaces/srv/SayText
 | `with_radar`、`radar_required` | false、false | 启动雷达、让 guard 要求扫描/TF/包络保护；两个开关含义不同 |
 | `with_chassis`、`serial_port`、`car_mode` | false、空、空 | 启动底盘必须明确串口与车型；本车使用 mini_akm |
 | `with_voice`、`voice_config` | false、offline_voice/config/offline_voice.yaml | 启动共享录音、常开 KWS、固定规则、ASR、唯一 TTS，同时开放播报 API |
+| `asr_enabled` | true | `with_voice=true` 时的识别启动初值；运行中用 `/voice/set_asr_enabled` 切换 |
 | `enable_wake_driver`、`use_xfyun_asr` | true、false | 仅 with_voice 时生效；讯飞只替换识别，不引入 LLM 运动控制 |
 | `with_speech`、`speech_with_tts`、`with_announcements` | false、false、true | 仅播报桥、额外启动 TTS、阶段播报；已有 TTS 必须保持 speech_with_tts=false；与 with_voice 重复所有者组合会拒绝启动 |
 | `with_tongue`、`tongue_safety_profile` | false、robot | 模式管理器及舌苔；robot 要新鲜静止里程计，bench 必须运动关闭 |
@@ -116,6 +117,93 @@ ros2 launch roscar_api speech_api.launch.py with_announcements:=true
 # 没有其他整车入口时，显式启动语音和舌苔；其依赖、模型、录音设备须先就绪
 ros2 launch roscar_api api.launch.py with_voice:=true with_tongue:=true
 ```
+
+### 2.5 远程连接小车
+
+本节给"在另一台电脑上调用小车 ROS 接口"的使用者。
+
+| 项 | 值 |
+|---|---|
+| 小车地址 | `192.168.31.145`（当前局域网，地址变化以现场为准） |
+| SSH 用户 | `wheeltec`，端口 22；密码向项目负责人单独索取，不写入仓库 |
+| ROS 版本 | ROS 2 Humble（Ubuntu 22.04） |
+| ROS 域号 | `ROS_DOMAIN_ID=182` |
+| 本机限制 | 小车入口设置 `ROS_LOCALHOST_ONLY=0`，允许局域网发现 |
+| DDS | Fast DDS（Humble 默认 RMW）；小车加载 `perception_bringup/config/fastdds_robot.xml`，启用共享内存 + UDPv4，不限制网卡或地址 |
+| 运行目录 | `/home/wheeltec/ROSCAR-current`，由用户服务 `roscar-robot.service` 开机启动固定机位主链 |
+
+接口能否远程访问，取决于小车上**实际启动了哪些节点**，不是代码里有就一定在运行。部分功能可能尚未部署到小车或默认关闭。连上后请先按下面的"第 0 步"查看实际运行的接口，再调用。
+
+**2026-10-14 在小车上实查到的运行接口**（固定机位主链；之后重新部署或改启动参数会变化）：
+
+| 类别 | 当前可用 |
+|---|---|
+| 控制服务 | `/control/set_mode`、`/control/authorize`、`/control/arm`、`/control/disarm`、`/control/stop`、`/control/estop`、`/control/reset_estop`、`/control/reset_fault`、`/control/task_hold` |
+| 感知服务 | `/perception/claim_owner`、`/perception/lock_target`、`/perception/release_target` |
+| 语音 | 服务 `/voice/say`、`/voice/set_asr_enabled`、`/voice/start_listening`、`/voice/cancel_listening`、`/voice/cancel_speech`；action `/voice/speak`；ASR 状态 `/voice/asr_enabled`、`/voice/asr_status` |
+| 常用话题 | `/perception/target_state`、`/perception/detections`、`/perception/person_states`、`/perception/fall_alarm`、`/perception/owner_state`、`/control/state`、`/system/phase`、`/odom`、`/imu/data_raw`、`/PowerVoltage`、`/camera/color/image_raw`、`/perception/detections_preview/compressed` |
+| **尚未运行** | 拍照服务 `/capture/*` 及 `/capture_task/run`：小车上已有 capture_task 包，但开机入口 `run_robot_onboard.sh` 固定 `WITH_CAPTURE_TASKS=false`，需要按 3.1 另行启动 |
+
+当前主链的运动总开关是打开的（`motion_enabled:=true`），跟随仍需显式切换模式并授权；远程调用控制类服务前请先读第 5 节。
+
+#### 方式 A：SSH 登录小车，在小车终端调用（最简单，推荐先用）
+
+不需要在自己电脑上装 ROS，Windows 也可以用。
+
+```bash
+ssh wheeltec@192.168.31.145
+# 登录后在小车上：
+source /opt/ros/humble/setup.bash
+source ~/ROSCAR-current/install/setup.bash     # 以小车上实际部署目录为准
+export ROS_DOMAIN_ID=182 ROS_LOCALHOST_ONLY=0
+```
+
+之后本文中的所有 `ros2 service call`、`ros2 topic echo` 示例都可以直接在这个终端运行。
+
+#### 方式 B：自己的电脑装 ROS 2 Humble，通过局域网直接通信
+
+适合要在自己电脑上运行 Python 客户端或长时间订阅数据的情况。
+
+1. **网络**：电脑必须**直接**接入小车所在的 `192.168.31.x` 网段，双方能互相 ping 通。经过另一台路由器或 NAT（例如电脑在 `10.0.0.x` 子网、只能单向 ping 到小车）时 DDS 无法通信：小车回不到电脑。2026-10-14 实测从 NAT 后的电脑能 SSH 但发现不到任何节点，这种情况请用方式 A。DDS 依赖 UDP 组播，部分路由器或访客 Wi-Fi 会隔离客户端或拦截组播，也请改用方式 A 或网线直连。关闭电脑防火墙对 UDP 的拦截（Ubuntu 可先 `sudo ufw status` 检查）。
+2. **系统**：Ubuntu 22.04 + ROS 2 Humble，与小车一致。Windows 下的 WSL2 默认 NAT 网络收不到组播；需要用 WSL 的 mirrored 网络模式，否则请用方式 A。
+3. **消息定义**：电脑上必须有与小车**同一版本**的自定义接口包。克隆本仓库并切换到与小车部署一致的提交，然后只编译接口包：
+
+   ```bash
+   source /opt/ros/humble/setup.bash
+   sudo apt install -y ros-humble-vision-msgs
+   colcon build --base-paths ros2_ws/src --packages-select \
+     roscar_interfaces capture_task_interfaces execution_mode_interfaces person_interfaces gimbal_interfaces
+   source install/setup.bash
+   ```
+
+4. **环境变量**（每个终端都要设置）：
+
+   ```bash
+   export ROS_DOMAIN_ID=182
+   export ROS_LOCALHOST_ONLY=0
+   ```
+
+   小车未设置 `RMW_IMPLEMENTATION`，即 Humble 默认的 Fast DDS；电脑端也保持默认即可，不需要复制小车的 XML。
+   图像话题（如 `/camera/color/image_raw`）数据量大，经 Wi-Fi 订阅会占满带宽，远程查看画面优先订阅 `/perception/detections_preview/compressed`。
+
+#### 第 0 步：确认能看到哪些接口
+
+```bash
+ros2 node list
+ros2 service list -t
+ros2 topic list -t
+ros2 action list -t
+```
+
+- 方式 B 下 `ros2 node list` 为空：多半是网络/组播或域号问题，先排查网络，不要反复调用业务服务。
+- 看不到某个接口（例如 `/capture/face`）：说明小车上没有启动对应功能，需要在小车上按 2.2 和 3.1 的入口启动，或联系部署人员。
+
+#### 远程调用注意事项
+
+- **同一时间只让一个人控制小车**。远程客户端也能发送 `/chassis/cmd_vel`、调用 `/control/authorize`，运动仍受 motion_guard 授权和运动开关约束，但多人同时操作容易互相干扰。随时可以调用 `/control/stop` 停车。
+- 拍照、播报等服务调用会一直等到任务结束才返回（最长约 95 秒），不要因为终端暂时没返回就重复调用，重复调用会得到 `busy`。
+- 时间相关的新鲜度检查都在小车端完成，电脑与小车不需要精确对时；但长时间订阅时建议两端时间大致一致，便于看日志。
+- 不要在命令行、脚本或日志中写入 SSH 密码和云端 token。
 
 
 ## 3. 拍照并上传：最常用的新增接口
@@ -170,7 +258,9 @@ robot 下任务结束会释放自己的租约，但不会恢复运动授权或�
 | `/capture/face` | 面部 | 3 秒 | 3 | 640 像素 |
 | `/capture/tongue` | 舌体 | 2 秒 | 3 | 640 像素 |
 | `/capture/helmet` | 安全帽场景 | 1 秒 | 1 | 640 像素 |
-| `/capture/pcb` | 电路板 | 3 秒 | 5 | 1280 像素 |
+| `/capture/pcb` | 电路板 | 3 秒 | 5 | 640 像素 |
+
+PCB 缺陷检测模型默认输入为 **640×480**，当前 Gemini 原始 RGB 正好匹配，最小宽度为 640；仍按原始尺寸上传，不为拍照切换相机分辨率或放大图像。
 
 当前目录默认挑选最佳帧上传、JPEG 质量 95、任务时限 60 秒。宽度、亮度、清晰度等质量不足默认按 `warn` 上传并记录指标；目录改为 `quality_policy: fail` 时才因质检不足而失败。程序不放大图像冒充原始分辨率。
 
@@ -443,7 +533,7 @@ publisher.publish(msg)  # 放在周期回调中，每次生成新时戳
 
 ### 5.5 语音与这些接口的关系
 
-正式语音入口使用共享录音、Qwen3-ASR、Silero VAD、固定语义规则、常开 KWS 和唯一 MeloTTS。固定规则经 `MotionRequest` 和车辆能力适配后提交请求；`motion_guard` 是最终授权和速度出口。方向口令不会自动授权，不允许 LLM 生成底盘运动控制。
+源码语音入口使用共享录音、Qwen3-ASR、Silero VAD、固定语义规则、常开 KWS 和唯一 Matcha 中文女声（Vocos）播报器。2026-10-14 此次模型替换尚未部署，小车此前运行的仍是 Melo；模型准备见 [文字播报接口](文字播报ROS接口.md)。固定规则经 `MotionRequest` 和车辆能力适配后提交请求；`motion_guard` 是最终授权和速度出口。方向口令不会自动授权，不允许 LLM 生成底盘运动控制。
 
 `/voice/command` 与 `/voice/command_result` 是结构化控制/结果接口，不是文字播报服务，也不是任意自然语言的聊天接口。日常语音操作见[语音控制说明书](语音控制使用说明书.md)，开发边界见[语音优化无车实施与验收](语音优化无车实施与验收.md)。
 
@@ -697,6 +787,8 @@ ros2 topic echo /perception/owner_state
 | `/voice/speak` | execution_mode_interfaces/action/SpeakText | text + 唯一 utterance_id；反馈 phase；result.status=completed 表示完成；可取消自己的 goal |
 | `/voice/tts_text` | std_msgs/msg/String | 兼容无需完成回执的文字播报输入 |
 | `/voice/start_listening`、`/voice/cancel_listening` | std_srvs/srv/Trigger | 触发一次识别 / 取消正在监听的会话 |
+| `/voice/set_asr_enabled` | std_srvs/srv/SetBool | `data=false` 退出识别进程并释放模型内存；`data=true` 重新加载，返回 success/message |
+| `/voice/asr_enabled`、`/voice/asr_status` | std_msgs/msg/Bool、std_msgs/msg/String JSON | 当前识别可用状态 / 模型与进程状态；可靠、transient_local，并周期更新 |
 | `/voice/cancel_speech` | std_srvs/srv/Trigger | 全局取消播报；普通调用超时应用自己的 action goal 取消，避免干扰检测 |
 | `/voice/asr_text`、`/voice/asr_state` | std_msgs/msg/String | 识别结果 / 状态；固定规则入口使用完整结果，讯飞无最终包或截断不发布临时文本 |
 | `/voice/speaking`、`/voice/tts_state` | std_msgs/msg/Bool、std_msgs/msg/String | 播放中 / 播放状态 |
@@ -720,6 +812,40 @@ ros2 topic echo /voice/command_result
 文字不进入意图解析。300 字上限，空白拒绝；服务忙/不可用/失败/超时必须检查 status，见 [文字播报接口](文字播报ROS接口.md)。底层始终复用唯一 TTS 队列，不靠新建播放器实现阶段播报。
 
 B/C 整机入口开启语音及 TTS 时自动启动阶段观察器，通过 `/voice/say` 播报：等待认领、认领成功、开始跟随、主人丢失、主人返回、10 秒到期重新认领、主动释放。相同阶段心跳不重复播，目标故障恢复不重复“开始跟随”。播报忙时短暂重试并合并同来源未发送状态；当前阶段心跳持续时等待语音就绪，心跳中断超过 4 秒的过时内容丢弃，接口不可用不阻塞感知/控制。故障可查看播报节点日志和 `/system/phase`。
+
+#### ASR 开关与内存释放（2026-10-14 已部署验证）
+
+小车 `/home/wheeltec/ROSCAR-current` 已更新并原生构建新版语音入口，`roscar-robot.service` 正在提供此接口，ROS 域号仍为 182。其他部署需要先构建：
+
+```bash
+source /opt/ros/humble/setup.bash
+bash scripts/build_ros.sh --packages-select offline_voice voice_command_router roscar_api
+source install/setup.bash
+```
+
+随后使用原有完整语音/整机入口加载新版本。只启动旧 `asr_node` 不会提供新的开关，不能与 manager 管理的识别进程同时启动。
+
+板端两轮真实 Qwen3/Silero 加载占用约 1.2 GiB RSS，关闭约 0.68 秒后进程消失；重载后的数字音频回放识别到“停止。”。真实 MeloTTS/ALSA 在关闭 ASR 时完成正在播放的内容，关闭期间的新 `/voice/say` 请求也完成。正式主链另外验证了麦克风继续采集、重载后监听/取消服务及 CPU 亲和性 0、1，且语音/速度发布者各只有一份。测试结束 ASR 已开启，小车保持 IDLE/DISARMED；这不代表真人识别准确率或运动/制动验收。
+
+```bash
+# 关闭识别，等待识别进程退出并释放 ASR/VAD 模型内存
+ros2 service call /voice/set_asr_enabled std_srvs/srv/SetBool '{data: false}'
+
+# 恢复识别：模型加载成功后才返回 success=true
+ros2 service call /voice/set_asr_enabled std_srvs/srv/SetBool '{data: true}'
+
+ros2 topic echo /voice/asr_status --once
+```
+
+关闭后的状态为 `enabled=false/state=DISABLED/models_loaded=false/worker_pid=0/worker_rss_kib=0`。开启后为 `ENABLED`，带新进程 PID 与 RSS（KiB）。其他阶段为 `LOADING`、`DISABLING`、`ERROR`；程序应检查服务 `success/message`，不能只看请求已发出。重复设置同一状态可安全调用，已经开启时不重复加载模型。
+
+轻量 `asr_manager` 保持 ROS 开关和原 `/voice/start_listening`、`/voice/cancel_listening` 服务在线，模型在独立工作进程。关闭时先停止转发识别结果，再请求该进程退出；原生推理未响应时有界强制结束。只有进程确认退出才返回关闭成功，因此 Qwen3-ASR、Silero VAD、原生推理会话和该进程的中间缓冲一并释放，而不是仅暂停监听。Linux 可回收的文件页缓存可能仍保留，不代表模型仍驻留在识别进程。
+
+开启默认最多等待 60 秒加载，失败/超时返回 `success=false`、状态 ERROR，并清理失败进程。正在加载时的关闭请求会中止加载；其他并发开启请求可能返回正在切换状态，按 message 稍后重试。识别进程意外退出后不会自动反复加载，需显式重新开启。初始状态参数 `asr_enabled` 只用于启动，运行时使用上述服务。
+
+关闭会清理普通语音会话和待完成的语音授权，丢弃迟到识别结果；恢复后需要重新喊“小微小微”，不会恢复旧动作或旧会话。TTS、现有播报接口、共享录音以及独立 KWS 的原有配置保持不变；此开关不会取消正在播放的提示或检测任务，也不会关闭跟随主链或解除故障。已完成的驾驶授权仍由原保护逻辑管理，尚在等待的语音授权会按既有取消逻辑撤销。当前配置若原本关闭 KWS，此开关也不会自行启用它。
+
+ASR 关闭/加载时，`/voice/start_listening` 返回 `success=false`；取消空会话可成功返回。需要开机先不加载识别模型，可设置 `VOICE_ASR_ENABLED=false` 启动现有语音脚本，或在 launch 中传 `asr_enabled:=false`；默认仍开启。ASR 开关运行状态不写入私有配置，重启按启动参数决定。
 
 ### 9.2 舌苔执行模式
 
@@ -788,6 +914,7 @@ pub.publish(msg)
 
 | 现象 | 先检查什么 |
 |---|---|
+| 远程电脑 `ros2 node list` 为空 | 是否同网段能 ping 通、路由器是否隔离客户端或拦截组播、防火墙、两端 `ROS_DOMAIN_ID=182` 与 `ROS_LOCALHOST_ONLY=0`；不行就改用 SSH 登录小车调用（2.5 方式 A） |
 | 服务列表没有 `/capture/*` | `with_ros_api` 默认关闭；确认 api_node、overlay、域号与 DDS |
 | 拍照返回 busy | 是否已有 ROS、云端或直接 Action 任务占执行器；本接口不排队 |
 | rejected / voice_mode_active | 语音舌苔任务尚未退出；先等其清理完成 |

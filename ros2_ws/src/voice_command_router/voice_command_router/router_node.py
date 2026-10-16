@@ -10,6 +10,7 @@ import uuid
 import rclpy
 from rclpy.node import Node
 from rclpy.clock import Clock, ClockType
+from rclpy.qos import QoSProfile, DurabilityPolicy
 from std_msgs.msg import String, Float32, Bool
 from std_srvs.srv import Trigger
 
@@ -75,6 +76,9 @@ class VoiceCommandRouter(Node):
         self._power = self._target = None
         self._next_listen_at = self._last_listen_attempt = 0.
         self._hold_at, self._tts_hold, self._speech_hold = 0., False, False
+        self._asr_enabled, self._asr_enabled_at = True, None  # Legacy standalone ASR remains compatible.
+        self.create_subscription(Bool, '/voice/asr_enabled', self._on_asr_enabled,
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.create_subscription(String, get('input_topic'), self._on_asr, 10)
         self.create_subscription(String, '/voice_words', self._on_wake, 10)
         self.create_subscription(String, '/voice/asr_state', self._on_asr_state, 10)
@@ -93,6 +97,8 @@ class VoiceCommandRouter(Node):
         return result
 
     def _on_wake(self, message):
+        if not self._asr_enabled:
+            return
         if message.data.strip() != self.get_parameter('continuous_wake_text').value:
             return
         self._cancel_pending_authorization()
@@ -127,7 +133,16 @@ class VoiceCommandRouter(Node):
             self._speech_hold = False
             self._request_next_listen()
 
+    def _on_asr_enabled(self, message):
+        enabled = bool(message.data)
+        if enabled != self._asr_enabled:
+            self._mode_voice_session = False
+            self._close_session()
+        self._asr_enabled, self._asr_enabled_at = enabled, time.monotonic()
+
     def _session_active(self):
+        if not self._asr_enabled:
+            return False
         now = time.monotonic()
         return self.session.active(now) or ((self._tts_hold or self._speech_hold) and now - self._hold_at < 25)
 
@@ -152,6 +167,8 @@ class VoiceCommandRouter(Node):
             self._cancel_listen.call_async(Trigger.Request())
 
     def _on_asr(self, message):
+        if not self._asr_enabled:
+            return  # Includes queued results from the process that has just exited.
         parse_error = None
         try:
             parsed = parse_intent(message.data)
@@ -378,6 +395,10 @@ class VoiceCommandRouter(Node):
 
     def _tick(self):
         now = time.monotonic()
+        if self._asr_enabled_at is not None and now - self._asr_enabled_at > 3. and self._asr_enabled:
+            self._asr_enabled = False
+            self._mode_voice_session = False
+            self._close_session()
         if self._execution_pending and now - self._mode_pending_at > 3.:
             self._request_mode_exit()
             self._speak('执行模式启动超时，小车保持未授权')

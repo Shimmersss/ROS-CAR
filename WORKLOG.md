@@ -1,3 +1,9 @@
+## 2026-10-16：Demo 分支同步最新 main
+
+- 以远端 `demo/showcase-20261016`（`558f36e`）为基础合入最新 `origin/main`（`44c7256`，含 PR #27 Matcha 部署记录、PR #28 WSL 云端拍照联调与 PCB 质量门修复等 22 个提交），结果先推送到 `claude/admiring-cerf-9gqpe4`，未直接改写 demo 分支，不涉及 main，不部署板端。
+- 冲突两处：README 文档索引同时保留 demo 入口行与 main 新增的 10-15 WSL 拍照联调条目；`offline_voice.launch.py` 采用 main 的 `asr_manager` 管理识别进程，同时保留 demo 的 `with_motion_adapter` 开关条件（默认 true，demo 运动入口置 false）。
+- 验证：Python 3.10 + CI 固定依赖下 `scripts/ci_unit_tests.sh` 全部通过；`bash -n scripts/start_project.sh` 与 launch 文件语法检查通过。需 ROS launch 的 `tests/test_demo_launch.py` 本机无 Humble 环境未运行，未做 colcon 编译、ROS 运行时或实机验证。
+
 ## 2026-10-16：T2.6 关键点阈值与下沿候选离线评估
 
 - 仅在 `demo/showcase-20261016` 增加可复现六组对比工具；关键点门槛 0.50/0.35 × 下沿 0/8/15 px。重读原始深度、按当前融合参数重建关节，重新计算姿态与高度否决，再合并告警；保留旧回放默认口径。显式阈值/配置的三维回放要求匹配重建缓存指纹，否则重算，避免误用旧阈值关节。
@@ -83,6 +89,41 @@
 - 改图像订阅为 latest unread（DDS depth=1）减少陈旧队列；进程内配准发布每次完成推理对应的原时间戳校正 RGB，供 ReID 精确配对且不受可视化限帧影响；更新入口允许二者共用，禁止相同原始/输出话题。新增原生 ROS 回归通过两种深度单位下的最新帧处理、校正像素一致性/时间戳/关闭可视化仍输出、同入口 ReID 订阅正确且唯一图像发布者。仍在排查完整链延迟，舌苔实物流程与语音唤醒未验收，实车运动未开启。
 
 # 工作记录
+
+## 2026-10-14：按用户选择改用 Matcha 中文女声
+
+- 在独立本地分支 `codex/matcha-chinese-tts` 实施，不向仍开放的 ASR PR #25 混入 TTS 改动。源码默认从 Melo 改为 Matcha-baker 的 `model-steps-3.onnx` + Vocos 22 kHz 声码器，保留 CPU 两线程、语速 1.0、唯一队列、`/voice/say`、SpeakText、播放状态及取消语义。模型/声码器缺失明确失败，加载失败销毁节点并清理原队列线程。
+- 同步语音/整机启动文件预检、官方模型准备脚本、README、当前入口/接口手册和长期约定。`--include-tts` 默认准备 Matcha + Vocos 并记录模型哈希；历史合成工具仍使用原 Melo，历史复现命令显式加 `--tts-model melo`。没有更改权重或添加音频后处理；模型与生成音频均留在忽略的缓存/artifacts。正式小车此时仍运行此前 Melo，本轮未上传或重启车端服务，也未推送 GitHub。
+- 本机私有 Humble x86_64 环境三包（roscar_interfaces、offline_voice、roscar_api）原生构建通过，**1619 项相关单测通过**，包含六种缺失模型文件和原生加载异常后的队列线程清理。真实 Matcha + ROS SayText/SpeakText/唯一队列、模拟 ALSA sink 的专项验证通过：ASR 关闭时播报 completed、空文本拒绝、action 取消确认并关闭 sink、取消后的新播报 completed。实际项目节点生成 22.05 kHz 单声道音频约 5.57 秒，数字样本为 `artifacts/matcha-migration-20261014/matcha-project.wav`。
+- 首次专项运行使用旧 underlay 的 roscar_interfaces，缺少 SayText；已补构建当前接口后通过，保留失败日志。官方词典加载提示四个含 `shei2` 的短语 token 未知；单字“谁”有合法 `shui2`，本次常用提示及取消回归完成，不把这些检查记为完整多音字/真人识别/实车听感验收。Matcha-baker 的数据用途限制已链接官方说明。
+- 最小审查核对默认模型路径/声码器、启动依赖、模型准备与历史复现、取消/完成状态及线程回收；Python/Bash 语法、下载计划、文档链接及 Git 空白检查通过。证据为 `artifacts/matcha-migration-20261014/validation.log`、`runtime-result.json`，验证专用挂载已清理。没有新增文档入口，README 索引无需新增条目。
+
+## 2026-10-14：ASR 开关板端部署与验证通过
+
+- 用户重新开机后恢复 `wheeltec@192.168.31.145` 连接。沿用 Windows 已知主机密钥和 SSH 密钥登录；WSL 缺少该主机的信任记录，没有绕过校验。分支仍为 `codex/asr-runtime-switch`，按用户要求实机通过后再通过 WSL 推送 PR。
+- 在独立目录 `/home/wheeltec/ROSCAR-asr-switch-20261014-e12e389` 原生构建 offline_voice、voice_command_router、roscar_api 三包通过。板端首次单测缺少模式配置 fixture，导致 1 失败/3 错误；补齐现有 modes.yaml 后 **1614 项单测和 6 项隔离 ROS 开关回归全部通过**，未为此更改产品源码。原始失败与成功日志均保留。
+- 确认 `/control/stop` 返回成功后暂停原主链，domain 195 上使用原有真实 Qwen3/Silero 和 MeloTTS/ALSA。两轮模型 RSS 1,283,348 / 1,252,860 KiB，加载 7.37 / 6.77 秒，关闭 0.684 / 0.683 秒；关闭成功后 PID 消失、worker RSS 为零。ASR 关闭时正在播放的 `/voice/say` 正常完成，随后新的播报也完成；第二轮重载后的合成数字音频识别到“停止。”。这是板端真实模型与播放软件完成确认，未取得本轮人工听感或真人识别准确率验收。
+- 部署前逐项校验车上原文件与 origin/main 基线及待部署文件哈希一致，只替换 10 个语音/启动相关文件；备份为 `/home/wheeltec/ROSCAR-backups/asr-switch-20261014-e12e389/source-before.tar` 及 manifest。没有改变 current 指向、私有服务配置、跟随/急停参数、相机或模型权重；正式目录三包原生增量构建通过。
+- 正式 `roscar-robot.service` 重启后立即确认 STOP，domain 182 上复核关闭释放、关闭期间真实麦克风继续流式采集与 `/voice/say` 完成、重载后监听/取消和播报通过。新模型 PID 与旧 PID 不同，CPU 亲和性为 0、1；`/cmd_vel`、`/voice/audio`、`/voice/asr_text`、`/voice/tts_state` 发布者均为 1，观测速度峰值为 0。显式取消监听产生原识别器的 `Listening cancelled` 日志，服务返回成功，模型仍可用，未修改原取消实现。
+- 测试收尾正式服务 active，ASR ENABLED，车辆 IDLE/DISARMED，无残留隔离模型/TTS 进程。此前拍照门面服务重启后本就 inactive，本轮保持该状态；云端地址仍暂缓配置。同步接口表、入口说明和 README。证据为 `artifacts/asr-switch-20261014/board-{build,retest,real,deploy,main-smoke}.log`、`board-real-result.json`、`board-main-result.json`，同样保存在车端隔离目录。最小审查覆盖基线/备份、唯一音频与速度出口、CPU 继承、内存释放确认及验证边界；本次不进行运动、真人识别准确率或云端拍照验收。
+
+## 2026-10-14：ASR 开关板端测试与 PR 准备（等待网络）
+
+- 用户要求本地测试后到小车验证，通过后经 WSL 推送 PR。已从最新 origin/main 创建 `codex/asr-runtime-switch`，仅包含 ASR 功能改动，不夹带此前拍照门面部署记录；尚未推送或创建 PR。
+- 核对专用 Humble 验证副本与当前识别/路由源码，补同步进程测试的 Linux 平台跳过条件后重跑：1614 项相关单测及 6 项 ROS 开关回归全部通过。日志为 `artifacts/asr-switch-20261014/retest-before-car.log`；验证挂载已清理。
+- Windows 和 WSL 均无法连接文档中的 `192.168.31.145:22`（超时/No route to host），历史 Wi-Fi/网线地址也不可达，电脑物理有线网卡显示未连接。已询问当前网络或新 IP；没有连接小车、上传、停止服务或进行板端测试，实机结果仍待验证，因此尚不满足用户设定的 PR 推送条件。
+
+## 2026-10-14：ROS 控制 ASR 启停并释放模型内存
+
+- 按用户要求修改项目，新增 `/voice/set_asr_enabled`（std_srvs/SetBool）及 `/voice/asr_enabled`、`/voice/asr_status`。本轮仅本地实现与验证，未上传或重启小车，未修改此前已运行的拍照/播报服务或车辆配置。
+- 轻量 `asr_manager` 保留开关及原监听/取消服务，独立 worker 加载 ASR/VAD；关闭先禁止转发、使旧代次失效，再确认工作进程退出，回收原生模型会话/缓冲。原生计算不响应时有界终止，只在确认退出后返回成功；重新开启等待真实加载握手，失败/超时清理，不自动重启崩溃模型。Linux parent-death signal 防止控制进程异常退出后遗留模型。
+- 结果/状态及内部监听服务使用每次启动唯一且合法的 ROS 名称，外部 `/voice/start_listening` 和 `/voice/cancel_listening` 由 manager 稳定转发；避免重载时命中旧 DDS 服务实例。默认仍开启，`VOICE_ASR_ENABLED`/launch `asr_enabled` 可指定初值；参数只读、运行中用服务。保留 Qwen3 CPU 两线程、讯飞显式回退与原识别实现；CPU 布局识别 manager/worker，重载继承亲和性。
+- router 关闭普通会话、撤销尚在等待的语音授权、拒绝关闭期间唤醒与迟到结果；恢复需重新唤醒，manager 心跳丢失也关闭普通会话。保留 TTS、共享录音、独立 KWS 的原配置，不取消任务播报、不增加速度出口或恢复运动。同步 README、接口手册、入口说明、长期约定及流程回归入口。
+- 本机专用 Humble x86_64 根文件系统内，独立工作区原生构建四个语音/模式依赖包通过；与改动相关的 **1614 项单测通过**，新增 **6 项真实 ROS 开关回归通过**（工作进程为有真实内存的替身、播报为模拟），覆盖重复开关、关闭释放、重载/旧代次、加载中关闭、失败/超时、进程崩溃及播报持续。进程单测包含真实强制退出和父进程异常后的内存释放，属于 1614 项之内。
+- 使用既有真实 Qwen3-ASR/Silero 权重在同一隔离环境完成两轮加载/关闭：worker RSS 分别 1,274,740 / 1,287,252 KiB，加载约 4.61 / 3.64 秒，关闭约 0.52 / 0.48 秒，关闭后 PID 消失、worker RSS 为零；第二轮合成数字音频回放识别到“停止。”。这是本机 x86_64/CPU 的进程占用，不代表系统空闲内存必定增加同样数量，也不是 Jetson 或真人识别验收。
+- 验证环境边界：本机 Fast DDS 跨进程监听请求超时；真实模型/数字回放改用已安装的 Cyclone DDS 通过，仅作用于测试环境，未改变产品/小车默认 RMW。原有五项流程脚本在旧验证 underlay 缺 roscar_api 时未能运行，本轮没有将整套流程记为通过；针对性语音包与新增开关检查均通过。
+- 中间修复与证据保留：唯一内部 topic 最初可能以 UUID 数字开头，现统一加字母前缀；修复状态检测与启停竞争。新增测试曾因方法分段错误在关闭后取得 PID 0，导致本轮验证进程被误结束，现归回正确场景并在发送信号前断言 PID>1；不涉及小车或生产控制。正常 SIGTERM 的 Humble wait-set 关闭异常也已妥善处理。最后源码测试没有诊断注入。
+- 最小审查核对模型只在 worker、进程确认后返回、父进程死亡/加载取消/失败资源清理、代次和会话门禁、播报独立、只读启动参数、旧服务兼容、CPU 继承及文档边界。Python/XML/Bash 语法与 Git 空白检查通过；源模型只读绑定，结束清理本轮挂载。证据在 `artifacts/asr-switch-20261014/`，不 push GitHub。
 
 ## 2026-10-13：完善 ROS 接口调用手册
 
@@ -1702,3 +1743,67 @@
 
 - 新增 `docs/Agent控制接口速查.md`，简述模式切换/epoch 授权、外部速度顺序、停车与急停、主人认领、文字播报、停车租约和必要状态监测；同步 README 索引。限速和主人等待时间以运行配置/消息为准，避免沿用历史值。
 - 最小审查核对 srv 字段、guard 入口与参数、请求时间戳/唯一发布者及复位边界；检查文档链接与 diff 空白。本次仅文档，不修改代码、板端服务或运动状态，不把文档检查描述为实机验证。
+
+## 2026-10-13：ROS 接口文档补充远程连接说明
+
+- `docs/ROS接口使用文档.md` 新增 2.5 节“远程连接小车”：小车当前地址 192.168.31.145、SSH 用户 wheeltec（密码不入库）、Humble、域 182、`ROS_LOCALHOST_ONLY=0`；SSH 登录调用与同网段 DDS 直连两种方式、只编译接口包的命令、先查看实际运行接口、单人控制与不重复调用等注意事项；常见问题表增加远程无节点排查。
+- 2026-10-14 只读核对小车 192.168.31.145：roscar-robot.service 运行固定机位主链（/home/wheeltec/ROSCAR-current，域 182、ROS_LOCALHOST_ONLY=0、fastdds_robot.xml 为 SHM+UDPv4 不限地址）；文档列出实查的服务/话题，/capture/* 未运行（开机入口 WITH_CAPTURE_TASKS=false），主链 motion_enabled=true。从 NAT 后的电脑可 SSH 但 DDS 发现不到节点（小车无法回连），同网段直连未实测。仅文档改动，未调用任何服务、未改板端配置。
+
+
+## 2026-10-14：拉取远端最新主线
+
+- 当前工作区原为已合入远端的 docs/remote-ros-access（4525776），无未提交改动；拉取 origin 后切回本地 main，将 38fe105 快进至 1faea7a，保留原文档分支及历史，未发生冲突。同步范围包含远程连接说明及 PR #25 的 ASR 运行开关、独立进程管理和内存释放逻辑；拍照、舌苔及其余现有功能保留。
+- 最小审查：核对 ASR 入口、进程停止与路由会话清理；11 个 Python 文件及 2 个 shell 脚本语法检查通过，远端变更 diff 空白检查通过。完整 scripts/ci_unit_tests.sh 本机运行通过（2102 项 pytest、2 项跳过，另 22 项录像工具和 1 项入口路径测试）；日志位于忽略的 artifacts/remote-update-20261014/ci.log。
+- 本次仅更新当前本地仓库并记录验证，未推送 GitHub、未同步另一台 WSL、未部署或操作小车。上述软件回归不代表 ROS 编译或实机验收。
+
+
+## 2026-10-14：再次同步远端主线
+
+- 拉取并合并 origin/main c897d3f（PR #26），保留此前本地同步记录，无冲突。更新包括默认 TTS 切换为 Matcha 中文女声 + Vocos、模型准备及启动检查，保持唯一播报队列与既有 ROS 接口。
+- 最小审查核对模型加载及失败清理、启动依赖清单；offline_voice 软件测试 19 项通过、1 项因运行依赖缺失跳过，C 入口测试 6 项通过；改动 Python/shell 语法与远端 diff 空白检查通过。未进行 ROS 编译、实际模型合成或小车部署，未推送本地同步记录。
+
+
+## 2026-10-14：Matcha 新语音部署到小车
+
+- 经停车服务确认后停止旧服务，白名单部署 d5f2096 到 ROSCAR-matcha-20261014-d5f2096；617 个源码文件校验一致，排除厂商包/权重/私有配置。车端原生构建 21 包通过，现有驱动/底盘 overlay/Pose Python/权重复用；官方 Matcha-baker + Vocos 资产下载、传输及哈希校验通过。新 current 切换，保留旧目录与 before-matcha 备份。
+- 原用户服务增加试运行 ExecStart 覆盖，强制 MOTION_ENABLED/FOLLOW_AUTO_ARM/FOLLOW_TARGET_AUTO_RECOVER=false，私有 env 未改；本次未恢复运动。首次启动的日志目录缺失已补齐，服务最终 active。
+- 车端隔离 ASR ROS 回归 6 项、TTS 加载清理 7 项通过。真实 ASR 关闭后旧进程退出，RSS 1,285,200 KiB→0；再开启新进程成功。新女声测试句 SayText 返回 completed，用户现场确认声音正常、唤醒后查询状态播报与原逻辑一致。真实相机 587 帧 640×480 rgb8，787 条速度样本全零，IDLE/DISARMED/运动关闭。官方词典 shei2 token 警告保留，未据本次测试声称全词汇读音验收。
+- 新增部署验证文档并维护 README 索引；AGENTS 仅更新当前部署入口/运动关闭覆盖事实。证据取回 artifacts/deploy-matcha-20261014/evidence，最小审查核对源码差异、模型来源哈希、服务/运动边界及文档链接。上述隔离合成测试与实际相机/语音测试分别记录，不声称跟随、制动、避障、测距标定或急停验收。
+
+
+### Matcha 部署验证记录提交 PR
+
+- 使用 codex/matcha-deployment-validation 分支提交本次车端部署文档、README 索引、当前运动关闭入口说明及同步/验证记录；无模型、凭据或构建产物。提交前检查文档索引、证据一致性与 diff 空白；代码实现已在远端 PR #25/#26 合并，本 PR 只补充部署结果与操作边界。通过已授权的 WSL GitHub 登录推送，不改变其现有工作区，不操作小车服务。
+
+- 已推送 codex/matcha-deployment-validation 并创建 PR #27：https://github.com/Shimmersss/ROS-CAR/pull/27 ，目标 main，未合并。本次使用既有 WSL GitHub 授权；未修改车端服务或运动状态。
+
+
+## 2026-10-15：同步远端并重新阅读项目
+
+- fetch 后确认远端 main 为 0b2ffaa（PR #27 已合并），切回本地 main 并快进同步；与此前 PR 分支 6a312a8 的 tree 完全一致，无新增功能代码、无冲突，保留原分支。
+- 重新阅读 README、架构、语音入口与最新部署记录，对照整机/C/固定机位启动脚本、Gemini 驱动参数、ASR manager/Matcha TTS、motion authority、主人生命周期/阶段播报、模式管理/舌苔流程以及独立拍照执行器/ROS 门面/任务目录。确认主线 C/默认 B、当前彩色 640×480/深度 640×400、PCB 目录 min_width=1280 但质量默认 warn；固定机位入口明确关闭舌苔与云端拍照。按 10-14 部署记录理解试运行运动关闭覆盖，不把历史私有 env 自动跟随值当作已恢复运动。
+- 发现旧 README/architecture/语音入口说明仍残留“跌倒不接语音”或 Matcha 未部署等历史描述；当前源码已由阶段观察器消费新鲜 FallAlarm，Matcha 已有 10-14 现场播报记录，本次据代码和最新记录阅读，未顺带改写这些旧文档。
+- 最小审查：确认快进结果与原 PR tree 一致、主要入口/参数及验证范围相符，并做 diff 空白检查。本次没有功能代码改动，未重复既有测试、未编译、未连接或操作小车、未推送远端；只新增本条本地工作记录。
+
+
+## 2026-10-15：WSL 模拟云端下发四类真实拍照任务
+
+- 根据用户要求使用 MeatShell 5060wsl (easytier)，在独立目录启动带临时鉴权的参考云端；WSL HTTP 入站直连超时，改为受限 SSH 反向隧道，未改路由器/防火墙。车端单独临时启动 capture 执行器+bridge，robot 模式复用已有 guard、原始相机与唯一 Matcha/Vocos，不增加速度/TTS 所有者，不改原开机服务。
+- 面诊、舌诊、安全帽、PCB 依次 command accepted / uploaded；四张真实 640×480 JPEG 取回 WSL 并本机复核解码与 SHA-256，一致。PCB 因 min_width=1280 返回 width_below_minimum，默认 warn 仍上传。准备与完成 action 回执均通过，用户确认四项播报都听到且正常。
+- 用户选择仅验证链路、不摆齐实物；回传图目视为天花板，没有实际诊断/目标识别或业务画质验收。全程 2686 条速度样本全零，里程计速度为零、运动始终关闭；最后 IDLE/DISARMED、TaskHold 释放。
+- 已停止临时拍照服务/模拟云端/隧道并删除临时隧道密钥及 Bearer 凭据，保留图片/事件/回执及观察证据于两机和忽略的本地 artifacts。原机器人服务仍 active，未恢复运动。新增联调文档及 README 索引；最小审查核对任务结果、图片哈希/解码、8 次真实播报状态、停车保持和清理状态、文档链接及 diff 空白，无功能代码改动，不将此记录描述为推理、测距、制动或急停验收。
+
+
+## 2026-10-15：PCB 采集质检匹配 640×480 模型输入
+
+- 用户明确 PCB 缺陷模型默认输入 640×480，将 PCB 目录 min_width 从 1280 改为 640，直接使用当前 Gemini 原始 RGB；不切换相机分辨率、不插值放大、不改 HTTP/ROS 字段和其他三类任务。保留播报、3 秒准备、5 帧择优、JPEG 95、清晰度/亮度/色彩质检与停车租约。
+- 更新已有目录、质量及流程回归：有效 640×480 PCB 在 fail 策略下也可采集上传，低于 640 的图片仍因宽度质检失败；同步接口手册、实现/执行方案，为旧 WSL 实测告警增加历史说明，不篡改原始记录。验证及板端同步结果完成后补记。
+
+- 验证完成：capture_task 全部 113 项纯 Python 回归通过；上轮真实 640×480 PCB JPEG 按新目录复评无质检告警（复用已有照片，不是新实拍）。板端仅同步 tasks.yaml，校验原文件无并行改动并备份，安装目录哈希与本地一致；加载后的 PCB 配置为 min_width=640 / prepare_sec=3 / burst=5，原机器人服务 active，未重启整车或修改运动配置。配置在下次启动独立拍照模块时加载，不声称已重跑云端链路或 PCB 推理。
+
+
+### PCB 640×480 修正与云端联调提交 PR
+
+- 使用 codex/wsl-cloud-capture-trial 提交 PCB 最小宽度 1280→640 的配置/回归/文档更新及四类真实拍照联调记录，目标 main。图片、临时凭据、测试脚本和构建产物均位于忽略的 artifacts，不提交。已有 113 项 capture_task 回归、旧实拍复评及板端配置加载验证通过；提交前复核差异、验证边界和 diff 空白，不重复改变小车服务或运动状态。
+
+- 已推送分支并创建 PR #28：https://github.com/Shimmersss/ROS-CAR/pull/28 ，目标 main，未合并；未操作或重启车端服务。

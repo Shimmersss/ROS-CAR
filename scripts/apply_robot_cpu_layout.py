@@ -25,7 +25,7 @@ def belongs_to(pid,parent):
 def cores_for(names):
     if 'emergency_node' in names:return {4}
     if names & {'audio_node','guard'}:return {5}
-    if names & {'tts_node','asr_node','reid_observer'}:return {0,1}
+    if names & {'tts_node','asr_node','asr_manager','offline_voice.asr_worker','reid_observer'}:return {0,1}
     if names & {'pose_tracker','gemini_registration'}:return {2,3}
     return {0,1,2,3}
 

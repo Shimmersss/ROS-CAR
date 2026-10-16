@@ -13,7 +13,8 @@ def test_quality_color_size(catalog):
     rgb=np.repeat(gray[:,:,None],3,axis=2)
     sharp=measure(rgb);blur=measure(cv2.GaussianBlur(rgb,(15,15),0))
     assert sharp['sharpness']>blur['sharpness'] and sharp['rb_ratio']==1
-    assert warnings(sharp,catalog.tasks['pcb'])==['width_below_minimum']
+    assert warnings(sharp,catalog.tasks['pcb'])==[]
+    assert 'width_below_minimum' in warnings(measure(rgb[::2,::2]),catalog.tasks['pcb'])
     assert 'rb_ratio_out_of_range' in warnings(measure(np.full((10,10,3),[10,10,220],np.uint8)),catalog.tasks['face'])
     decoded=cv2.imdecode(np.frombuffer(encode_jpeg(rgb),np.uint8),1)
     assert decoded.shape==(480,640,3)

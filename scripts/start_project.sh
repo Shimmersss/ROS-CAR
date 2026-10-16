@@ -158,7 +158,12 @@ if [[ "$WITH_VOICE" == true ]]; then
       offline_models="${ROSCAR_OFFLINE_MODEL_ROOT:-$offline_root/models}"
       voice_files=(
         "$offline_root/venv/lib/python3.10/site-packages/sherpa_onnx/__init__.py"
-        "$offline_models/vits-melo-tts-zh_en/model.onnx"
+        "$offline_models/matcha-icefall-zh-baker/model-steps-3.onnx"
+        "$offline_models/matcha-icefall-zh-baker/lexicon.txt"
+        "$offline_models/matcha-icefall-zh-baker/tokens.txt"
+        "$offline_models/matcha-icefall-zh-baker/date.fst"
+        "$offline_models/matcha-icefall-zh-baker/number.fst"
+        "$offline_models/vocos-22khz-univ.onnx"
         "$offline_models/silero_vad.onnx"
         "$offline_models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/encoder-epoch-13-avg-2-chunk-8-left-64.int8.onnx"
         "$offline_models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/decoder-epoch-13-avg-2-chunk-8-left-64.onnx"
