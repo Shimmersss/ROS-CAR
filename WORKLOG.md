@@ -1796,3 +1796,5 @@
 
 - 从origin/demo/showcase-20261016@558f36e单独建立codex/inference-models-demo，移入PCB640质检、拍照推理及本轮模型/文档；保留demo运动、跌倒、跟随、语音源码与README/ROS文档中的demo入口。与demo基线比对这些业务目录无差异，仅公共启动/CI增加显式infer配置及网关检查。
 - 两目标完整纯Python CI退出0。demo原结构脚本仍只列21包，基线已有demo_interfaces/demo_motion导致检查失败；本集成分支补全为23包后通过，不改业务逻辑。主分支准备工具已用真实3资产/45冻结文件验证；demo工具与模型文件与主PR一致。未重复实机拍照或宣称新电脑GPU验收。
+
+- 接口复审进一步修正远程排错中的旧/capture启动建议与“最长95秒”：当前应查/inspect，95秒仅对应默认TTL60的门面预算，显式TTL180时约215秒。主目标CI2140项pytest、demo2166项pytest通过，另各自录像/入口工具通过；结构main21包430Python、demo23包442Python。
