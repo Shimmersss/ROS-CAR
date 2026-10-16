@@ -9,6 +9,8 @@ string status
 string detail
 string capture_id
 string upload_json
+string result_json
+sensor_msgs/CompressedImage annotated_image
 ---
 string phase
 string detail
