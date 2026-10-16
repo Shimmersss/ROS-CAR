@@ -29,7 +29,7 @@ class DemoEntry(unittest.TestCase):
         self.assertEqual(env['FOLLOW_PAUSE_ON_FALL'], 'true')
         self.assertEqual(env['FOLLOW_TARGET_GRACE_S'], '0.0')
         self.assertTrue(env['POSE_CONFIG'].endswith('pose_fixed_27cm_demo.yaml'))
-        self.assertEqual(env['FOLLOW_TARGET_DISTANCE_M'], '1.8')
+        self.assertEqual(env['FOLLOW_TARGET_DISTANCE_M'], '1.3')
         self.assertEqual(env['FOLLOW_MAX_LINEAR_MPS'], '0.35')
 
     def test_explicit_motion_does_not_auto_arm(self):

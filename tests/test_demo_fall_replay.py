@@ -68,6 +68,44 @@ class ReplayTests(unittest.TestCase):
             self.assertEqual(tracker.call_args.args[0].confirm_max_m, 0.)
             self.assertEqual(tracker.call_args.args[0].drop_min_m, .6)
 
+    def test_blindspot_requires_measured_descent_not_simple_loss(self):
+        from evaluate_demo_blindspot import EdgeCandidate, EdgeWatch
+        watch = EdgeWatch(EdgeCandidate())
+        for stamp,top,y in ((0.,1.4,200),(.1,1.1,230),(.2,.7,270)):
+            self.assertEqual(watch.update(stamp,[dict(id='0:1',box=(100,y,300,470))],lambda _:top), [])
+        rows = watch.update(.3,[],lambda _:None)
+        self.assertEqual([r['phase'] for r in rows], [1])
+        self.assertEqual(rows[0]['state'], 'UNKNOWN')
+        neutral = EdgeWatch(EdgeCandidate())
+        neutral.update(0.,[dict(id='0:1',box=(100,200,300,470))],lambda _:1.4)
+        self.assertEqual(neutral.update(.1,[],lambda _:None), [])
+
+    def test_blindspot_rejects_clipping_gaps_and_epoch_carry(self):
+        from evaluate_demo_blindspot import EdgeCandidate, EdgeWatch
+        for box in ((0,270,300,470),(100,5,300,470)):
+            watch = EdgeWatch(EdgeCandidate(early=True))
+            watch.update(0.,[dict(id='0:1',box=(100,200,300,470))],lambda _:1.4)
+            watch.update(.1,[dict(id='0:1',box=(100,230,300,470))],lambda _:1.1)
+            self.assertEqual(watch.update(.2,[dict(id='0:1',box=box)],lambda _:.7), [])
+            self.assertEqual(watch.update(.3,[],lambda _:None), [])
+        watch = EdgeWatch(EdgeCandidate(early=True))
+        for stamp,top,y in ((0.,1.4,200),(.1,1.1,230),(.2,.7,270)):
+            rows=watch.update(stamp,[dict(id='0:1',box=(100,y,300,470))],lambda _:top)
+        self.assertEqual(rows[0]['phase'], 1)
+        self.assertEqual(watch.update(.3,[dict(id='1:1',box=(100,270,300,470))],lambda _:.7), [])
+        self.assertEqual(watch.update(1.,[],lambda _:None), [])
+
+    def test_blindspot_hold_is_bounded_and_never_confirms(self):
+        from evaluate_demo_blindspot import EdgeCandidate, EdgeWatch
+        watch = EdgeWatch(EdgeCandidate(early=True, hold_s=.5))
+        for stamp,top,y in ((0.,1.4,200),(.1,1.1,230),(.2,.7,270)):
+            watch.update(stamp,[dict(id='0:1',box=(100,y,300,470))],lambda _:top)
+        for stamp in (.3,.4,.5,.6,.7):
+            self.assertTrue(all(r['phase']==1 for r in watch.update(stamp,[],lambda _:None)))
+        self.assertEqual(watch.update(.9,[],lambda _:None), [])
+        for options in ({'margin_px':480},{'drop_m':float('nan')},{'hold_s':-1},{'early':1}):
+            with self.assertRaises(ValueError): EdgeCandidate(**options)
+
     def test_bottom_disabled_and_boundary(self):
         self.assertFalse(replay.bottom_clipped((0,0,100,480), 0))
         self.assertFalse(replay.bottom_clipped((0,0,100,471), 8))
