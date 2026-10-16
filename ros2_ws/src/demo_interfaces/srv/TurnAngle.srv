@@ -1,0 +1,12 @@
+# Demo only. Blocking wrapper of MoveRelative kind=TURN. + left, - right (deg).
+float64 angle_deg
+# 0 = configured default (rad/s)
+float64 yaw_rate_rps
+# false: arc forward; true: arc backward (Ackermann cannot rotate in place)
+bool reverse
+---
+bool success
+string status
+string message
+float64 turned_deg
+float64 travelled_m

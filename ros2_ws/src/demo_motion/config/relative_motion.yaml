@@ -1,0 +1,26 @@
+# Demo only. Software envelope of the relative motion executor; motion_guard's loaded safety
+# config (max_linear_mps / max_reverse_mps / max_angular_rps) still clamps and may reject.
+/**:
+  ros__parameters:
+    authorize_per_goal: true      # each goal: EXTERNAL -> zeros -> authorize(epoch) -> drive -> stop
+    max_distance_m: 2.0
+    max_angle_deg: 180.0
+    default_mps: 0.15
+    max_mps: 0.2
+    min_mps: 0.04
+    default_yaw_rps: 0.2
+    max_yaw_rps: 0.5
+    min_yaw_rps: 0.08
+    ackermann: true               # mini_akm: TURN is an arc, never in place
+    turn_linear_mps: 0.1
+    min_turn_radius_m: 0.4        # TODO(field): measure on mini_akm, voice adapter uses the same placeholder
+    distance_tolerance_m: 0.03
+    angle_tolerance_deg: 3.0
+    slowdown_m: 0.15
+    slowdown_deg: 20.0
+    timeout_margin_s: 3.0
+    timeout_factor: 2.0
+    odom_timeout_s: 0.3
+    state_timeout_s: 0.3
+    zero_lead_s: 0.3
+    brake_s: 0.5

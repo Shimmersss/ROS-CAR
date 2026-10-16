@@ -5,6 +5,10 @@
 3. 当前主线为 C（Gemini Pro + YOLO26s-pose 骨架/跌倒）；项目默认入口仍为 B。A 骨架与红色目标路线已退役，资料在 `docs/archive/`。历史上下文见 `docs/archive/AGENTS历史上下文.md`，逐次记录见 WORKLOG.md。
 4. 文档新增或退役时同步维护 README.md 的文档索引；过时文档移入 `docs/archive/` 并在其 README 登记原因，不直接删除。
 
+## Demo 展示分支（仅 `demo/showcase-20261016`）
+
+- 本分支只为展示，之后删除，不合并 main；入口 `docs/demo/README.md`，剩余工作按 `docs/demo/Codex任务清单.md` 执行。新增包 `demo_interfaces`、`demo_motion`（相对运动 `/demo/move_relative` 等）只在本分支存在。上述运动、急停与验收约定在本分支照常适用。
+
 ## 项目概况
 
 - 目标：室内人体跟随小车（含跌倒检测）。主控 Orin Nano Super 8GB：Ubuntu 22.04.5 aarch64、JetPack 6.2 / CUDA 12.6、ROS 2 Humble；Mac 上用 Foxglove 与 SSH 调试。

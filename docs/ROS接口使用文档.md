@@ -14,6 +14,7 @@
 | 认领主人、释放主人、查看丢失等待 | `/perception/claim_owner`、`/perception/release_target`、`/perception/owner_state` | 服务结果 / 生命周期状态 |
 | 切换控制来源、明确授权、停车 | `/control/set_mode`、`/control/authorize`、`/control/stop` | 控制服务的执行结果 |
 | 外部程序发送速度请求 | `/chassis/cmd_vel` | 请求话题；最终速度由唯一 `motion_guard` 决定 |
+| （demo 分支）前进/后退 N 米、左转/右转 N 度 | `/demo/move_distance`、`/demo/turn_angle`、`/demo/move_relative` | 按 `/odom` 闭环执行，结束返回实测距离/角度；见第 13 节 |
 | 拍照等任务期间保持停车 | `/control/task_hold` | 有期限的停车租约与续期 token；释放不恢复运动 |
 | 读取里程计、IMU、电压或雷达 | `/odom`、`/imu/data_raw`、`/PowerVoltage`、`/scan` | 需要对应硬件驱动已启动 |
 
@@ -828,3 +829,23 @@ pub.publish(msg)
 
 
 当前固定机位入口按用户要求 VOICE_ESTOP_ENABLED=false：独立语音 KWS 关闭，语音 ESTOP 映射普通 STOP；ROS `/control/estop` 服务仍有效，显式锁存仍需 `/control/reset_estop`。普通 STOP 回 IDLE，不自动恢复跟随。通用语音启动参数 `voice_estop_enabled` 默认 true。
+
+
+## 13. Demo 分支：相对运动接口（前进/后退 N 米、左转/右转 N 度）
+
+仅 `demo/showcase-20261016` 展示分支提供，分支删除时一并删除；主线接口不变。完整字段、参数和冲突说明见 [相对运动 ROS 接口](demo/相对运动ROS接口.md)。
+
+| 接口 | 类型 | 说明 |
+|---|---|---|
+| `/demo/move_distance` | `demo_interfaces/srv/MoveDistance` | `distance_m` + 前进 / − 后退；`speed_mps` 0 为默认 0.15 |
+| `/demo/turn_angle` | `demo_interfaces/srv/TurnAngle` | `angle_deg` + 左转 / − 右转；`reverse=true` 倒车转弯；阿克曼车不能原地转 |
+| `/demo/move_relative` | `demo_interfaces/action/MoveRelative` | `kind` MOVE/TURN，带进度反馈、可取消 |
+| `/demo/motion_cancel` | `std_srvs/srv/Trigger` | 取消当前动作并停车 |
+
+```bash
+ros2 launch demo_motion relative_motion.launch.py
+ros2 service call /demo/move_distance demo_interfaces/srv/MoveDistance "{distance_m: 0.5, speed_mps: 0.0}"
+ros2 service call /demo/turn_angle demo_interfaces/srv/TurnAngle "{angle_deg: -90.0, yaw_rate_rps: 0.0, reverse: false}"
+```
+
+每次调用即一次明确授权：节点切 EXTERNAL、发新鲜零、绑定 epoch 授权，`/odom` 闭环到达后发零并 `/control/stop` 回 IDLE。`motion_guard` 仍是唯一 `/cmd_vel` 出口，`motion_enabled`、限速与急停照常生效。须为 `/chassis/cmd_vel` 唯一发布者，不能与语音运动适配器同时运行。当前只有纯 Python 单测，colcon 编译、ROS 运行时和实车均未验证。

@@ -1,3 +1,10 @@
+## 2026-10-16：Demo 展示分支基础框架
+
+- 按用户要求从 `codex/onboard-integration-20261013@eac6d9a` 新建展示分支 `demo/showcase-20261016`（独立 worktree，主工作区未提交的文档重组未带入），之后删除、不合并 main。
+- 新增 `demo_interfaces`（MoveRelative action、MoveDistance/TurnAngle srv）与 `demo_motion`：前进/后退 N 米、左/右转 N 度，按 `/odom` 闭环，每次请求经 EXTERNAL + epoch 授权，结束 `/control/stop`；guard 仍是唯一 `/cmd_vel` 出口。阿克曼转向为弧线，最小半径 0.4 m 为占位值。接口文档 `docs/demo/相对运动ROS接口.md`，接口手册加第 13 节。
+- 跌倒后丢人原因分析写入 `docs/demo/Codex任务清单.md`：27 cm/上仰 15.1°、垂直视场约 56° 时 1.2 m 内地面不在画面中，1.3 m 跟随时站立者头部出画、倒地者贴画面下沿；且跌倒时底盘仍在跟随并可自动续跟。剩余任务（1.8 m 跟随、跌倒暂停跟随、静止门控延续测量、主人身份冻结、可选后退找人）交给 Codex。
+- 验证：`demo_motion` 纯 Python 单测 17 项通过，节点/launch 仅做 py_compile 语法检查。未做 colcon 编译、ROS 运行时或实车验证。
+
 ## 2026-10-13：板端联调主链 PR 提交（PR #23）
 
 - 已按用户要求发布 codex/onboard-integration-20261013 到远端并创建 [PR #23](https://github.com/Shimmersss/ROS-CAR/pull/23)，范围包括连续输入修复/负载优化、2/5 秒主人恢复、固定机位跌倒播报、正式开机主链、显式 0.5 m/s 和语音急停开关。提交前 fetch 确认 main 无新增待合入提交，diff 空白审查通过；使用既有原生/合成回归及最终2094项纯单测证据，未重启硬件补跑无关测试。工作区新 Agent 控制接口速查草稿及其 README 修改不属于本轮提交，保留原状。PR 不把离线/合成数据、瞬时身份绑定或参数读回描述为现场返回/跌倒/满速制动验收。

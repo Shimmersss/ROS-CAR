@@ -1,0 +1,9 @@
+# Demo only. Blocking wrapper of MoveRelative kind=MOVE. + forward, - backward (m).
+float64 distance_m
+# 0 = configured default (m/s)
+float64 speed_mps
+---
+bool success
+string status
+string message
+float64 travelled_m

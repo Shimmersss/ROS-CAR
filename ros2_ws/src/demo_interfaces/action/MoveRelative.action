@@ -1,0 +1,26 @@
+# Demo only. One relative motion, closed loop on /odom, executed through motion_guard (EXTERNAL).
+# kind: MOVE uses distance_m (+ forward, - backward); TURN uses angle_deg (+ left, - right).
+# Ackermann chassis: TURN is an arc while creeping forward (or backward when distance_m < 0),
+# never an in-place rotation.
+string kind
+float64 distance_m
+float64 angle_deg
+# 0 = configured default. MOVE: |linear| m/s; TURN: |yaw rate| rad/s.
+float64 speed
+# 0 = derived from the requested amount and speed.
+float64 timeout_s
+---
+bool success
+# SUCCEEDED / REJECTED / ABORTED / CANCELED / TIMEOUT
+string status
+string message
+# Signed, measured from /odom: travel along the start heading, and yaw change.
+float64 travelled_m
+float64 turned_deg
+---
+# AUTHORIZING / MOVING / BRAKING
+string phase
+float64 travelled_m
+float64 turned_deg
+# Remaining amount in the goal's unit (m or deg), always >= 0.
+float64 remaining
