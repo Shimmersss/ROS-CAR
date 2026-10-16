@@ -64,7 +64,7 @@ def main():
                             str(recording), str(rebuilt[segment]), '--output', str(output), '--modes', '3d-config', 'height',
                             '--pose-config', str(profile), '--pose-confidence', str(confidence),
                             '--height-postures', '3d-config', '--bottom-edge-px', str(edge),
-                            '--variant', 'handover=1.5,veto2d,lost=6,sit=3,side=8,cont=6',
+                            '--variant', 'handover=1.5,veto2d,lost=6,sit=3,side=8,cont=6,drop=0.4,confirm_max=0',
                             '--geometry', str(geometry)], check=True)
                     finally:
                         for cache in caches:

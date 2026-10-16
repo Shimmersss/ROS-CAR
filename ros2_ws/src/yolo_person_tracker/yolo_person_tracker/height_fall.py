@@ -53,13 +53,20 @@ class HeightFallConfig:
     # background still scores (2026-10-10 exits: 0.4-0.6 on lockers and walls). 0 = off.
     continue_s: float = 0.
     continue_min_m: float = .12
+    # Optional confirmation hysteresis after an observed rapid drop below low_max_m.
+    # Never starts a fall or expands continuation measurements. 0 retains the original limit.
+    confirm_max_m: float = 0.
 
     def __post_init__(self):
         for name, value in vars(self).items():
-            if name in ('lost_hold_s', 'sit_hold_s', 'side_edge_px', 'continue_s') and math.isfinite(value) and value >= 0:
+            if name == 'confirm_max_m' and isinstance(value, bool):
+                raise ValueError('height fall confirm_max_m must be numeric, not boolean')
+            if name in ('lost_hold_s', 'sit_hold_s', 'side_edge_px', 'continue_s', 'confirm_max_m') and math.isfinite(value) and value >= 0:
                 continue
             if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f'height fall {name} must be finite and positive')
+        if self.confirm_max_m and not self.low_max_m <= self.confirm_max_m < self.upright_min_m:
+            raise ValueError('confirm_max_m must be zero or between low_max_m and upright_min_m')
         if (not self.low_max_m < self.hint_upright_min_m <= self.upright_min_m or not self.top_percentile <= 100
                 or not self.head_percentile <= 100 or not self.continue_min_m < self.low_max_m):
             raise ValueError('height fall requires continue_min_m < low_max_m < hint_upright_min_m <= upright_min_m '
@@ -315,7 +322,9 @@ class HeightFallTracker:
                 return 1, f'crouch after a drop; held, top={top:.2f}m'
             return 0, f'low top but skeleton upright (crouch); top={top:.2f}m'
         if state['pending'] is not None:
-            if top > cfg.low_max_m:
+            # Explicit standing evidence still cancels a rise above the original low limit.
+            ceiling = cfg.low_max_m if posture_upright else (cfg.confirm_max_m or cfg.low_max_m)
+            if top > ceiling:
                 state['pending'] = None
                 if held:
                     return 1, f'sat up after a drop; held, top={top:.2f}m'
@@ -323,7 +332,8 @@ class HeightFallTracker:
                 return 0, f'rose before confirmation; top={top:.2f}m'
             if stamp-state['pending'] >= cfg.confirm_s:
                 state.update(fallen=True, pending=None, recovery=None, drop=None)
-                return 2, f'body top stayed low; top={top:.2f}m'
+                reason = 'body top stayed low' if top <= cfg.low_max_m else 'body top stayed within confirmation limit'
+                return 2, f'{reason}; top={top:.2f}m'
             return 1, f'rapid drop to the floor; top={top:.2f}m'
         if held:
             if top <= cfg.low_max_m:

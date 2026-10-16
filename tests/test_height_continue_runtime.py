@@ -3,13 +3,14 @@
 returning detection; fall_alarm summarises both topics per frame without a second rising edge.
 Synthetic slab depth with static geometry; no physical accuracy claim."""
 import copy
+from types import SimpleNamespace
 import time
 import numpy as np
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.parameter import Parameter
 from sensor_msgs.msg import CameraInfo, Image
-from person_interfaces.msg import FallAlarm, PersonStateArray
+from person_interfaces.msg import FallAlarm, PersonStateArray, PersonState
 from yolo_person_tracker.backend import Detection
 from yolo_person_tracker.pose_node import PoseTrackerNode
 from monotonic_ros_clock import MonotonicRosClock
@@ -38,14 +39,14 @@ def box(top):
     return (CX-.3*F/Z,v_of(top)-5,CX+.3*F/Z,v_of(0.)+5)
 
 
-def make_node(namespace,continue_s):
+def make_node(namespace,continue_s,confirm_max=0.,ground=True):
     return PoseTrackerNode(backend=Backend(),namespace=namespace,parameter_overrides=[
         Parameter('use_sim_time',value=True),Parameter('depth_registered',value=True),Parameter('max_age_s',value=1.),
-        Parameter('height_fall_enabled',value=True),Parameter('height_continue_s',value=continue_s),
+        Parameter('height_fall_enabled',value=True),Parameter('height_confirm_max_m',value=confirm_max),Parameter('height_continue_s',value=continue_s),
         Parameter('pose_handover_s',value=1.5),Parameter('pose3d_up_source',value='static'),
         Parameter('pose3d_up_x',value=0.),Parameter('pose3d_up_y',value=-1.),Parameter('pose3d_up_z',value=0.),
         Parameter('pose3d_camera_height_m',value=1.),
-        Parameter('pose3d_gravity_confirmed',value=True),Parameter('pose3d_ground_confirmed',value=True)])
+        Parameter('pose3d_gravity_confirmed',value=True),Parameter('pose3d_ground_confirmed',value=ground)])
 
 
 def continuation_checks():
@@ -142,10 +143,29 @@ def default_checks():
         raise AssertionError('height_continue_s without height_fall_enabled must be rejected')
 
 
+def confirmation_parameter_checks():
+    # Actual ROS parameter wiring + node depth measurement and geometry cap. Synthetic
+    # slab input, no camera, detector, vehicle or physical confidence claim.
+    for ceiling, ground, expected in ((0.,True,0),(.75,True,2),(.75,False,1)):
+        node=make_node('confirmation_check',0.,ceiling,ground)
+        try:
+            assert node.height_tracker.cfg.confirm_max_m==ceiling
+            for stamp,top in ((1.,1.4),(1.2,1.4),(1.4,1.4),(1.8,.4),
+                              (2.,.7),(2.3,.7),(2.6,.7),(2.9,.7)):
+                node.snapshot=(SimpleNamespace(width=640),slab(top).astype(float)*.001,None,(F,F,CX,CY))
+                person=PersonState()
+                node.apply_height_fall(person,'0:1',stamp,box(top),None)
+            assert person.fall_stage==expected,person
+        finally:
+            node.destroy_node()
+    print('PASS confirmation hysteresis ROS parameters/depth path: default unchanged, explicit limit, ground confirmation cap')
+
+
 def main():
     rclpy.init()
     try:
         default_checks()
+        confirmation_parameter_checks()
         continuation_checks()
         print('PASS height continuation ROS: lost-mid-fall person measured in place on person_states_continued, '
               'confirmed there, absent from person_states, handed back to the returning ID; fall_alarm continuous across handover; off by default')
