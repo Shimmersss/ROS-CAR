@@ -1791,3 +1791,8 @@
 - 新增云端推理部署与迁移说明，明确inference_url/18200隧道/8200网关/8096舌诊及cloud_url上传端口的区别，包含新机器环境、token轮换、转发迁移、systemd drop-in、回退和验证。当前with_bridge=false，ROS结果不会额外HTTP上传，不改业务逻辑。
 - 只读核对车端当前srv/action定义及3类真实结果。更新ROS手册中旧运行接口、运动开启状态、overlay与取消路径；新增返回值说明和无图JSON样例，明确ROS result_json字符串、保存脚本analysis对象、默认空Header、无舌体labels={}、PCB result无iou_threshold等实际差异。README索引和AGENTS指定资产规则同步。
 - 最小审查包含真实资产/45文件校验、准备工具功能执行、完整纯Python CI、结构和diff空白检查；未重新编译ROS或触发新的小车拍照，沿用已记录实机样例，不声称准确率通过。PR目标demo实际为demo/showcase-20261016，集成时保留其运动/跌倒和语音改动，不用main覆盖demo源码。
+
+### Demo 定向集成与最小审查
+
+- 从origin/demo/showcase-20261016@558f36e单独建立codex/inference-models-demo，移入PCB640质检、拍照推理及本轮模型/文档；保留demo运动、跌倒、跟随、语音源码与README/ROS文档中的demo入口。与demo基线比对这些业务目录无差异，仅公共启动/CI增加显式infer配置及网关检查。
+- 两目标完整纯Python CI退出0。demo原结构脚本仍只列21包，基线已有demo_interfaces/demo_motion导致检查失败；本集成分支补全为23包后通过，不改业务逻辑。主分支准备工具已用真实3资产/45冻结文件验证；demo工具与模型文件与主PR一致。未重复实机拍照或宣称新电脑GPU验收。
