@@ -1832,3 +1832,11 @@
 - 修复远端CI依赖缺口：CI测试入口在GITHUB_ACTIONS环境中显式安装Pillow10.4.0，capture_task声明python3-pil，以支持新增JPEG尺寸探测。保持原模型、接口及校验实现不变；本机相关151项回归通过，远端结果待最终重跑。
 
 - GitHub既有OAuth授权缺workflow scope，拒绝推送workflow文件改动；改为在原CI脚本的GitHub环境分支补齐Pillow，无需扩大授权或更换登录。移除未发布提交中的workflow编辑，保留依赖修复；未绕过测试。
+
+## 2026-10-16：5060 推理服务托管与隧道修复
+
+- 验收发现小车经 127.0.0.1:18200 访问网关无响应：WSL 的手动重连循环仍在，但小车 sshd 未检测到旧隧道断线，旧会话持续占用 18200，新连接 `remote port forwarding failed`。WSL 网关/舌诊/隧道均为手动进程，无开机自启。
+- **操作事故**：清理小车旧会话时误用 `ps -u wheeltec -C sshd`（条件为并集），向 wheeltec 用户全部运行超 1 小时的进程发送 SIGTERM，主服务（感知/guard/底盘/相机/语音）、推理服务和桌面会话被终止；当时运动未授权、无速度发布者，驱动按 SIGTERM 清理停车。已立即停止操作并报告，用户重启小车后两项服务与桌面恢复，18200 旧会话随之清除。以后按 PID 精确核对后再结束进程。
+- 新增 `services/inference_gateway/deploy/roscar-infer`：tongue/gateway/tunnel 三个独立守护循环（进程组、pid、日志、崩溃自动重启、网关等待舌诊就绪）；start/stop/restart/status/logs/test、stop-legacy（精确命令行匹配并支持 --dry-run）、WSL boot 与 Windows 登录计划任务的安装/卸载。安装到 5060 `/root/roscar-models/bin/roscar-infer`，与仓库版本哈希一致。
+- 5060 实测：dry-run 仅列出 4 个已知旧进程后完成迁移，约 30 秒网关就绪；`test` 四任务结果符合预期（pcb/helmet ok 且标注图 SHA 正确，tongue 合成图 retake，face 不可用）；强制杀网关子进程后 5 秒自动恢复；停隧道时小车 18200 立即释放，重启后重新绑定，小车经隧道 /health/ready 三模型 ready。`/etc/wsl.conf` 增加 boot 命令（已备份），注册当前用户登录计划任务 `ROSCAR WSL inference` 并手动触发验证运行。未做 `wsl --shutdown`/Windows 重启的实际开机验证。
+- 遗留：小车 sshd 无 ClientAlive，异常断网后旧会话仍可能占用 18200 约 2 小时；文档给出需用户 sudo 一次的配置。新增 `docs/5060推理服务启停.md` 并登记 README。仅本地提交，未推送。
