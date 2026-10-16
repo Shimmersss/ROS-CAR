@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "description": "2026-10-16 当前部署的三个推理后端；权重与原始舌诊交付包使用 Git LFS",
+  "files": [
+    {
+      "kind": "pcb",
+      "path": "pcb/best.pt",
+      "bytes": 44047001,
+      "sha256": "9923d471fe833e6aef3a06e35e6a47f8325db09c3b6152842a26ad7aecc7eecf",
+      "source": "用户提供的 pcb_yolo26m_v1.zip/weights/best.pt"
+    },
+    {
+      "kind": "helmet",
+      "path": "helmet/helmet-yolov8l.pt",
+      "bytes": 87661852,
+      "sha256": "531ff05e731be3b474693515d079a8fd1f3ae6bb2d06d2729f1c661bac0c9384",
+      "source": "用户确认可信的 helmet-yolov8l.pt；保留原始文件，来源许可由模型提供者说明"
+    },
+    {
+      "kind": "tongue",
+      "path": "tongue/tongue_cloud_server_20261015.zip",
+      "bytes": 1596070132,
+      "sha256": "a96a781b5bbf467943e5a313e70e609e81cd79a98f66602fd9e7333aca20150e",
+      "source": "用户提供的原始自包含交付包；分割器、10个分类器、代码、冻结配置及文件哈希",
+      "pipeline_id": "cloud_r50_384_cvAC10_passthrough_debug",
+      "pipeline_digest": "1a897fa5e7967eef62d60de50c98a1909224008e27054dec8e31a10e8f76aef1"
+    }
+  ]
+}

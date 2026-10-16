@@ -1,0 +1,73 @@
+{
+  "success": true,
+  "status": "analyzed",
+  "detail": "ok",
+  "task_id": "onboard-helmet-9fc8f89c80cc",
+  "capture_id": "cap-36e695e838e04de1a0f56c7cce1ebca9",
+  "analysis": {
+    "status": "ok",
+    "task_type": "helmet",
+    "request_id": "infer-9b7641480ee94a319db3fd5468a60807",
+    "task_id": "onboard-helmet-9fc8f89c80cc",
+    "capture_id": "cap-36e695e838e04de1a0f56c7cce1ebca9",
+    "model": {
+      "name": "helmet",
+      "version": "8.4.174",
+      "weights_sha256": "531ff05e731be3b474693515d079a8fd1f3ae6bb2d06d2729f1c661bac0c9384",
+      "device": "cuda:0",
+      "ready": true,
+      "classes": {
+        "0": "helmet",
+        "1": "no_helmet"
+      },
+      "thresholds": {
+        "conf": 0.45,
+        "iou": 0.45,
+        "imgsz": 640
+      }
+    },
+    "image": {
+      "width": 640,
+      "height": 480
+    },
+    "result": {
+      "detections": [
+        {
+          "cls": 1,
+          "name": "no_helmet",
+          "score": 0.8144988417625427,
+          "xyxy": [
+            189.30718994140625,
+            358.16351318359375,
+            355.29888916015625,
+            479.88885498046875
+          ]
+        }
+      ],
+      "helmet_count": 0,
+      "no_helmet_count": 1,
+      "violation": true,
+      "conf_threshold": 0.45,
+      "iou_threshold": 0.45,
+      "imgsz": 640
+    },
+    "summary": {
+      "positive": true,
+      "count": 1,
+      "text_key": "helmet_violations"
+    },
+    "annotated_image": {
+      "content_type": "image/jpeg",
+      "width": 640,
+      "height": 480,
+      "sha256": "1db1e51b41a8475a4fe25b028ea269bd0a23dd2a7950c56ed70c19003d019eeb"
+    },
+    "timings_ms": {
+      "queue": 0.23484700068365782,
+      "decode": 0.8026379946386442,
+      "inference": 165.97177200310398,
+      "annotate": 5.761002001236193,
+      "total": 172.77138200006448
+    }
+  }
+}

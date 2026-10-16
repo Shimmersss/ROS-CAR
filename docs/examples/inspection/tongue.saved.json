@@ -1,0 +1,77 @@
+{
+  "success": false,
+  "status": "retake",
+  "detail": "retake",
+  "task_id": "onboard-tongue-4bb9ad73a95a",
+  "capture_id": "cap-08e386597f7e414d9d8c62d575592ff0",
+  "analysis": {
+    "status": "retake",
+    "task_type": "tongue",
+    "request_id": "infer-8e72016baf5e49c794c76c92c2d4cdca",
+    "task_id": "onboard-tongue-4bb9ad73a95a",
+    "capture_id": "cap-08e386597f7e414d9d8c62d575592ff0",
+    "model": {
+      "name": "teacher_cvAC10",
+      "version": "cloud_r50_384_cvAC10_passthrough_debug",
+      "weights_sha256": "1a897fa5e7967eef62d60de50c98a1909224008e27054dec8e31a10e8f76aef1",
+      "device": "cuda",
+      "ready": true,
+      "pipeline_digest": "1a897fa5e7967eef62d60de50c98a1909224008e27054dec8e31a10e8f76aef1",
+      "labels": [
+        "TonguePale",
+        "TipSideRed",
+        "Spot",
+        "Ecchymosis",
+        "Crack",
+        "Toothmark",
+        "FurThick",
+        "FurYellow"
+      ]
+    },
+    "image": {
+      "width": 640,
+      "height": 480
+    },
+    "result": {
+      "pipeline_id": "cloud_r50_384_cvAC10_passthrough_debug",
+      "pipeline_digest": "1a897fa5e7967eef62d60de50c98a1909224008e27054dec8e31a10e8f76aef1",
+      "classification_performed": false,
+      "labels": {},
+      "positives": [],
+      "quality": {
+        "passed": false,
+        "failures": [
+          {
+            "gate": "empty_mask",
+            "value": 0,
+            "limit": "mask 非空",
+            "hint": "没有检测到舌体：把舌头放进画面中央"
+          }
+        ],
+        "retake_hints": [
+          "没有检测到舌体：把舌头放进画面中央"
+        ],
+        "measured": {
+          "mask_area_fraction": 0,
+          "largest_component_fraction": 0,
+          "component_count": 0
+        },
+        "unmeasured_gates": []
+      },
+      "roi": null
+    },
+    "summary": {
+      "positive": false,
+      "count": 0,
+      "text_key": "tongue_features"
+    },
+    "annotated_image": null,
+    "timings_ms": {
+      "queue": 2.6266760105499998,
+      "decode": 32.60794299421832,
+      "inference": 241.0748450056417,
+      "annotate": 0.017573998775333166,
+      "total": 276.32750901102554
+    }
+  }
+}
