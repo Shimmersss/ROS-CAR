@@ -1854,3 +1854,7 @@
 
 - 通过5060 WSL既有GitHub授权，在新建隔离发布仓库导入Git bundle，未改其E盘已有工作区。3个LFS对象实际上传100%（约1.7GB），两个head均推送成功，随后分别创建：main目标PR #29 https://github.com/Shimmersss/ROS-CAR/pull/29 ，demo/showcase-20261016目标PR #30 https://github.com/Shimmersss/ROS-CAR/pull/30 。均未合并，并已附加到当前聊天。
 - 主目标完整CI2140项pytest通过，demo2166项pytest通过，另录像与入口工具通过；两目标结构检查通过。demo核心业务目录保持基线不变。GitHub远端CI与可合并状态另行核查；本次未购买LFS额度，未修改在线模型/小车服务。
+
+- 修复远端CI依赖缺口：CI测试入口在GITHUB_ACTIONS环境中显式安装Pillow10.4.0，capture_task声明python3-pil，以支持新增JPEG尺寸探测。保持原模型、接口及校验实现不变；本机相关151项回归通过，远端结果待最终重跑。
+
+- GitHub既有OAuth授权缺workflow scope，拒绝推送workflow文件改动；改为在原CI脚本的GitHub环境分支补齐Pillow，无需扩大授权或更换登录。移除未发布提交中的workflow编辑，保留依赖修复；未绕过测试。
