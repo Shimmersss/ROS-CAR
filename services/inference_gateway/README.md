@@ -2,6 +2,8 @@
 
 普通 Python HTTP 服务，不启动 ROS，不控制小车。默认不保存图像。模型只在显式配置后加载；缺失或校验失败的后端单独报告 `model_unavailable`。面诊尚无模型。
 
+仓库内完整模型现位于 [models/inference](../../models/inference/README.md)，新机器推荐按[云端推理部署与迁移](../../docs/云端推理部署与迁移.md)使用准备脚本生成本机路径和私有配置；下面保留现有5060手动环境说明。
+
 ## 5060 WSL 启动
 
 先校验原始模型包，解压到 `/root/roscar-models`，不要改写 `/mnt/e/models` 原件。第三方 `.pt` 只加载用户确认可信的权重。PCB 和安全帽使用独立 `venv-yolo`，不要使用 WSL 系统 ROS/Jazzy Python 环境。

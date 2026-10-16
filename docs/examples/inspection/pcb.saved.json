@@ -1,0 +1,85 @@
+{
+  "success": true,
+  "status": "analyzed",
+  "detail": "ok",
+  "task_id": "onboard-pcb-a548da51cd3b",
+  "capture_id": "cap-eb4fa97afac44b90921109e0e8dc2049",
+  "analysis": {
+    "status": "ok",
+    "task_type": "pcb",
+    "request_id": "infer-5081b27602094384b2ab2b10497d4df9",
+    "task_id": "onboard-pcb-a548da51cd3b",
+    "capture_id": "cap-eb4fa97afac44b90921109e0e8dc2049",
+    "model": {
+      "name": "pcb",
+      "version": "8.4.174",
+      "weights_sha256": "9923d471fe833e6aef3a06e35e6a47f8325db09c3b6152842a26ad7aecc7eecf",
+      "device": "cuda:0",
+      "ready": true,
+      "classes": {
+        "0": "missing_hole",
+        "1": "mouse_bite",
+        "2": "open_circuit",
+        "3": "short",
+        "4": "spur",
+        "5": "spurious_copper"
+      },
+      "thresholds": {
+        "conf": 0.2,
+        "iou": 0.45,
+        "imgsz": 640
+      }
+    },
+    "image": {
+      "width": 640,
+      "height": 480
+    },
+    "result": {
+      "defects": [
+        {
+          "cls": 5,
+          "name": "spurious_copper",
+          "score": 0.3943743109703064,
+          "xyxy": [
+            93.5172119140625,
+            386.197021484375,
+            106.45675659179688,
+            392.93463134765625
+          ]
+        },
+        {
+          "cls": 0,
+          "name": "missing_hole",
+          "score": 0.2707553505897522,
+          "xyxy": [
+            73.07762145996094,
+            394.411376953125,
+            79.94194030761719,
+            401.6180419921875
+          ]
+        }
+      ],
+      "reject": true,
+      "conf_threshold": 0.2,
+      "imgsz": 640
+    },
+    "summary": {
+      "positive": true,
+      "count": 2,
+      "text_key": "pcb_defects"
+    },
+    "annotated_image": {
+      "content_type": "image/jpeg",
+      "width": 640,
+      "height": 480,
+      "sha256": "9e1f4af28a6a28a51af45263b49dfa6622713ce38b9c97fd0f1bb54c0832d620"
+    },
+    "timings_ms": {
+      "queue": 0.31605099502485245,
+      "decode": 6.673238007351756,
+      "inference": 67.15205698856153,
+      "annotate": 1.2970780080650002,
+      "total": 75.43943599739578
+    }
+  }
+}

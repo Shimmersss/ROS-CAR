@@ -1783,3 +1783,11 @@
 - USB PCM及两个PulseAudio输出解除静音，真实/voice/say完成，用户确认能听到且正常。常驻服务下真实640×480相机舌诊retake22.05s、安全帽analyzed16.94s、PCB analyzed24.43s，JSON/JPEG/SHA与GPU设备检查通过；无标准实物，不称准确率通过。
 - 观察cmd_vel1280条、odom1271条，最大速度均0；3任务停车租约全部释放，最终IDLE/DISARMED、motion_enabled=false、无fault；仅1个capture/语音Action server、RGB与速度发布者各1。早期CLI图缓存曾显示旧服务/缺失节点，使用新rclpy节点逐节点查询确认当前唯一活跃门面为/inspect，未按缓存结果重复启动节点。
 - 同步AGENTS当前入口、验收说明与回退命令。最小审查为哈希、unit校验、真实链路、结构/空白检查；只改文档，不重复全量CI。证据在忽略的artifacts/inference-loop/onboard-20261016/report.json；未推送或提PR。
+
+## 2026-10-16 模型入库、云端迁移与接口文档核对
+
+- 用户明确要求当前三个模型文件包含在仓库并分别向main及demo提PR；指定资产例外纳入models/inference，3个二进制通过Git LFS，合计1,727,778,985字节。PCB/helmet与WSL部署权重SHA一致，舌诊原始ZIP SHA a96a781b…20150e，解压45项冻结文件校验通过，不重新打包或改变阈值。非指定权重、凭据、实拍图片与环境仍不入库。
+- 新增纯标准库prepare_inference_deployment.py：校验LFS/源哈希，校验舌诊冻结文件，生成本机路径、两环境启动脚本、独立私有token；默认运行目录被Git忽略。不安装模型环境、不启动推理、不修改车端。已用真实资产执行准备及再次执行，确认token保留、权限0600、自定义8200/8096以外端口、shell语法及路径正确；这不等于新电脑GPU部署验收。
+- 新增云端推理部署与迁移说明，明确inference_url/18200隧道/8200网关/8096舌诊及cloud_url上传端口的区别，包含新机器环境、token轮换、转发迁移、systemd drop-in、回退和验证。当前with_bridge=false，ROS结果不会额外HTTP上传，不改业务逻辑。
+- 只读核对车端当前srv/action定义及3类真实结果。更新ROS手册中旧运行接口、运动开启状态、overlay与取消路径；新增返回值说明和无图JSON样例，明确ROS result_json字符串、保存脚本analysis对象、默认空Header、无舌体labels={}、PCB result无iou_threshold等实际差异。README索引和AGENTS指定资产规则同步。
+- 最小审查包含真实资产/45文件校验、准备工具功能执行、完整纯Python CI、结构和diff空白检查；未重新编译ROS或触发新的小车拍照，沿用已记录实机样例，不声称准确率通过。PR目标demo实际为demo/showcase-20261016，集成时保留其运动/跌倒和语音改动，不用main覆盖demo源码。

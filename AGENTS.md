@@ -136,3 +136,5 @@
 - 结果须核对请求/任务/图像 ID、结构化字段、JPEG 尺寸与哈希；播报由本地固定模板生成，不接受任意模型文本。默认只返回标注图，原图传输须显式选择，不默认落盘；独立有界图片队列不阻塞命令轮询。指南 B4 车端部署须另行授权，不改主服务。
 
 - 2026-10-16 用户已授权常驻部署和恢复语音：车端 `roscar-capture-inference.service` enabled/active，复用 `/home/wheeltec/ROSCAR-capture-infer-2b27f36` 已原生构建overlay（58项源码与本地主线473ecff一致），原 `c518-capture-adapter.service` disable；只开 infer ROS `/inspect/*`，with_bridge=false。WSL三GPU经受限SSH转发至车端127.0.0.1:18200，WSL模型/连接仍手动进程、无开机自启；车端恢复出声且用户听验正常，运动继续关闭。部署及回退见 `docs/拍照推理闭环实现与验收.md` 末节，不把旧静音测试清理状态当作当前状态。
+
+- 用户2026-10-16明确要求将当前三个推理模型纳入仓库：仅 `models/inference/` 清单中的PCB/helmet权重和舌诊原始交付ZIP使用Git LFS，来源与SHA须保留；这是对这些指定资产的入库授权，不扩展到其他权重、凭据或实拍图像。迁移工具 `scripts/prepare_inference_deployment.py` 只校验/解压并生成忽略目录私有配置，不改当前在线服务；新文档入口见 `docs/云端推理部署与迁移.md` 与 `docs/拍照推理接口返回值.md`。

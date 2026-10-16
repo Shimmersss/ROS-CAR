@@ -1,2 +1,4 @@
 *.sh text eol=lf
 *.command text eol=lf
+/models/inference/**/*.pt filter=lfs diff=lfs merge=lfs -text
+/models/inference/**/*.zip filter=lfs diff=lfs merge=lfs -text
