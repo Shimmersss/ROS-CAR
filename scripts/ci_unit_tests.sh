@@ -26,6 +26,7 @@ for dir in ros2_ws/src/*/test; do
 done
 echo "== recording tools"
 "$PY" tests/test_recording_tools.py || status=1
+"$PY" tests/test_demo_fall_replay.py || status=1
 "$PY" tests/test_entry_paths.py || status=1
 "$PY" -m pytest -q -p no:cacheprovider tests/test_robot_cpu_layout.py || status=1
 exit $status

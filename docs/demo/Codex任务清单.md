@@ -15,7 +15,7 @@
 
 ## 2026-10-16 续接进度
 
-T1.1–T1.3 已实现：新增 `scripts/test_demo_container.sh` 和合成 ROS 测试、发布者冲突拒绝、语音适配器开关及 `scripts/run_demo.sh`。另加里程计时间戳/四元数校验、action 接收时原子占位、停车确认失败返回 ABORTED。T2.1 的 1.8 m 距离与 T2.7 的 0.35 m/s 仅设为 demo 入口默认，现场效果待验证。T1.4–T1.6、T2.5–T2.6 尚未完成；不部署正式目录，不代替现场标定。
+T1.1–T1.3 已实现：新增 `scripts/test_demo_container.sh` 和合成 ROS 测试、发布者冲突拒绝、语音适配器开关及 `scripts/run_demo.sh`。另加里程计时间戳/四元数校验、action 接收时原子占位、停车确认失败返回 ABORTED。T2.1 的 1.8 m 距离与 T2.7 的 0.35 m/s 仅设为 demo 入口默认，现场效果待验证。T1.4–T1.6、T2.5 尚未完成；T2.6 离线评估已完成，保留原配置，见 [评估记录](T2.6离线检测优化评估.md)；不部署正式目录，不代替现场标定。
 
 T2.2–T2.4 已实现，配置和验证边界见 [跌倒暂停与静止延续验收](跌倒暂停与静止延续验收.md)。与最初设想相比，demo 目标宽限设为 0，避免 guard 衰减旧速度；运动后旧框永久作废，必须静止重新检出才可延续。固定机位录像对比疑似/确认为 18/17 → 19/18，反例误报仍 2/1。录像无里程计，门控仅完成合成 ROS 验证；现场项保持待验收。
 
@@ -59,7 +59,7 @@ T2.2–T2.4 已实现，配置和验证边界见 [跌倒暂停与静止延续验
 - **T2.3 静止门控的延续测量**：`pose_node` 增加 `height_continue_requires_stationary`（默认 false）：订阅 `/odom`，只有底盘连续静止 ≥0.5 s（|v|<0.02 m/s、|ω|<0.05 rad/s、`/odom` 新鲜）时才允许 `height_continue_s` 的延续框测量；运动或 `/odom` 不新鲜立即停止延续。之后 demo 配置 `pose_fixed_27cm_demo.yaml` 打开 `height_continue_s: 6.0`。配合 T2.2，跌倒后车停住，倒地者仍能在原位继续测量直到确认。
 - **T2.4 主人身份冻结**：跌倒告警活跃期间暂停 `owner_lost_timeout_s` 计时（`OwnerLifecycle` 增加 hold 接口），避免 5 s 后清掉主人；告警解除后从剩余时间继续。
 - **T2.5（可选）后退找人**：新节点 `demo_fall_response`（默认关闭）：跌倒告警且 `person_states` 中已无该人（只剩 `person_states_continued` 或无）且底盘静止 → 调用一次 `/demo/move_relative` 后退 0.4–0.6 m，让近处地面进入画面，再播报“检测到跌倒，请查看”。只调用一次、无雷达时须在 README 中写明后方清场；不得重复后退或循环。
-- **T2.6 下沿截断的检测**：复评低 `pose_confidence`（0.5→0.35）在 10-10 标注录像上的误报；框底贴下沿时 `body_heights` 的处理（类似 `height_top_edge_px` 的下沿规则）。用 `scripts/replay_falls.py` + `scripts/evaluate_falls.py` 给出疑似/确认/误报数字，再决定是否写进 demo 配置。
+- **T2.6 下沿截断的检测（离线评估完成）**：复评低 `pose_confidence`（0.5→0.35）在 10-10 标注录像上的误报；框底贴下沿时 `body_heights` 的处理（类似 `height_top_edge_px` 的下沿规则）。用 `scripts/replay_falls.py` + `scripts/evaluate_falls.py` 给出疑似/确认/误报数字，再决定是否写进 demo 配置。六组配对结果均为疑似 19/20、确认 18/20；15 px 下沿候选将误报从 2/1 增至 3/2，其他候选无改善，保留 0.5/无下沿规则。详见 [评估记录](T2.6离线检测优化评估.md)。
 - **T2.7 跟随平滑（展示效果）**：当前 0.5 m/s、增益 1.0/1.6 有摆动风险。demo 可设 `FOLLOW_MAX_LINEAR_MPS=0.35`，在现场对比摆动后定值。
 
 ### 2.3 验收

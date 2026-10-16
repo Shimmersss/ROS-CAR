@@ -6,6 +6,7 @@
 |---|---|
 | [相对运动ROS接口](相对运动ROS接口.md) | 前进/后退 N 米、左转/右转 N 度：`/demo/move_relative`、`/demo/move_distance`、`/demo/turn_angle` |
 | [跌倒暂停与静止延续验收](跌倒暂停与静止延续验收.md) | T2.2–T2.4 行为、配置、ROS 回归与录像结果 |
+| [T2.6离线检测优化评估](T2.6离线检测优化评估.md) | 关键点阈值与下沿候选的检出/误报对比及采用决定 |
 | [Codex任务清单](Codex任务清单.md) | 交给 Codex 的剩余任务：接口编译与运行时测试、固定机位跟随/跌倒优化（倒地后看不到人）及验收 |
 
 新增代码包：`ros2_ws/src/demo_interfaces/`、`ros2_ws/src/demo_motion/`。

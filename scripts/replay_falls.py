@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Replay cached poses through the fall state machine in several modes and list fall events.
 
-Modes (offline experiment; the *_confirmed flags are forced on here, never in deployment):
+Modes (offline experiments; default confirmation overrides never affect deployment):
+  3d-config explicit profile parameters, including its confirmation flags
   2d        pixel rules only, upright confirmed
   3d-fixed  3D rules with one gravity/camera height per segment (median of stable RANSAC fits,
             standing in for a manual mount calibration)
@@ -12,8 +13,9 @@ Inputs: a recording plus frames.jsonl written by analyze_gemini_recording.py for
 Host-receive colour/depth pairing only; not exposure-synchronised.
 """
 import argparse
-from dataclasses import fields
+from dataclasses import fields, replace
 import json
+import hashlib
 import math
 from pathlib import Path
 import sys
@@ -32,7 +34,7 @@ from yolo_person_tracker.height_fall import (HeightFallConfig, HeightFallTracker
                                              at_side_edge, clipped_at_top, skeleton_veto)
 from gemini_recording import load_depth_m, read_rows  # noqa: E402
 
-MODES = ('2d', '3d-fixed', '3d-floor', '3d-geometry', 'height')
+MODES = ('3d-config', '2d', '3d-fixed', '3d-floor', '3d-geometry', 'height')
 VARIANT = {}   # rule switches under evaluation, set from --variant
 HEIGHT_KEYS = dict(upright='upright_min_m', low='low_max_m', drop='drop_min_m', recovery='recovery_s', confirm='confirm_s',
                    hint='hint_upright_min_m', lost='lost_hold_s', sit='sit_hold_s', side='side_edge_px',
@@ -41,11 +43,11 @@ IMAGE_WIDTH = 640   # recorder colour stream (record_gemini_mac.py)
 MERGE_S = 1.5   # detections closer than this belong to the same event
 
 
-def load_configs():
-    params = yaml.safe_load((ROOT/'ros2_ws/src/perception_bringup/config/pose.yaml').read_text())['/**']['ros__parameters']
+def load_configs(path=None):
+    params = yaml.safe_load((path or ROOT/'ros2_ws/src/perception_bringup/config/pose.yaml').read_text())['/**']['ros__parameters']
     pose = {f.name: params['pose_'+f.name] for f in fields(PoseConfig) if 'pose_'+f.name in params}
     spatial = {f.name: params['pose3d_'+f.name] for f in fields(Pose3DConfig) if 'pose3d_'+f.name in params}
-    return PoseConfig(**dict(pose, upright_confirmed=True)), spatial
+    return PoseConfig(**(pose if path else dict(pose, upright_confirmed=True))), spatial
 
 
 def floor_fits(recording, frames, cache_path):
@@ -170,7 +172,61 @@ def cv2_remap(raw, reg):
     return cv2.remap(raw, *reg.maps, cv2.INTER_LINEAR)
 
 
-def replay_height(frames, heights, continuation=None):
+def recompute_depth(recording, frames, confidence, profile):
+    """Rebuild threshold-dependent joints from raw depth; never reuse filtered joints."""
+    from yolo_person_tracker.fusion import FusionConfig, fuse_depth
+    params = yaml.safe_load(profile.read_text())['/**']['ros__parameters']
+    cfg = FusionConfig(**{f.name: params['fusion_'+f.name] for f in fields(FusionConfig)
+                          if 'fusion_'+f.name in params})
+    if not cfg.enabled:
+        raise ValueError('depth rebuild currently requires fusion_enabled')
+    reader = Continuation(recording, lambda frame: None)
+    for frame in frames:
+        aligned = None
+        if frame['depth_matched']:
+            _, aligned = reader.reg.apply(reader.blank,
+                load_depth_m(recording, reader.depths[frame['depth_frame']]))
+        for i, person in enumerate(frame['people']):
+            xyz = np.full((17, 3), np.nan)
+            if aligned is not None:
+                xyz = fuse_depth(aligned, person['box'], person['keypoints'], reader.intrinsics,
+                    confidence=confidence, min_fraction=params.get('depth_min_fraction', .08),
+                    other_boxes=[p['box'] for j,p in enumerate(frame['people']) if i != j], config=cfg).joints
+            person['joints3d'] = [[float(v) if np.isfinite(v) else None for v in joint] for joint in xyz]
+    return frames
+
+
+def depth_cache_metadata(poses, profile, confidence):
+    return dict(confidence=confidence,
+                profile_sha256=hashlib.sha256(profile.read_bytes()).hexdigest(),
+                frames_sha256=hashlib.sha256((poses/'frames.jsonl').read_bytes()).hexdigest())
+
+
+def depth_cache_matches(poses, profile, confidence):
+    marker = poses/'rebuilt-depth.json'
+    if not marker.exists():
+        return False
+    return json.loads(marker.read_text()) == depth_cache_metadata(poses, profile, confidence)
+
+
+def bottom_clipped(box, pixels, image_height=480):
+    """Offline candidate only: withhold low height evidence at the image bottom."""
+    if not math.isfinite(pixels) or not 0 <= pixels < image_height:
+        raise ValueError('bottom edge must be finite and within the image')
+    return pixels > 0 and float(box[3]) >= image_height-pixels
+
+
+def combine_timelines(pose, height):
+    """Per-person max as in pose_node, retaining continuation-only people."""
+    rows = {}
+    for row in pose + height:
+        key = (row['t'], row['id'])
+        if key not in rows or row['phase'] > rows[key]['phase']:
+            rows[key] = dict(row)
+    return [rows[key] for key in sorted(rows)]
+
+
+def replay_height(frames, heights, continuation=None, postures=None, bottom_edge_px=0.):
     overrides = {k: VARIANT[k] for k in HEIGHT_KEYS.values() if k in VARIANT}
     if 'veto_aspect' in VARIANT:
         overrides['veto_min_aspect'] = VARIANT['veto_aspect'] or 1e-6
@@ -184,7 +240,8 @@ def replay_height(frames, heights, continuation=None):
             tracker.reset(); boxes.clear(); epoch = min(epochs)
         if VARIANT.get('handover_s'):
             tracker.handover(stamp, present, boxes, VARIANT['handover_s'])
-        states = {p['id']: p.get('state') for p in f['people'] if p['id'] is not None}
+        states = {p['id']: (p.get('state') if postures is None else postures[(f['time_s'],p['id'])])
+                  for p in f['people'] if p['id'] is not None}
         for ident, box in present.items():
             boxes[ident] = box
             # veto2d[=<r>]: a skeleton upright label vetoes only in a box r times taller than wide
@@ -193,7 +250,7 @@ def replay_height(frames, heights, continuation=None):
             phase, detail = tracker.update(ident, stamp, heights.get((f['frame'], ident)),
                                            upright_hint=upright and skeleton_veto(True, box, tracker.cfg),
                                            posture_upright=upright and states.get(ident) == 'STANDING',
-                                           clipped=clipped_at_top(box, tracker.cfg),
+                                           clipped=clipped_at_top(box, tracker.cfg) or bottom_clipped(box, bottom_edge_px),
                                            side=at_side_edge(box, IMAGE_WIDTH, tracker.cfg))
             state = 'FALLEN' if phase == 2 else 'LYING' if 'drop' in detail or 'low' in detail else 'UNKNOWN'
             timeline.append(dict(t=f['time_s'], id=ident, state=state, phase=phase, basis='height',
@@ -210,6 +267,7 @@ def replay_height(frames, heights, continuation=None):
                     continue
                 top = continuation.top(box)
                 phase, detail = tracker.update(ident, stamp, top, continued=True,
+                                               clipped=bottom_clipped(box, bottom_edge_px),
                                                side=at_side_edge(boxes[ident], IMAGE_WIDTH, tracker.cfg))
                 state = 'FALLEN' if phase == 2 else 'LYING' if 'drop' in detail or 'low' in detail else 'UNKNOWN'
                 timeline.append(dict(t=f['time_s'], id=ident, state=state, phase=phase, basis='height',
@@ -226,7 +284,9 @@ def replay(frames, floors, mode, pose, spatial, fixed, geometry=None):
                    handover_s=VARIANT.get('handover_s', pose.handover_s),
                    transition_s=VARIANT.get('transition_s', pose.transition_s),
                    confirm_lying_only=VARIANT.get('confirm_lying_only', pose.confirm_lying_only))
-    if mode == '2d':
+    if mode == '3d-config':
+        s = Pose3DConfig(**spatial)
+    elif mode == '2d':
         s = Pose3DConfig(**dict(spatial, enabled=False, gravity_confirmed=False, ground_confirmed=False))
     elif mode == '3d-fixed':
         up, height = fixed
@@ -323,14 +383,20 @@ def main():
     parser.add_argument('recording', type=Path)
     parser.add_argument('poses', type=Path, help='directory containing frames.jsonl for this recording')
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--modes', nargs='+', choices=MODES, default=list(MODES))
+    parser.add_argument('--modes', nargs='+', choices=MODES, default=[m for m in MODES if m != "3d-config"])
     parser.add_argument('--geometry', type=Path,
                         help='per-frame gravity/camera height from estimate_camera_geometry.py (height, 3d-geometry)')
     parser.add_argument('--variant', default='baseline',
                         help="baseline, or comma list of gap_pause, knee_fallback, confirm_lying_only, veto2d, "
                              "handover=<s>, transition=<s>, upright=<m>, low=<m>, drop=<m>, recovery=<s>, confirm=<s>, hint=<m>, lost=<s>, sit=<s>, side=<px>, "
                              "cont=<s>, cont_min=<m>, sot (continuation boxes from VitTrack instead of the last box)")
+    parser.add_argument('--pose-config', type=Path, help='Explicit profile, preserves its confirmation flags')
+    parser.add_argument('--pose-confidence', type=float, help='Keypoint threshold, not detector confidence')
+    parser.add_argument('--height-postures', choices=('2d','3d-geometry','3d-config'),
+                        help='Recompute height-veto posture using current threshold instead of cached state')
+    parser.add_argument('--bottom-edge-px', type=float, default=0., help='Offline candidate: low bottom-clipped heights are unmeasured; 0 off')
     args = parser.parse_args()
+    bottom_clipped((0,0,1,1),args.bottom_edge_px)
     for item in filter(None, args.variant.split(',')):
         if item == 'baseline':
             continue
@@ -349,7 +415,16 @@ def main():
             parser.error(f'unknown variant {item}')
     args.output.mkdir(parents=True, exist_ok=True)
     frames = [json.loads(line) for line in (args.poses/'frames.jsonl').read_text().splitlines()]
-    pose, spatial = load_configs()
+    pose, spatial = load_configs(args.pose_config)
+    if args.pose_confidence is not None:
+        pose = replace(pose, confidence=args.pose_confidence)
+        if 'height' in args.modes and not args.height_postures:
+            parser.error('--pose-confidence with height requires --height-postures (cached posture is invalid)')
+    uses_3d = any(mode.startswith('3d-') for mode in args.modes + [args.height_postures or ''])
+    if uses_3d and (args.pose_config is not None or args.pose_confidence is not None):
+        profile = args.pose_config or ROOT/'ros2_ws/src/perception_bringup/config/pose.yaml'
+        if not depth_cache_matches(args.poses, profile, pose.confidence):
+            frames = recompute_depth(args.recording, frames, pose.confidence, profile)
     floors = floor_fits(args.recording, frames, args.output/'floor.jsonl')
     floor = summarize_floor(floors)
     fixed = (floor['up'], floor['camera_height_m']) if 'up' in floor else None
@@ -358,7 +433,14 @@ def main():
         for row in map(json.loads, args.geometry.read_text().splitlines()):
             if row['up'] is not None:
                 geometry[row['frame']] = (np.array(row['up']), row['camera_height_m'])
-    timelines, report = {}, dict(recording=args.recording.name, frames=len(frames), floor=floor, variant=args.variant,
+    posture_rows = None
+    if args.height_postures:
+        if args.height_postures == '3d-geometry' and not geometry:
+            parser.error('3d-geometry height posture requires geometry')
+        posture_rows = replay(frames, floors, args.height_postures, pose, spatial, fixed, geometry)
+    postures = None if posture_rows is None else {(r['t'],r['id']):r['state'] for r in posture_rows}
+    timelines, report = {}, dict(pose_confidence=pose.confidence,height_postures=args.height_postures,
+                                 bottom_edge_px=args.bottom_edge_px,pose_config=str(args.pose_config),recording=args.recording.name, frames=len(frames), floor=floor, variant=args.variant,
                                  geometry=str(args.geometry) if args.geometry else None, modes={})
     for mode in args.modes:
         if mode in ('3d-fixed',) and fixed is None:
@@ -381,7 +463,7 @@ def main():
                 parser.error('sot needs cont=<s>')
             continuation = (Continuation(args.recording, geometry_of, VARIANT.get('sot', False))
                             if VARIANT.get('continue_s') else None)
-            timeline = replay_height(frames, heights, continuation)
+            timeline = replay_height(frames, heights, continuation, postures, args.bottom_edge_px)
         else:
             timeline = replay(frames, floors, mode, pose, spatial, fixed, geometry)
         timelines[mode] = timeline
@@ -392,6 +474,13 @@ def main():
         with (args.output/f'timeline-{mode}.jsonl').open('w') as handle:
             for row in timeline:
                 handle.write(json.dumps(row)+'\n')
+    if posture_rows is not None and 'height' in timelines:
+        combined = combine_timelines(posture_rows, timelines['height'])
+        report['modes']['combined'] = dict(suspected_events=events(combined, 1),
+            confirmed_events=events(combined, 2), basis_3d_fraction=None)
+        timelines['combined'] = combined
+        with (args.output/'timeline-combined.jsonl').open('w') as handle:
+            for row in combined: handle.write(json.dumps(row)+'\n')
     (args.output/'report.json').write_text(json.dumps(report, indent=2, ensure_ascii=False))
     if timelines:
         plot(args.output/'timeline.png', timelines, args.recording.name)
