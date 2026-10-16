@@ -1756,3 +1756,15 @@
 - 网关14项单测通过；完整CI退出0，pytest2140通过2跳过，另录像22项、入口1项通过；结构/空白检查通过。接口未变，不重复构建或将旧构建称本轮编译。WSL仅手动GPU进程运行，private token0600；清理临时SSH隧道和key，根配置更新GPU，未动小车、未推送/PR/合并。
 
 - 提交后差异检查发现记录脚本误用文档缓冲区覆盖WORKLOG，已从上一个提交恢复全部历史并补回本轮记录；本地未推送提交已修正，模型及测试不受影响。
+
+## 2026-10-16 WSL到小车：静音实车拍照推理测试
+
+- 用户明确授权小车部署测试并要求先关闭语音播报。先将USB声卡PCM及两个PulseAudio输出静音，确认STOP回执和IDLE/DISARMED、motion_enabled=false；全程不授权运动。保留真实TTS完成确认但硬件不出声，不宣称可听播报通过。
+- 经5060 WSL受限SSH部署隔离目录ROSCAR-capture-infer-2b27f36，Jetson原生3包构建成功46s，反向隧道连接WSL三GPU网关与mock，复用现有真实Gemini、唯一guard/TTS及静止里程计。
+- 首轮遗漏同名旧拍照适配服务，发现2个capture Action server；暂停试验，仅停c518-capture-adapter.service后单实例完整复测。首轮证据保留并排除最终验收；整车主服务、相机和guard未重启。
+- 最终ROS三任务及WSL云端三任务均返回：舌诊无舌体retake，无标注图；安全帽/PCB analyzed并返回JSON+JPEG，SHA匹配，原/images调用0。真实640×480相机输入，未摆标准实物；PCB云端有1处疑似不作为准确率。ROS耗时19.92/19.55/22.45s、云端19.08/15.07/23.60s，含TTS静音播放完成、准备/连拍与网络。
+- 单实例阶段cmd_vel4656条、odom4660条，观测最大速度均0；227次硬件静音检查0失败。6任务租约均申请/释放，13次状态转变含初始空闲，最终租约inactive。旧观察器tts_playing并非实际播报话题，不用其计数作为验证依据。
+- 临时capture三节点、观察器、WSL mock、隧道及私钥/token/authorized_keys条目均清理。旧c518适配恢复active；整车主服务全程active无配置改动，最终IDLE/DISARMED、运动关闭、TaskHold已释放。小车保持静音。隔离部署保留，未永久切主入口infer，未推送或提PR。
+- 证据在忽略的artifacts/inference-loop/robot-20261016/evidence.zip及summary.json。阶段结束CI2140通过2跳过、录像22项/入口1项通过，结构21包/429Python文件及diff空白检查通过；本轮只追加部署验收记录，无产品代码变更。
+
+- 本轮授权的无标准素材静音部署测试已完成，定时续跑automation已停用（保留可恢复），避免继续空转检查。真人/标准实物准确率、可听播报及永久主入口切换留给用户后续明确任务，不自动开启。
