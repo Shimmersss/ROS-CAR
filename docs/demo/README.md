@@ -5,6 +5,15 @@
 | 文档 | 内容 |
 |---|---|
 | [相对运动ROS接口](相对运动ROS接口.md) | 前进/后退 N 米、左转/右转 N 度：`/demo/move_relative`、`/demo/move_distance`、`/demo/turn_angle` |
+| [跌倒暂停与静止延续验收](跌倒暂停与静止延续验收.md) | T2.2–T2.4 行为、配置、ROS 回归与录像结果 |
 | [Codex任务清单](Codex任务清单.md) | 交给 Codex 的剩余任务：接口编译与运行时测试、固定机位跟随/跌倒优化（倒地后看不到人）及验收 |
 
 新增代码包：`ros2_ws/src/demo_interfaces/`、`ros2_ws/src/demo_motion/`。
+
+## 本轮入口
+
+- `bash scripts/run_demo.sh`：沿用板端相机/模型必填环境变量，增加相对运动节点，关闭语音运动适配器。默认运动关闭，跟随自动授权及自动恢复固定关闭；跟随距离默认 1.8 m、速度上限 0.35 m/s。相对动作自身仍限 0.2 m/s。开启运动仍需现场授权。
+- `bash scripts/test_demo_container.sh`：复用 `roscar-humble-test`，编译 9 个相关包并运行纯 Python、launch 条件及合成 ROS 回归；容器退出自动删除，证据在 `artifacts/demo-validation/acceptance.log`。测试无硬件，不能作为实车验收。
+- `python3 tests/test_demo_entrypoints.py`：验证演示入口默认关闭运动、显式开启也不自动授权跟随。
+
+已接入跌倒暂停、静止延续与主人冻结，详见验收文档。demo 目标运动宽限固定为 0 秒，运动/里程计失效会作废延续框；停车前已出画的人仍无法靠旧框找回。现场标定和板端部署仍待执行。

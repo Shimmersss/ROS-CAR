@@ -6,7 +6,9 @@ from std_msgs.msg import String
 import time
 
 from geometry_msgs.msg import TwistStamped
-from person_interfaces.msg import TargetState
+from person_interfaces.msg import TargetState, FallAlarm
+from std_srvs.srv import Trigger
+from .fall_pause import FallPause
 import signal
 import rclpy
 from rclpy.signals import SignalHandlerOptions
@@ -56,6 +58,13 @@ class PersonFollowerNode(Node):
                 or self.message_timeout_s <= 0.0):
             raise ValueError('message_timeout_s must be positive and finite')
 
+        self.pause_on_fall = self.declare_parameter('pause_on_fall', False).value
+        self.fall_pause = FallPause(self.declare_parameter('fall_resume_s', 3.).value,
+                                   self.declare_parameter('fall_alarm_timeout_s', .5).value)
+        self.resume_requested = False
+        if self.pause_on_fall:
+            self.create_subscription(FallAlarm, '/perception/fall_alarm', self._on_fall, 10)
+            self.create_service(Trigger, '/demo/resume_follow', self._resume_follow)
         self.performance = Performance(self, '/control/performance', 'follower')
         self._authority = {}
         self._authority_at = -math.inf
@@ -72,6 +81,23 @@ class PersonFollowerNode(Node):
         self.timer = self.create_timer(0.05, self._control_tick)
         self.get_logger().info(
             'person follower ready; nonzero requests require fresh ARMED_FOLLOW authority')
+
+    def _on_fall(self, message):
+        stamp = message.header.stamp.sec + message.header.stamp.nanosec*1e-9
+        self.fall_pause.observe(message.valid, message.stage, stamp, time.monotonic(),
+                                self.get_clock().now().nanoseconds*1e-9)
+        if self.fall_pause.paused:
+            if message.stage != FallAlarm.NONE:
+                self.resume_requested = False
+            self.stop()
+
+    def _resume_follow(self, request, response):
+        now, ros_now = time.monotonic(), self.get_clock().now().nanoseconds*1e-9
+        response.success = self.fall_pause.fresh(now, ros_now) and self.fall_pause.stage == 0
+        self.resume_requested = response.success
+        response.message = ('Resume requested; fresh target and existing FOLLOW authority still required'
+                            if response.success else 'Fresh NONE fall evidence required')
+        return response
 
     def _on_authority(self, message):
         try:
@@ -120,7 +146,15 @@ class PersonFollowerNode(Node):
         authorized = (now - self._authority_at < .3
                       and self._authority.get('authority_state') == 'ARMED_FOLLOW'
                       and self._authority.get('command_mode') == 'FOLLOW')
-        if usable and authorized:
+        fall_blocked = False
+        if self.pause_on_fall:
+            ros_now = self.get_clock().now().nanoseconds*1e-9
+            if self.resume_requested and usable:
+                self.fall_pause.resume(now, ros_now)
+                self.resume_requested = False
+            self.fall_pause.update(now, ros_now, can_resume=usable)
+            fall_blocked = self.fall_pause.paused or not self.fall_pause.fresh(now, ros_now)
+        if usable and authorized and not fall_blocked:
             linear, angular = compute_command(
                 target.horizontal_distance_m,
                 target.bearing_rad,

@@ -18,7 +18,8 @@ from rclpy.qos import QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import Image, CameraInfo, CompressedImage
 from std_srvs.srv import Trigger
 from visualization_msgs.msg import Marker
-from person_interfaces.msg import OwnerState, TargetState
+from person_interfaces.msg import OwnerState, TargetState, FallAlarm
+from astra_body_adapter.fall_pause import FallPause
 from person_interfaces.srv import ClaimOwner
 from vision_msgs.msg import Detection2DArray
 from astra_body_adapter.detections import detection_array
@@ -53,6 +54,7 @@ class TrackerNode(Node):
             'depth_registered': False, 'sync_slop_s': .06, 'max_age_s': .5,
             'visualization_fps': 10.0, 'visualization_scale': 0.5,
             'auto_lock_single': False,
+            'owner_hold_on_fall': False,
             'owner_lost_timeout_s': 10.0, 'owner_continuity_reset_s': 0.0,
             'track_hold_s': .8,
             'reacquire_s': 1.2,
@@ -215,6 +217,9 @@ class TrackerNode(Node):
                 self.loading = self.pool.submit(YoloBackend, self.cfg['model_path'],
                                                 self.cfg['device'], self.cfg['image_size'],
                                                 self.cfg['nms_free'], self.cfg['model_task'])
+        self.owner_fall_pause = FallPause()
+        if self.cfg['owner_hold_on_fall']:
+            self.create_subscription(FallAlarm, 'fall_alarm', self.on_owner_fall, 10, callback_group=self.state_group)
         self.timer = self.create_timer(.05, self.tick, callback_group=self.state_group)
 
     @serialized
@@ -257,6 +262,7 @@ class TrackerNode(Node):
     def release_target(self, request, response):
         self.selection.release()
         self.owner.release()
+        self.owner_fall_pause = FallPause()
         self.selection_generation += 1
         self.sot_detail = ''
         self.auto_lock_suppressed = True
@@ -479,7 +485,19 @@ class TrackerNode(Node):
         self.selection.check_absence(received, bridging=decision.action == 'fill')
 
     @serialized
+    def on_owner_fall(self, msg):
+        if self.owner.state == 'UNCLAIMED':
+            self.owner_fall_pause = FallPause()
+            return
+        now, ros_now = time.monotonic(), self.get_clock().now().nanoseconds*1e-9
+        self.owner_fall_pause.observe(msg.valid, msg.stage, stamp_seconds(msg.header.stamp), now, ros_now)
+        self.owner.hold(self.owner_fall_pause.update(now, ros_now), now)
+
+    @serialized
     def tick(self):
+        if self.cfg['owner_hold_on_fall']:
+            now = time.monotonic()
+            self.owner.hold(self.owner_fall_pause.update(now, self.get_clock().now().nanoseconds*1e-9), now)
         if self.loading is not None and self.loading.done():
             try:
                 self.backend = self.loading.result()

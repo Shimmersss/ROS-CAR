@@ -7,7 +7,7 @@
 
 ## Demo 展示分支（仅 `demo/showcase-20261016`）
 
-- 本分支只为展示，之后删除，不合并 main；入口 `docs/demo/README.md`，剩余工作按 `docs/demo/Codex任务清单.md` 执行。新增包 `demo_interfaces`、`demo_motion`（相对运动 `/demo/move_relative` 等）只在本分支存在。上述运动、急停与验收约定在本分支照常适用。
+- 本分支只为展示，之后删除，不合并 main；入口 `docs/demo/README.md`，剩余工作按 `docs/demo/Codex任务清单.md` 执行。一键入口 `scripts/run_demo.sh`（运动默认关闭、不自动续跟），合成验收 `scripts/test_demo_container.sh`。新增包 `demo_interfaces`、`demo_motion`（相对运动 `/demo/move_relative` 等）只在本分支存在。上述运动、急停与验收约定在本分支照常适用。
 
 ## 项目概况
 

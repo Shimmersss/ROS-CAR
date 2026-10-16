@@ -7,11 +7,17 @@
 
 | 路径 | 内容 | 状态 |
 |---|---|---|
-| `ros2_ws/src/demo_interfaces/` | `MoveRelative.action`、`MoveDistance.srv`、`TurnAngle.srv` | 未 colcon 编译 |
+| `ros2_ws/src/demo_interfaces/` | `MoveRelative.action`、`MoveDistance.srv`、`TurnAngle.srv` | Humble 容器编译通过，非实车 |
 | `ros2_ws/src/demo_motion/demo_motion/relative_motion.py` | 校验、`/odom` 进度、减速曲线、阿克曼弧线（纯 Python） | 单测 17 项通过 |
-| `ros2_ws/src/demo_motion/demo_motion/relative_motion_node.py` | action + 2 个 service + 取消；逐次 EXTERNAL 授权 | 仅语法检查 |
-| `ros2_ws/src/demo_motion/{launch,config}/` | `relative_motion.launch.py`、`relative_motion.yaml` | 未运行 |
+| `ros2_ws/src/demo_motion/demo_motion/relative_motion_node.py` | action + 2 个 service + 取消；逐次 EXTERNAL 授权 | 合成 ROS 回归已接入，见下文 |
+| `ros2_ws/src/demo_motion/{launch,config}/` | `relative_motion.launch.py`、`relative_motion.yaml` | launch 条件验证；整机入口未上板 |
 | `docs/demo/相对运动ROS接口.md` | 接口文档 | — |
+
+## 2026-10-16 续接进度
+
+T1.1–T1.3 已实现：新增 `scripts/test_demo_container.sh` 和合成 ROS 测试、发布者冲突拒绝、语音适配器开关及 `scripts/run_demo.sh`。另加里程计时间戳/四元数校验、action 接收时原子占位、停车确认失败返回 ABORTED。T2.1 的 1.8 m 距离与 T2.7 的 0.35 m/s 仅设为 demo 入口默认，现场效果待验证。T1.4–T1.6、T2.5–T2.6 尚未完成；不部署正式目录，不代替现场标定。
+
+T2.2–T2.4 已实现，配置和验证边界见 [跌倒暂停与静止延续验收](跌倒暂停与静止延续验收.md)。与最初设想相比，demo 目标宽限设为 0，避免 guard 衰减旧速度；运动后旧框永久作废，必须静止重新检出才可延续。固定机位录像对比疑似/确认为 18/17 → 19/18，反例误报仍 2/1。录像无里程计，门控仅完成合成 ROS 验证；现场项保持待验收。
 
 ---
 

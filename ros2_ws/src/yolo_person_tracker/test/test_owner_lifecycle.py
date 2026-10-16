@@ -82,3 +82,25 @@ def test_return_cancels_both_deadlines_and_next_loss_starts_fresh():
 @pytest.mark.parametrize('reset', [-1, math.nan, math.inf, 5., 6.])
 def test_invalid_continuity_deadline(reset):
     with pytest.raises(ValueError): OwnerLifecycle(5., reset)
+
+
+def test_fall_hold_preserves_remaining_time_and_release_resets():
+    owner=OwnerLifecycle(5.,2.);owner.claim();owner.update(False,10.)
+    owner.hold(True,11.)
+    assert not owner.update(False,30.)
+    assert owner.lost_for(30.) == pytest.approx(1.)
+    assert not owner.reset_continuity_due(30.)
+    owner.hold(False,31.)
+    assert not owner.update(False,34.99)
+    assert owner.update(False,35.)
+    owner.claim();owner.hold(True,40.);owner.release()
+    assert owner.held_at is None and not owner.update(False,100.)
+
+
+def test_loss_starts_during_hold_and_visible_return_is_allowed():
+    owner=OwnerLifecycle(5.);owner.claim();owner.hold(True,10.)
+    owner.update(False,20.);assert not owner.update(False,40.)
+    assert owner.lost_for(40.) == 0.
+    assert not owner.update(True,41.) and owner.state=='TRACKING'
+    owner.hold(False,42.);owner.update(False,43.)
+    assert owner.update(False,48.)

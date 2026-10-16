@@ -11,6 +11,8 @@ from rclpy.parameter import Parameter
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.time import Time
 from geometry_msgs.msg import Point
+from nav_msgs.msg import Odometry
+from .stationary import StationaryGate
 from tf2_ros import Buffer, TransformListener, TransformException
 from visualization_msgs.msg import Marker, MarkerArray
 from person_interfaces.msg import (FallAlarm, FloorPlane, PersonState, PersonStateArray, RuntimeMetrics,
@@ -106,6 +108,11 @@ class PoseTrackerNode(TrackerNode):
             height_values[name]=self.get_parameter('height_'+name).value
         self.height_tracker=HeightFallTracker(HeightFallConfig(**height_values))
         self.height_boxes={}
+        self.continuation_boxes={}
+        self.height_stationary = StationaryGate()
+        self.height_continue_requires_stationary = self.declare_parameter('height_continue_requires_stationary', False).value
+        if self.height_continue_requires_stationary:
+            self.create_subscription(Odometry, '/odom', self.on_height_odom, 10, callback_group=self.state_group)
         self.person_pub = self.create_publisher(PersonStateArray, 'person_states', 10)
         # Optional: people the detector lost while falling or down keep being measured in place of
         # their last detected box (height_continue_s). They go to their own topic, never into
@@ -129,6 +136,26 @@ class PoseTrackerNode(TrackerNode):
         self.previous_joints = {}
         if self.performance_enabled:
             self.create_timer(1., self.publish_metrics, callback_group=self.state_group)
+
+    @serialized
+    def on_height_odom(self, msg):
+        t = msg.twist.twist
+        # All axes must be finite; planar limits use vector norms conservatively.
+        linear = math.hypot(t.linear.x,t.linear.y,t.linear.z)
+        angular = math.hypot(t.angular.x,t.angular.y,t.angular.z)
+        now, ros_now = time.monotonic(), self.get_clock().now().nanoseconds*1e-9
+        previous_fresh = self.height_stationary.fresh(now, ros_now)
+        valid = self.height_stationary.observe(stamp_seconds(msg.header.stamp), linear, angular, now, ros_now)
+        if not previous_fresh or not valid:
+            self.continuation_boxes.clear()
+            if self.continued_pub is not None:
+                invalid = PersonStateArray(header=copy.deepcopy(msg.header), valid=False,
+                                          detail='continuation withdrawn: stationary odometry unavailable')
+                self.continued_pub.publish(invalid)
+
+    def continuation_stationary(self, frame_stamp):
+        return (not self.height_continue_requires_stationary or self.height_stationary.ready(
+            time.monotonic(), self.get_clock().now().nanoseconds*1e-9, frame_stamp))
 
     def measure_frame(self, metres, detections, intrinsics):
         if not self.fusion_config.enabled:
@@ -180,6 +207,13 @@ class PoseTrackerNode(TrackerNode):
 
     @serialized
     def tick(self):
+        if self.height_continue_requires_stationary and not self.height_stationary.fresh(
+                time.monotonic(), self.get_clock().now().nanoseconds*1e-9) and self.continuation_boxes:
+            self.continuation_boxes.clear()
+            if self.continued_pub is not None:
+                msg = PersonStateArray(valid=False, detail='continuation withdrawn: stale odometry')
+                msg.header.stamp = self.get_clock().now().to_msg()
+                self.continued_pub.publish(msg)
         if self.reid_lock_enabled and (self.error or self.snapshot is None or not self.fresh_snapshot()):
             self.selection.invalidate()
         super().tick()
@@ -192,7 +226,7 @@ class PoseTrackerNode(TrackerNode):
         if self.error or self.snapshot is None or not self.fresh_snapshot():
             self.postures.reset()
             self.floor_tracker.reset()
-            self.height_tracker.reset();self.height_boxes.clear()
+            self.height_tracker.reset();self.height_boxes.clear();self.continuation_boxes.clear()
             self.previous_joints.clear()
             now=time.monotonic()
             if self.pose_valid or self.active_markers or now-self.last_invalid_at >= 1.:
@@ -223,7 +257,7 @@ class PoseTrackerNode(TrackerNode):
                 color.header.frame_id)
         if self.pose_epoch != self.selection.epoch:
             self.postures.reset(); self.previous_joints.clear(); self.pose_epoch=self.selection.epoch
-            self.height_tracker.reset(); self.height_boxes.clear()
+            self.height_tracker.reset(); self.height_boxes.clear(); self.continuation_boxes.clear()
         msg=PersonStateArray(); msg.header=copy.deepcopy(color.header); msg.valid=True
         self.pose_frame=color.header.frame_id
         msg.detail='COCO17; camera-relative heuristic; initial thresholds'
@@ -314,6 +348,10 @@ class PoseTrackerNode(TrackerNode):
             measured=body_heights(self.snapshot[1],box,self.snapshot[3],*geometry,self.height_tracker.cfg,head=True)
             top,head=(None,None) if measured is None else (measured[0],measured[2])
         self.height_boxes[identity]=tuple(map(float,box))
+        if self.continuation_stationary(stamp):
+            self.continuation_boxes[identity]=tuple(map(float,box))
+        else:
+            self.continuation_boxes.clear()
         upright=person.posture in (STANDING,SITTING_CROUCHING)
         phase,reason=self.height_tracker.update(identity,stamp,top,
             upright_hint=skeleton_veto(upright,box,self.height_tracker.cfg),posture_upright=person.posture==STANDING,
@@ -350,10 +388,17 @@ class PoseTrackerNode(TrackerNode):
         handover to a returning detection still goes through person_states."""
         msg=PersonStateArray(); msg.header=copy.deepcopy(color.header); msg.valid=True
         msg.detail='height-fall continuation; no detection, box = last detected box, no keypoints'
+        if not self.continuation_stationary(stamp):
+            self.continuation_boxes.clear()
+            msg.valid = False
+            msg.detail = 'continuation unavailable: fresh stationary odometry required'
+            self.continued_pub.publish(msg)
+            return []
         tracker=self.height_tracker
         geometry=self.height_geometry(gravity)
         for identity in tracker.continuable(stamp,present):
-            box=self.height_boxes.get(identity)
+            boxes = self.continuation_boxes if self.height_continue_requires_stationary else self.height_boxes
+            box=boxes.get(identity)
             if box is None or tracker.yields(identity,box,present):
                 continue
             top=None

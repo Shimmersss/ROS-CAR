@@ -56,8 +56,8 @@ ros2 service call /demo/motion_cancel std_srvs/srv/Trigger '{}'
 1. 拒绝条件：已有动作在执行、`/odom` 或 `/control/state` 不新鲜、guard 处于 ESTOP/FAULT、参数越界（见下表）。
 2. `authorize_per_goal=true`（默认）：每个请求视为一次明确的操作员授权——`/control/set_mode EXTERNAL` 取得 epoch → 发 0.3 s 新鲜零请求 → `/control/authorize`（绑定该 epoch）→ 确认 ARMED_MANUAL。`false` 时要求外部已完成授权。
 3. 20 Hz 闭环：按 `/odom` 计算剩余量，末段 0.15 m / 20° 线性减速，到达容差（3 cm / 3°）即停。
-4. 中止：取消、`/odom` 超时、授权丢失或 epoch 变化、超时 → 立即发零。
-5. 结束：发零 0.5 s 后调用 `/control/stop`，guard 回 **IDLE、撤销授权**。不会自动恢复 FOLLOW（T1.4 可选）。
+4. 中止：取消、`/odom` 超时或时间戳失效/倒退/姿态非有限、授权丢失或 epoch 变化、超时 → 立即发零。
+5. 结束：发零 0.5 s 后调用 `/control/stop`，guard 回 **IDLE、撤销授权**。不会自动恢复 FOLLOW（T1.4 可选）。停车服务失败返回 ABORTED，不报告成功；已有 ESTOP/FAULT 锁存不清除。
 6. `motion_guard` 仍是唯一 `/cmd_vel` 发布者，其 `motion_enabled`、限速、请求时效、急停照常生效；guard 的限速比本节点更严时以 guard 为准。
 
 | 参数（`config/relative_motion.yaml`） | 默认 | 说明 |
@@ -69,6 +69,8 @@ ros2 service call /demo/motion_cancel std_srvs/srv/Trigger '{}'
 
 ## 5. 与现有入口的冲突（必须注意）
 
-- guard 要求 `/chassis/cmd_vel` **恰好一个发布者**。语音 `offline_voice.launch.py` 会启动 `chassis_motion_adapter`，它也持续发布 `/chassis/cmd_vel`，两者不能同时运行 → T1.2 给语音入口增加关闭运动适配器的开关。
+- guard 要求 `/chassis/cmd_vel` **恰好一个发布者**。语音 `offline_voice.launch.py` 会启动 `chassis_motion_adapter`，它也持续发布 `/chassis/cmd_vel`，两者不能同时运行。现支持 `with_motion_adapter:=false`；`run_demo.sh` 自动传入。相对运动节点持续检查发布者数量，发现冲突立即归零并报错退出。
 - 正在 FOLLOW 跟随时调用本接口会切到 EXTERNAL，跟随中断，结束后回 IDLE。
 - 无雷达避障；转弯时车头会扫过前方约 0.4 m 半径区域，展示场地需清空。
+
+服务 `/demo/motion_cancel` 取消 action 时，业务结果为 `CANCELED`，ROS action 终态为 ABORTED；使用 action 原生 cancel 时终态为 CANCELED。服务请求占用执行槽直到停车清理完成，第二个动作被拒绝。

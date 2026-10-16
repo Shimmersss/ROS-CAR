@@ -20,4 +20,5 @@
   <export><build_type>ament_python</build_type></export>
   <exec_depend>vision_msgs</exec_depend>
   <exec_depend>astra_body_adapter</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
 </package>

@@ -14,11 +14,14 @@ def start(context):
     motion=LaunchConfiguration('motion_enabled').perform(context)=='true'
     source=LaunchConfiguration('expected_source').perform(context) or c['expected_source']
     target_frame=LaunchConfiguration('target_frame').perform(context) or c['target_frame']
+    pause=LaunchConfiguration('pause_on_fall').perform(context)=='true'
+    if pause and float(LaunchConfiguration('target_grace_s').perform(context)) > 0:
+        raise ValueError('pause_on_fall requires target_grace_s=0 (old commands must not continue)')
     auto=LaunchConfiguration('auto_arm').perform(context)=='true'
     recover=LaunchConfiguration('target_auto_recover').perform(context)=='true'
     linear=float(LaunchConfiguration('max_linear_mps').perform(context) or c['max_linear_mps'])
     return [Node(package='astra_body_adapter',executable='person_follower',output='screen',
-                 parameters=[{'enabled':True,'expected_source':source,'base_frame':c['base_frame'],
+                 parameters=[{'pause_on_fall':pause, 'fall_resume_s':float(LaunchConfiguration('fall_resume_s').perform(context)), 'enabled':True,'expected_source':source,'base_frame':c['base_frame'],
                     'performance_enabled':LaunchConfiguration('performance_enabled').perform(context)=='true',
                     'max_linear_mps':linear,
                     'distance_gain':float(LaunchConfiguration('distance_gain').perform(context)),
@@ -46,6 +49,8 @@ def generate_launch_description():
         DeclareLaunchArgument('motion_enabled',default_value='false',choices=['true','false']),
         DeclareLaunchArgument('radar_required',default_value='false',choices=['true','false']),
         # Follow-only: arm by itself once every check passes; STOP returns to IDLE and is not undone.
+        DeclareLaunchArgument('pause_on_fall',default_value='false',choices=['true','false']),
+        DeclareLaunchArgument('fall_resume_s',default_value='3.0'),
         DeclareLaunchArgument('auto_arm',default_value='false',choices=['true','false']),
         # Brief target-gap tolerance in FOLLOW (0 = off); see motion_guard/node.py.
         DeclareLaunchArgument('target_grace_s',default_value='0.0'),

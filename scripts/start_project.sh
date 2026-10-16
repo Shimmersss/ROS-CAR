@@ -32,6 +32,7 @@ export COLOR_TOPIC="${COLOR_TOPIC:-/camera/color/image_raw}"
 export DEPTH_TOPIC="${DEPTH_TOPIC:-/camera/depth/image_raw}"
 export CAMERA_INFO_TOPIC="${CAMERA_INFO_TOPIC:-/camera/color/camera_info}"
 export AUTO_LOCK_SINGLE="${AUTO_LOCK_SINGLE:-true}"
+WITH_DEMO_MOTION="${WITH_DEMO_MOTION:-false}"
 WITH_VOICE="${WITH_VOICE:-true}"
 WITH_CHASSIS="${WITH_CHASSIS:-false}"
 export WITH_RADAR="${WITH_RADAR:-false}"
@@ -89,9 +90,14 @@ HELP
   *) echo '未知参数，使用 --help 查看用法。' >&2; exit 2;;
 esac
 set -u
-for value in "$WITH_VOICE" "$WITH_CHASSIS" "$WITH_RADAR" "$WITH_FOLLOWER" "$WITH_TONGUE_MODE" "$WITH_CAPTURE_TASKS" "$CAPTURE_ROS_API" "$MOTION_ENABLED" "${DEPTH_REGISTERED:-false}" "$AUTO_LOCK_SINGLE" "$FOLLOW_AUTO_ARM" "$FOLLOW_TARGET_AUTO_RECOVER" "$FOLLOW_EMERGENCY_KWS_REQUIRED" "${GEMINI_INPROCESS_REGISTRATION:-false}"; do
+for value in "$WITH_DEMO_MOTION" "$WITH_VOICE" "$WITH_CHASSIS" "$WITH_RADAR" "$WITH_FOLLOWER" "$WITH_TONGUE_MODE" "$WITH_CAPTURE_TASKS" "$CAPTURE_ROS_API" "$MOTION_ENABLED" "${DEPTH_REGISTERED:-false}" "$AUTO_LOCK_SINGLE" "$FOLLOW_AUTO_ARM" "$FOLLOW_TARGET_AUTO_RECOVER" "$FOLLOW_EMERGENCY_KWS_REQUIRED" "${GEMINI_INPROCESS_REGISTRATION:-false}"; do
   [[ "$value" == true || "$value" == false ]] || { echo '开关必须为 true/false' >&2; exit 2; }
 done
+if [[ "$WITH_DEMO_MOTION" == true ]]; then
+  [[ "$WITH_FOLLOWER" == true && "${VOICE_BACKEND:-offline}" == offline ]] || {
+    echo 'Demo motion requires WITH_FOLLOWER=true and VOICE_BACKEND=offline.' >&2; exit 2;
+  }
+fi
 if [[ "$CAPTURE_ROS_API" == true && "$WITH_CAPTURE_TASKS" != true ]]; then
   echo "CAPTURE_ROS_API=true 要求 WITH_CAPTURE_TASKS=true。" >&2; exit 2
 fi
@@ -198,6 +204,7 @@ if [[ "$PERCEPTION_ROUTE" == c ]]; then
 fi
 set -u
 packages=(astra_camera yolo_person_tracker perception_bringup)
+[[ "$WITH_DEMO_MOTION" == true ]] && packages+=(demo_motion demo_interfaces)
 [[ "$WITH_CAPTURE_TASKS" == true ]] && packages+=(capture_task capture_task_interfaces)
 [[ "$WITH_TONGUE_MODE" == true ]] && packages+=(execution_mode_interfaces execution_mode_manager tongue_mode)
 [[ "$WITH_RADAR" == true ]] && packages+=(lslidar_driver)
@@ -241,7 +248,7 @@ start_module() {
 start_module camera bash "$ROOT/scripts/$camera_script"
 start_module perception bash "$ROOT/scripts/run_b_radar_foxglove.sh"
 if [[ "$WITH_FOLLOWER" == true ]]; then
-  start_module follower bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch motion_guard follow.launch.py motion_enabled:='$MOTION_ENABLED' expected_source:=yolo target_frame:=camera_color_optical_frame radar_required:=false auto_arm:='$FOLLOW_AUTO_ARM' target_grace_s:='${FOLLOW_TARGET_GRACE_S:-0.6}' target_auto_recover:='$FOLLOW_TARGET_AUTO_RECOVER' emergency_kws_required:='$FOLLOW_EMERGENCY_KWS_REQUIRED' geometry_confirmed:='${FOLLOW_GEOMETRY_CONFIRMED:-false}' mount_calibrated:='${FOLLOW_MOUNT_CALIBRATED:-false}' stopping_model_confirmed:='${FOLLOW_STOPPING_MODEL_CONFIRMED:-false}' target_distance_m:='${FOLLOW_TARGET_DISTANCE_M:-1.0}' max_linear_mps:='${FOLLOW_MAX_LINEAR_MPS:-}' distance_gain:='${FOLLOW_DISTANCE_GAIN:-0.6}' bearing_gain:='${FOLLOW_BEARING_GAIN:-1.2}'"
+  start_module follower bash -c "source /opt/ros/humble/setup.bash; source '$ROOT/install/setup.bash'; exec ros2 launch motion_guard follow.launch.py pause_on_fall:='${FOLLOW_PAUSE_ON_FALL:-false}' fall_resume_s:='${FOLLOW_FALL_RESUME_S:-3.0}' motion_enabled:='$MOTION_ENABLED' expected_source:=yolo target_frame:=camera_color_optical_frame radar_required:=false auto_arm:='$FOLLOW_AUTO_ARM' target_grace_s:='${FOLLOW_TARGET_GRACE_S:-0.6}' target_auto_recover:='$FOLLOW_TARGET_AUTO_RECOVER' emergency_kws_required:='$FOLLOW_EMERGENCY_KWS_REQUIRED' geometry_confirmed:='${FOLLOW_GEOMETRY_CONFIRMED:-false}' mount_calibrated:='${FOLLOW_MOUNT_CALIBRATED:-false}' stopping_model_confirmed:='${FOLLOW_STOPPING_MODEL_CONFIRMED:-false}' target_distance_m:='${FOLLOW_TARGET_DISTANCE_M:-1.0}' max_linear_mps:='${FOLLOW_MAX_LINEAR_MPS:-}' distance_gain:='${FOLLOW_DISTANCE_GAIN:-0.6}' bearing_gain:='${FOLLOW_BEARING_GAIN:-1.2}'"
 fi
 if [[ "$WITH_CHASSIS" == true ]]; then
   start_module chassis bash "$ROOT/scripts/run_chassis_io.sh"
@@ -249,6 +256,7 @@ fi
 if [[ "$WITH_VOICE" == true ]]; then
   voice_args=()
   if [[ "${VOICE_BACKEND:-offline}" == offline ]]; then
+    [[ "$WITH_DEMO_MOTION" == true ]] && voice_args+=(with_motion_adapter:=false)
     voice_args+=(voice_estop_enabled:="${VOICE_ESTOP_ENABLED:-true}")
   fi
   if [[ "${VOICE_TTS_ENABLED:-true}" == true ]]; then
@@ -275,6 +283,9 @@ if [[ "$WITH_CAPTURE_TASKS" == true ]]; then
     token_file:="${CAPTURE_TOKEN_FILE:-}" camera_topic:="${CAPTURE_CAMERA_TOPIC:-/camera/color/image_raw}" \
     camera_profile:="${CAPTURE_CAMERA_PROFILE:-${PERCEPTION_ROUTE}_raw_rgb_v1}" \
     storage_dir:="$ROOT/artifacts/capture-task" save_images:=false fake_tts:=false synthetic_camera:=false
+fi
+if [[ "$WITH_DEMO_MOTION" == true ]]; then
+  start_module demo_motion ros2 launch demo_motion relative_motion.launch.py
 fi
 printf '%s 感知已派发；N10P=%s，底盘串口=%s，直接跟随=%s，语音=%s，配准确认=%s\n' \
   "$PERCEPTION_ROUTE" "${WITH_RADAR:-false}" \

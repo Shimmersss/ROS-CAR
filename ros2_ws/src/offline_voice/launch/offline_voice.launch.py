@@ -16,6 +16,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'config', default_value=os.path.join(share, 'config', 'offline_voice.yaml')),
         DeclareLaunchArgument('enable_tts', default_value='true'),
+        DeclareLaunchArgument('with_motion_adapter', default_value='true', choices=['true', 'false']),
         DeclareLaunchArgument('use_xfyun_asr', default_value='false'),
         DeclareLaunchArgument('enable_wake_driver', default_value='true'),
         DeclareLaunchArgument('voice_control_enabled', default_value='true'),
@@ -35,7 +36,8 @@ def generate_launch_description():
              name='emergency_kws', output='screen', parameters=[config],
              condition=IfCondition(LaunchConfiguration('voice_estop_enabled'))),
         Node(package='voice_command_router', executable='motion_adapter',
-             name='chassis_motion_adapter', output='screen', parameters=[config]),
+             name='chassis_motion_adapter', output='screen', parameters=[config],
+             condition=IfCondition(LaunchConfiguration('with_motion_adapter'))),
         Node(
             package='offline_voice', executable='asr_node',
             name='offline_asr', output='screen', parameters=[config, {'audio_source': 'topic'}],

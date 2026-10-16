@@ -14,6 +14,7 @@ class OwnerLifecycle:
         self.state, self.event = 'UNCLAIMED', 'ready'
         self.sequence = 0
         self.lost_at = None
+        self.held_at = None
 
     def change(self, state, event):
         self.state, self.event = state, event
@@ -21,15 +22,24 @@ class OwnerLifecycle:
 
     def claim(self):
         self.lost_at = None
+        self.held_at = None
         self.continuity_reset_done = False
         self.change('TRACKING', 'claimed')
 
     def release(self, expired=False):
         self.lost_at = None
+        self.held_at = None
         self.continuity_reset_done = False
         self.change('UNCLAIMED', 'expired' if expired else 'released')
 
+    def hold(self, active, now):
+        """Freeze loss/continuity clocks without changing selection or granting movement."""
+        if self.held_at is not None and self.lost_at is not None:
+            self.lost_at += max(0., now-self.held_at)
+        self.held_at = now if active and self.state != 'UNCLAIMED' else None
+
     def update(self, visible, now):
+        self.hold(self.held_at is not None, now)
         if self.state == 'UNCLAIMED':
             return False
         # Expiry wins at exactly the deadline, even if a frame arrives then.
@@ -47,6 +57,7 @@ class OwnerLifecycle:
         return False
 
     def reset_continuity_due(self, now):
+        self.hold(self.held_at is not None, now)
         if (self.continuity_reset_s > 0 and self.lost_at is not None
                 and not self.continuity_reset_done
                 and now-self.lost_at >= self.continuity_reset_s):
@@ -55,4 +66,4 @@ class OwnerLifecycle:
         return False
 
     def lost_for(self, now):
-        return 0. if self.lost_at is None else max(0., now-self.lost_at)
+        return 0. if self.lost_at is None else max(0., (self.held_at if self.held_at is not None else now)-self.lost_at)

@@ -10,6 +10,7 @@ from person_interfaces.msg import PersonIdentityArray, PersonIdentity
 from yolo_person_tracker.pose_node import PoseTrackerNode
 from yolo_person_tracker.reid_node import ReIDNode
 from yolo_person_tracker.backend import Detection
+from monotonic_ros_clock import MonotonicRosClock
 
 class Backend:
     detections = [Detection(7, (10, 5, 70, 95), .9)]
@@ -23,23 +24,25 @@ class Tracker:
 def main():
     rclpy.init(); b=Backend(); tracker=Tracker()
     n=PoseTrackerNode(backend=b,sot_tracker=tracker,parameter_overrides=[Parameter(k,value=v) for k,v in dict(
-        depth_registered=True,sot_enabled=True,reid_reacquire_enabled=True,
+        use_sim_time=True,depth_registered=True,sot_enabled=True,reid_reacquire_enabled=True,
         owner_lost_timeout_s=5.,owner_continuity_reset_s=2.,auto_lock_single=True,visualization_fps=0.).items()])
     observer=ReIDNode(backend=object(),parameter_overrides=[Parameter('forget_released_owner',value=True)])
+    clock=MonotonicRosClock(n)
     info=CameraInfo(); info.width=info.height=100;info.header.frame_id='camera_optical'
     info.p=[100.,0.,50.,0.,0.,100.,50.,0.,0.,0.,1.,0.];n.on_info(info)
     def step(identity=None):
+        clock.tick()
         c=n.bridge.cv2_to_imgmsg(np.zeros((100,100,3),np.uint8),'bgr8');c.header.frame_id=info.header.frame_id;c.header.stamp=n.get_clock().now().to_msg()
         d=n.bridge.cv2_to_imgmsg(np.full((100,100),2.,np.float32),'32FC1');d.header=copy.deepcopy(c.header)
         n.on_pair(c,d)
         end=time.monotonic()+2
         while n.future is not None and not n.future.done() and time.monotonic()<end:time.sleep(.001)
-        n.tick()
+        clock.tick();n.tick()
         if identity and n.snapshot:
             header=copy.deepcopy(n.snapshot[0].header)
             n.on_identities(PersonIdentityArray(header=header,enabled=True,valid=True,persons=[
                 PersonIdentity(track_id=f'0:{b.detections[0].track_id}',person_id=identity,verified=True,visible=True)]))
-            n.tick()
+            clock.tick();n.tick()
         time.sleep(.03)
     try:
         for _ in range(4):step()
