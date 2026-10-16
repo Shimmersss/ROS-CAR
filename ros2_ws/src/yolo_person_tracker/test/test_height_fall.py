@@ -273,6 +273,61 @@ class HeightFallTrackerTests(unittest.TestCase):
         t.update('0:1', 1.9, .3)                                                   # detected again: may continue later
         self.assertEqual(t.continuable(2.0, {}), ['0:1'])
 
+    def test_confirmation_hysteresis_requires_an_initial_low_drop(self):
+        cfg = HeightFallConfig(confirm_max_m=.75)
+        samples = [(1., 1.4), (1.2, 1.4), (1.4, 1.4), (1.8, .4),
+                   (2., .7), (2.3, .7), (2.6, .7), (2.9, .7)]
+        self.assertEqual(self.feed(HeightFallTracker(cfg), samples)[-1][0], 2)
+        self.assertEqual(self.feed(HeightFallTracker(), samples)[-1][0], 0)
+        # A stationary sitting person or a descent that never reaches the trigger limit
+        # must not gain an event merely because confirmation has hysteresis.
+        no_drop = [(t, .7 if h == .4 else h) for t, h in samples]
+        self.assertTrue(all(p == 0 for p, _ in self.feed(HeightFallTracker(cfg), no_drop)))
+        self.assertTrue(all(p == 0 for p, _ in self.feed(HeightFallTracker(cfg), [(t,.7) for t,_ in samples])))
+
+    def test_hysteresis_does_not_bridge_a_rise_above_its_ceiling(self):
+        t = HeightFallTracker(HeightFallConfig(confirm_max_m=.75))
+        self.feed(t, [(1.,1.4),(1.2,1.4),(1.4,1.4),(1.8,.4),(2.,.7)])
+        self.assertEqual(t.update('0:1',2.2,.76)[0], 0)
+        self.assertEqual(t.update('0:1',2.4,.7)[0], 0)
+        self.assertEqual(t.update('0:1',2.7,.7)[0], 0)
+        self.assertEqual(t.update('0:2',2.8,.7)[0], 0)
+
+    def test_hysteresis_does_not_count_unmeasured_or_continued_high_frames(self):
+        for keywords in ({}, {'clipped': True}, {'continued': True}):
+            t = HeightFallTracker(HeightFallConfig(confirm_max_m=.75, continue_s=6.))
+            self.feed(t, [(1.,1.4),(1.2,1.4),(1.4,1.4),(1.8,.4),(2.,.7)])
+            top = .7 if keywords else None
+            for stamp in (2.2,2.4,2.6,2.8,3.):
+                self.assertEqual(t.update('0:1',stamp,top,**keywords)[0], 1)
+            self.assertEqual(t.update('0:1',3.2,.7)[0], 1)
+            self.assertEqual(t.update('0:1',3.5,.7)[0], 1)
+            self.assertEqual(t.update('0:1',3.8,.7)[0], 2)
+
+    def test_hysteresis_keeps_crouch_veto_and_upright_recovery(self):
+        t = HeightFallTracker(HeightFallConfig(confirm_max_m=.75))
+        self.feed(t, [(1.,1.4),(1.2,1.4),(1.4,1.4),(1.8,.4)])
+        self.assertEqual(t.update('0:1',2.,.4,upright_hint=True)[0], 0)
+        t = HeightFallTracker(HeightFallConfig(confirm_max_m=.75))
+        self.feed(t, [(1.,1.4),(1.2,1.4),(1.4,1.4),(1.8,.4),(2.2,.7),(2.6,.7),(2.9,.7)])
+        self.assertEqual(t.update('0:1',3.,.9)[0], 2)
+        self.assertEqual(t.update('0:1',3.4,.9)[0], 2)
+        self.assertEqual(t.update('0:1',3.8,.9)[0], 2)
+        self.assertEqual(t.update('0:1',4.1,.9)[0], 0)
+
+    def test_hysteresis_does_not_override_standing_evidence(self):
+        t = HeightFallTracker(HeightFallConfig(confirm_max_m=.75))
+        self.feed(t, [(1.,1.4),(1.2,1.4),(1.4,1.4),(1.8,.4)])
+        self.assertEqual(t.update('0:1',2.,.7,posture_upright=True)[0], 0)
+        self.assertEqual(t.update('0:1',2.3,.7)[0], 0)
+
+    def test_confirmation_ceiling_validation(self):
+        for value in (-1., .54, .8, float('nan'), float('inf'), True, False):
+            with self.assertRaises(ValueError):
+                HeightFallConfig(confirm_max_m=value)
+        self.assertEqual(HeightFallConfig().confirm_max_m, 0.)
+        self.assertEqual(HeightFallConfig(confirm_max_m=.55).confirm_max_m, .55)
+
     def test_config_validation(self):
         with self.assertRaises(ValueError): HeightFallConfig(continue_min_m=.6)
         with self.assertRaises(ValueError): HeightFallConfig(continue_s=-1.)

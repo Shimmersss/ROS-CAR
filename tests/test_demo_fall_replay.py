@@ -50,6 +50,24 @@ class ReplayTests(unittest.TestCase):
                 replay.recompute_depth(Path(directory), [frame], .35, profile)
                 self.assertEqual(frame['people'][0]['joints3d'][0], [None,None,None])
 
+    def test_event_comparison_catches_traded_misses_and_new_false_alarms(self):
+        from evaluate_demo_fall_refinement import regressions
+        fall = dict(segment='A', kind='fall', onset=1., suspected=True, confirmed=True)
+        action = dict(segment='A', kind='action', onset=2., action='sit', suspected=False, confirmed=False)
+        self.assertEqual(regressions([fall,action], [fall,action]), [])
+        self.assertEqual(len(regressions([fall,action], [dict(fall, confirmed=False), dict(action, suspected=True)])), 2)
+        with self.assertRaises(ValueError):
+            regressions([fall,action], [fall])
+
+    def test_explicit_height_profile_and_variant_override(self):
+        config = replay.load_height_config(replay.ROOT/'ros2_ws/src/perception_bringup/config/pose_fixed_27cm_demo.yaml')
+        self.assertEqual(config.confirm_max_m, .75)
+        self.assertEqual(config.drop_min_m, .6)
+        with patch.dict(replay.VARIANT, {'confirm_max_m': 0.}, clear=True), patch.object(replay, 'HeightFallTracker') as tracker:
+            replay.replay_height([], {}, height_config=config)
+            self.assertEqual(tracker.call_args.args[0].confirm_max_m, 0.)
+            self.assertEqual(tracker.call_args.args[0].drop_min_m, .6)
+
     def test_bottom_disabled_and_boundary(self):
         self.assertFalse(replay.bottom_clipped((0,0,100,480), 0))
         self.assertFalse(replay.bottom_clipped((0,0,100,471), 8))

@@ -38,7 +38,7 @@ MODES = ('3d-config', '2d', '3d-fixed', '3d-floor', '3d-geometry', 'height')
 VARIANT = {}   # rule switches under evaluation, set from --variant
 HEIGHT_KEYS = dict(upright='upright_min_m', low='low_max_m', drop='drop_min_m', recovery='recovery_s', confirm='confirm_s',
                    hint='hint_upright_min_m', lost='lost_hold_s', sit='sit_hold_s', side='side_edge_px',
-                   cont='continue_s', cont_min='continue_min_m')
+                   cont='continue_s', cont_min='continue_min_m', confirm_max='confirm_max_m')
 IMAGE_WIDTH = 640   # recorder colour stream (record_gemini_mac.py)
 MERGE_S = 1.5   # detections closer than this belong to the same event
 
@@ -48,6 +48,12 @@ def load_configs(path=None):
     pose = {f.name: params['pose_'+f.name] for f in fields(PoseConfig) if 'pose_'+f.name in params}
     spatial = {f.name: params['pose3d_'+f.name] for f in fields(Pose3DConfig) if 'pose3d_'+f.name in params}
     return PoseConfig(**(pose if path else dict(pose, upright_confirmed=True))), spatial
+
+
+def load_height_config(path):
+    params = yaml.safe_load(path.read_text())['/**']['ros__parameters']
+    return HeightFallConfig(**{f.name: params['height_'+f.name] for f in fields(HeightFallConfig)
+                              if 'height_'+f.name in params})
 
 
 def floor_fits(recording, frames, cache_path):
@@ -226,12 +232,13 @@ def combine_timelines(pose, height):
     return [rows[key] for key in sorted(rows)]
 
 
-def replay_height(frames, heights, continuation=None, postures=None, bottom_edge_px=0.):
+def replay_height(frames, heights, continuation=None, postures=None, bottom_edge_px=0., height_config=None):
     overrides = {k: VARIANT[k] for k in HEIGHT_KEYS.values() if k in VARIANT}
     if 'veto_aspect' in VARIANT:
         overrides['veto_min_aspect'] = VARIANT['veto_aspect'] or 1e-6
-    tracker, boxes, timeline, epoch = HeightFallTracker(HeightFallConfig(
-        transition_s=VARIANT.get('transition_s', 2.), **overrides)), {}, [], None
+    config = height_config or HeightFallConfig()
+    tracker, boxes, timeline, epoch = HeightFallTracker(replace(config,
+        transition_s=VARIANT.get('transition_s', config.transition_s), **overrides)), {}, [], None
     for f in frames:
         stamp = f['time_s']+1.
         present = {p['id']: tuple(p['box']) for p in f['people'] if p['id'] is not None}
@@ -389,7 +396,7 @@ def main():
     parser.add_argument('--variant', default='baseline',
                         help="baseline, or comma list of gap_pause, knee_fallback, confirm_lying_only, veto2d, "
                              "handover=<s>, transition=<s>, upright=<m>, low=<m>, drop=<m>, recovery=<s>, confirm=<s>, hint=<m>, lost=<s>, sit=<s>, side=<px>, "
-                             "cont=<s>, cont_min=<m>, sot (continuation boxes from VitTrack instead of the last box)")
+                             "cont=<s>, cont_min=<m>, confirm_max=<m>, sot (continuation boxes from VitTrack instead of the last box)")
     parser.add_argument('--pose-config', type=Path, help='Explicit profile, preserves its confirmation flags')
     parser.add_argument('--pose-confidence', type=float, help='Keypoint threshold, not detector confidence')
     parser.add_argument('--height-postures', choices=('2d','3d-geometry','3d-config'),
@@ -459,11 +466,14 @@ def main():
             else:
                 report['modes'][mode] = 'skipped: no stable floor fit'
                 continue
-            if VARIANT.get('sot') and not VARIANT.get('continue_s'):
+            height_config = load_height_config(args.pose_config) if args.pose_config else HeightFallConfig()
+            continue_s = VARIANT.get('continue_s', height_config.continue_s)
+            if VARIANT.get('sot') and not continue_s:
                 parser.error('sot needs cont=<s>')
             continuation = (Continuation(args.recording, geometry_of, VARIANT.get('sot', False))
-                            if VARIANT.get('continue_s') else None)
-            timeline = replay_height(frames, heights, continuation, postures, args.bottom_edge_px)
+                            if continue_s else None)
+            timeline = replay_height(frames, heights, continuation, postures, args.bottom_edge_px,
+                                     height_config)
         else:
             timeline = replay(frames, floors, mode, pose, spatial, fixed, geometry)
         timelines[mode] = timeline

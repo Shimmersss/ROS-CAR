@@ -115,7 +115,7 @@ docs/      方案、接口、计划；docs/archive/ 为历史文档
 
 ## 文档索引
 
-**Demo 展示分支（`demo/showcase-20261016`，展示后删除）**：[Demo 文档入口](docs/demo/README.md) · [跌倒暂停与静止延续验收](docs/demo/跌倒暂停与静止延续验收.md) · [T2.6 离线优化评估](docs/demo/T2.6离线检测优化评估.md) · [相对运动 ROS 接口](docs/demo/相对运动ROS接口.md) · [Codex 任务清单](docs/demo/Codex任务清单.md)
+**Demo 展示分支（`demo/showcase-20261016`，展示后删除）**：[Demo 文档入口](docs/demo/README.md) · [跌倒暂停与静止延续验收](docs/demo/跌倒暂停与静止延续验收.md) · [A2a/A4 离线优化](docs/demo/A2a与A4离线优化.md) · [T2.6 离线优化评估](docs/demo/T2.6离线检测优化评估.md) · [相对运动 ROS 接口](docs/demo/相对运动ROS接口.md) · [Codex 任务清单](docs/demo/Codex任务清单.md)
 
 - [云端拍照任务修复说明](docs/云端拍照任务修复说明.md)（验收后七项修复要求）
 - [云端拍照任务 ROS 接口方案](docs/云端拍照任务ROS接口方案.md)（可选服务门面实施入口）

@@ -12,6 +12,7 @@ from visualization_msgs.msg import MarkerArray, Marker
 from person_interfaces.msg import PersonStateArray, TargetState, RuntimeMetrics
 from yolo_person_tracker.backend import Detection
 from yolo_person_tracker.pose_node import PoseTrackerNode
+from monotonic_ros_clock import MonotonicRosClock
 
 
 class Backend:
@@ -31,10 +32,11 @@ def main():
     fusion_enabled = '--fusion-off' not in sys.argv
     rclpy.init();backend=Backend()
     node=PoseTrackerNode(backend=backend,namespace='perception',parameter_overrides=[
-        Parameter('depth_registered',value=True),Parameter('max_age_s',value=1.),
+        Parameter('use_sim_time',value=True),Parameter('depth_registered',value=True),Parameter('max_age_s',value=1.),
         Parameter('pose_upright_confirmed',value=True),Parameter('visualization_scale',value=1.),
         Parameter('fusion_enabled',value=fusion_enabled)])
     ex=SingleThreadedExecutor();ex.add_node(node)
+    clock=MonotonicRosClock(node)
     persons=[];states=[];markers=[];metrics=[]
     node.create_subscription(PersonStateArray,'person_states',persons.append,10)
     node.create_subscription(TargetState,'target_state',states.append,10)
@@ -45,18 +47,26 @@ def main():
     ip=node.create_publisher(CameraInfo,node.cfg['camera_info_topic'],10)
     def spin(seconds=.2):
         end=time.monotonic()+seconds
-        while time.monotonic()<end:ex.spin_once(timeout_sec=.01)
+        while time.monotonic()<end:clock.spin_once(ex)
     def send(value=2000):
         info=CameraInfo();info.width=info.height=100;info.header.frame_id='camera_color_optical_frame'
         info.p=[100.,0.,50.,0.,0.,100.,50.,0.,0.,0.,1.,0.];ip.publish(info);spin(.03)
         c=node.bridge.cv2_to_imgmsg(np.zeros((100,100,3),np.uint8),'bgr8');c.header.frame_id=info.header.frame_id;c.header.stamp=node.get_clock().now().to_msg()
         pixels = value if isinstance(value, np.ndarray) else np.full((100,100),value,np.uint16)
         d=node.bridge.cv2_to_imgmsg(pixels,'16UC1');d.header=copy.deepcopy(c.header)
-        cp.publish(c);dp.publish(d);spin();return c
+        before=len(persons)
+        cp.publish(c);dp.publish(d)
+        end=time.monotonic()+1.
+        while time.monotonic()<end:
+            clock.spin_once(ex)
+            if len(persons)>before and (persons[-1].header==c.header or (backend.fail and not persons[-1].valid)):
+                spin(.03)  # drain target/marker messages emitted with the same perception frame
+                return c
+        raise AssertionError(f'no output for input stamp {c.header.stamp}; latest={persons[-1:]!r}')
     def call(name):
         client=node.create_client(Trigger,name);assert client.wait_for_service(timeout_sec=1)
         future=client.call_async(Trigger.Request());end=time.monotonic()+2
-        while not future.done() and time.monotonic()<end:ex.spin_once(timeout_sec=.01)
+        while not future.done() and time.monotonic()<end:clock.spin_once(ex)
         assert future.done();response=future.result();node.destroy_client(client);return response
     try:
         spin(.3);c=send()
