@@ -1847,3 +1847,5 @@
 - 新增云端推理部署与迁移说明，明确inference_url/18200隧道/8200网关/8096舌诊及cloud_url上传端口的区别，包含新机器环境、token轮换、转发迁移、systemd drop-in、回退和验证。当前with_bridge=false，ROS结果不会额外HTTP上传，不改业务逻辑。
 - 只读核对车端当前srv/action定义及3类真实结果。更新ROS手册中旧运行接口、运动开启状态、overlay与取消路径；新增返回值说明和无图JSON样例，明确ROS result_json字符串、保存脚本analysis对象、默认空Header、无舌体labels={}、PCB result无iou_threshold等实际差异。README索引和AGENTS指定资产规则同步。
 - 最小审查包含真实资产/45文件校验、准备工具功能执行、完整纯Python CI、结构和diff空白检查；未重新编译ROS或触发新的小车拍照，沿用已记录实机样例，不声称准确率通过。PR目标demo实际为demo/showcase-20261016，集成时保留其运动/跌倒和语音改动，不用main覆盖demo源码。
+
+- 接口复审进一步修正远程排错中的旧/capture启动建议与“最长95秒”：当前应查/inspect，95秒仅对应默认TTL60的门面预算，显式TTL180时约215秒。主目标CI2140项pytest、demo2166项pytest通过，另各自录像/入口工具通过；结构main21包430Python、demo23包442Python。
