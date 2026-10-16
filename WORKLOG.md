@@ -1831,3 +1831,11 @@
 - 三个模型继续使用现有 5060 WSL 推理部署，不修改业务逻辑、模型、阈值或接口。本次通过带认证的 /health/ready 实时确认 tongue=cuda、helmet=cuda:0、pcb=cuda:0 均 ready；面诊未配置，不计入这三个模型。舌诊数值比较失败及用户允许GPU的例外记录继续保留。
 - 本次未重新部署或更改小车入口：上次隔离 infer 测试已停止，原 upload 适配已恢复，小车仍保留静音。WSL 推理为现有手动运行服务，不据此宣称已设置开机启动或永久切换车端入口。
 - 最小审查：快进合并不产生代码冲突或逻辑改动；git diff --check 与项目结构检查通过。沿用分支已记录的CI和静音实车测试结果，本次未重复实机测试。
+
+## 2026-10-16 常驻部署现有推理逻辑并恢复小车出声
+
+- 用户明确授权车端部署与恢复播报。58项相关车端源文件与本地主线473ecff逐项SHA一致，复用此前Jetson原生3包overlay；未修改产品逻辑、模型或阈值，未重启整车主服务，运动仍关闭。
+- 新roscar-capture-inference.service已enabled/active、Linger=yes，替换并禁用旧c518上传适配，服务互斥。infer ROS门面仅注册/inspect/*，沿用with_bridge=false，不保留mock或擅自启用HTTP轮询。WSL三GPU网关经专用受限SSH反向转发到车端127.0.0.1:18200，断线循环重连；WSL本身仍手动服务，无开机自启。token0600，本地中转已删。
+- USB PCM及两个PulseAudio输出解除静音，真实/voice/say完成，用户确认能听到且正常。常驻服务下真实640×480相机舌诊retake22.05s、安全帽analyzed16.94s、PCB analyzed24.43s，JSON/JPEG/SHA与GPU设备检查通过；无标准实物，不称准确率通过。
+- 观察cmd_vel1280条、odom1271条，最大速度均0；3任务停车租约全部释放，最终IDLE/DISARMED、motion_enabled=false、无fault；仅1个capture/语音Action server、RGB与速度发布者各1。早期CLI图缓存曾显示旧服务/缺失节点，使用新rclpy节点逐节点查询确认当前唯一活跃门面为/inspect，未按缓存结果重复启动节点。
+- 同步AGENTS当前入口、验收说明与回退命令。最小审查为哈希、unit校验、真实链路、结构/空白检查；只改文档，不重复全量CI。证据在忽略的artifacts/inference-loop/onboard-20261016/report.json；未推送或提PR。
