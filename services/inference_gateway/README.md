@@ -13,7 +13,7 @@ python3 -m venv /root/roscar-models/venv-yolo
 /root/roscar-models/venv-yolo/bin/python -m pip install -r services/inference_gateway/requirements.txt
 ```
 
-这是 [PyTorch 官方提供的 CUDA 12.8 组合](https://pytorch.org/get-started/previous-versions/)；安装后必须运行一次 CUDA 矩阵运算，单看 `is_available()` 不算验证。舌诊单独运行原包的 HTTP 服务，监听 `127.0.0.1:8096`；只接 `passthrough_debug` 冻结版本。先做 CPU 参考与 GPU 数值比较，不通过须按指南暂停接入并报告，不能更改阈值使其通过。本轮已经比较失败，CPU 替代方案等待用户确认，测试服务已停止。
+这是 [PyTorch 官方提供的 CUDA 12.8 组合](https://pytorch.org/get-started/previous-versions/)；安装后必须运行一次 CUDA 矩阵运算，单看 `is_available()` 不算验证。舌诊单独运行原包的 HTTP 服务，监听 `127.0.0.1:8096`；只接 `passthrough_debug` 冻结版本。先做 CPU 参考与 GPU 数值比较，不通过须按指南暂停接入并报告，不能更改阈值使其通过。本轮比较失败记录保留（最大差 0.008267 > 0.001）；用户 2026-10-16 明确授权直接使用 GPU 继续接入。此为用户选择的例外，不代表数值对齐或准确率验收通过。示例配置要求 cuda，实际服务报告 CPU 时拒绝该后端，不静默切换。
 
 复制 `config.example.yaml` 到忽略目录（例如 `artifacts/inference-loop/gateway.private.yaml`），核对实际 PCB 权重哈希。认证令牌使用所有者权限 0600 的私有文件，不能进 Git。默认只监听本机；需要开发机访问时，显式绑定可信内网或 SSH 隧道，并设置令牌。
 

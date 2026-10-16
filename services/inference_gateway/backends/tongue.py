@@ -11,13 +11,17 @@ DIGEST = '1a897fa5e7967eef62d60de50c98a1909224008e27054dec8e31a10e8f76aef1'
 class TongueBackend:
     def __init__(self, config):
         self.host, self.port = '127.0.0.1', int(config.get('port', 8096))
-        self.device = config.get('device', 'cpu')
+        expected_device = config.get('device', 'cuda')
+        if expected_device not in ('cpu', 'cuda', 'cuda:0'):
+            raise ValueError('invalid_tongue_device')
         self.manifest = self.request('GET', '/v1/model-info', timeout=5.)
         if self.manifest.get('pipeline_id') != PIPELINE_ID or self.manifest.get('pipeline_digest') != DIGEST:
             raise ValueError('tongue_manifest_mismatch')
         if set(self.manifest.get('labels', [])) != set(LABELS):
             raise ValueError('tongue_model_labels_mismatch')
-        self.device = self.manifest.get('device', self.device)
+        self.device = self.manifest.get('device')
+        if self.device not in (('cuda', 'cuda:0') if expected_device.startswith('cuda') else ('cpu',)):
+            raise ValueError('tongue_device_mismatch')
         health = self.request('GET', '/health/ready', timeout=5.)
         if health.get('status') != 'ready':
             raise ValueError('tongue_not_ready')
