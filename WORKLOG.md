@@ -1709,3 +1709,110 @@
 
 - 新增 `docs/Agent控制接口速查.md`，简述模式切换/epoch 授权、外部速度顺序、停车与急停、主人认领、文字播报、停车租约和必要状态监测；同步 README 索引。限速和主人等待时间以运行配置/消息为准，避免沿用历史值。
 - 最小审查核对 srv 字段、guard 入口与参数、请求时间戳/唯一发布者及复位边界；检查文档链接与 diff 空白。本次仅文档，不修改代码、板端服务或运动状态，不把文档检查描述为实机验证。
+
+
+## 2026-10-15：PCB 采集质检匹配 640×480 模型输入
+
+- 用户明确 PCB 缺陷模型默认输入 640×480，将 PCB 目录 min_width 从 1280 改为 640，直接使用当前 Gemini 原始 RGB；不切换相机分辨率、不插值放大、不改 HTTP/ROS 字段和其他三类任务。保留播报、3 秒准备、5 帧择优、JPEG 95、清晰度/亮度/色彩质检与停车租约。
+- 更新已有目录、质量及流程回归：有效 640×480 PCB 在 fail 策略下也可采集上传，低于 640 的图片仍因宽度质检失败；同步接口手册、实现/执行方案，为旧 WSL 实测告警增加历史说明，不篡改原始记录。验证及板端同步结果完成后补记。
+
+- 验证完成：capture_task 全部 113 项纯 Python 回归通过；上轮真实 640×480 PCB JPEG 按新目录复评无质检告警（复用已有照片，不是新实拍）。板端仅同步 tasks.yaml，校验原文件无并行改动并备份，安装目录哈希与本地一致；加载后的 PCB 配置为 min_width=640 / prepare_sec=3 / burst=5，原机器人服务 active，未重启整车或修改运动配置。配置在下次启动独立拍照模块时加载，不声称已重跑云端链路或 PCB 推理。
+
+## 2026-10-15 拍照推理闭环启动
+
+- 从 origin/main@44c7256 新建 codex/capture-inference-loop，保留原试验分支；纳入用户执行指南。
+- 用户跳过真人/实物素材准备，确认 helmet 第三方权重可信并允许在 5060 隔离环境加载。仅开发与本机/WSL 验证；不改小车服务，不部署、不推送、不提 PR。
+- 已建立五小时窗口定时续跑，工作中检查账户实际额度，耗尽即保存并停止，不消耗重置券或付费额度。
+- 本次仅文档入口登记，最小审查为 git diff --check；尚未声称编译或运行通过。
+
+### 拍照推理闭环：增量软件与初步检查
+
+- 添加独立 inference_gateway、延迟加载 YOLO/冻结舌诊代理、有界单模型队列和标注 JPEG；面诊无权重明确不可用。
+- capture_task 默认 upload 保持兼容；显式 infer 增加 /inspect 服务、Action JSON/JPEG、ID/尺寸/哈希校验、安全固定摘要；云端最终 event 后以独立有界图片队列返图，原图仅显式选择。未改 ASR/tongue_mode/motion_guard。
+- 本机假后端与拍照包纯 Python 测试 135 项通过；完整 scripts/ci_unit_tests.sh 退出 0，结构检查通过。实际模型/ROS 运行时尚待验证，不属于实车通过。
+- 旧 build/install 为普通复制安装，与 symlink-install 冲突；相关派生目录移到忽略的 artifacts/inference-loop 中留存，再重建子集，未删除源代码或其他工作树。
+
+### 闭环阶段检查：GPU 与 ROS
+
+- WSL 原件校验通过；torch2.8.0+cu128 sm_120 真实矩阵乘法通过，PCB check_env 退出0，PCB/helmet 两权重分别实际加载并在合成640×480输入推理成功；helmet names 实读为 helmet/no_helmet。
+- Humble x86_64 capture_task_interfaces/execution_mode_interfaces/capture_task 三包编译通过；新隔离域189合成闭环6场景、旧capture_task14场景及API14场景均通过。覆盖JSON/JPEG/SHA、原图显式选择、模式互斥、取消/超时/断连；假播报不等于扬声器验收。
+- 本机无视频设备且USB无Orbbec，B3新鲜相机验收待设备。WSL8200直连受阻，临时受限SSH转发127.0.0.1:18200至WSL127.0.0.1:8200成功；不改Windows防火墙。临时key和token仅忽略目录，完成须清理。
+
+### 舌诊数值比较：按指南切换 CPU
+
+- 对同一合成 RGB 和历史天花板 JPEG 分别使用原始 torch2.4/torchvision0.19 CPU 与 torch2.8/torchvision0.23 cu128，实际加载分割+10分类器。GPU自检通过，但完整pipeline标签最大分数差0.008267，超过1e-3；该数值比较判FAIL，不能宣称GPU舌诊通过。
+- 曾以CPU参考环境作为临时替代继续诊断，GPU只留PCB/helmet；复核发现指南§4.3在数值失败时要求暂停报告，故不能把CPU替代当成已获确认接入。原包模型、源码、阈值和manifest均未改。素材不是真人舌照，不能推断舌象准确率。
+
+### 闭环阶段收尾与明确暂停点
+
+- 额外 CPU 诊断：原版本 CPU 服务八标签 HTTP 检查通过；合成 JPEG 的 20 次请求 p50/p95 为舌诊4516/4887 ms、helmet34/73 ms、PCB21/51 ms。原包45文件再次校验通过，保留最大差0.008267的GPU比较FAIL记录，没有调整阈值。
+- 开发机 Humble 与真实 WSL 模型跨机链路：合成图的ROS四服务（face明确不可用）和云端三任务JSON/标注图/SHA通过；历史天花板回放舌诊retake而非伪成功。它们只证明回放与假播报链路，不是B3新鲜采集或真实播放验收。
+- 已告知用户指南§4.3明确要求“不通过就停下来报告”，向用户提交具体CPU替代选择（完整ROS约5.4秒）；未收到确认前暂停舌诊接入。前述CPU结果仅额外诊断，不能记A2验收通过。
+- 临时WSL网关/CPU舌诊、SSH转发均停止，三个端口关闭，临时key、authorized_keys条目与token已清理。模型环境和无凭据证据留存；不动小车主服务，不部署、不推送、不提PR、不合并。
+- 续跑任务automation已改为每五小时第9分钟，当前窗口重置在10-16 03:08后接续；提示包含额度零即止、CPU待决、缺相机与车端授权边界，不因无人回复自行越过暂停点。
+
+- 最终检查：完整CI退出0，pytest汇总2133项通过（2跳过），另录像工具22项、入口路径1项通过；拍照包/网关聚焦144项通过，隔离ROS闭环6项最终复验通过，旧上传/API各14项通过，结构检查21包/428个Python文件、git diff --check通过。最小审查补齐采集时间头校验、舌诊ROI原包字段、取消后的图片抑制及图片在途队列预算；未触及受保护运动/语音实现。账户当前五小时剩66%，当前暂停原因是指南数值门槛和待确认项，而非额度耗尽。
+
+## 2026-10-16 用户确认舌诊直接使用 GPU
+
+- 用户明确指示“舌诊也直接用gpu吧”，解除此前CPU替代方案待决暂停点，继续GPU接入。原数值比较FAIL（最大差0.008267>0.001）保留，不改冻结模型、阈值和manifest，不称数值对齐或准确率通过。
+- 配置示例要求cuda，代理检查实际device；GPU配置收到CPU服务时拒绝，不静默回退。同步长期约定、使用说明、验收记录与定时续跑提示。B3相机实拍和B4小车单独授权仍待。
+
+- 验证完成：GPU舌诊原包HTTP运行时成功（分割+10分类器/8标签），冻结45文件校验通过；三后端实际device均cuda，合成JPEG各20次HTTP请求成功，舌诊p50/p95=295/698ms，安全帽34/60ms，PCB21/44ms。nvidia-smi测量4519/8151MiB（含Windows快照，非绝对峰值）。
+- Humble隔离域189合成回放+假TTS+真实WSL GPU模型的ROS四服务与云端三任务验证通过，face明确不可用，其余返回JSON和标注JPEG/hash正确；六个成功结果均cuda，旧/images为零、/cmd_vel发布者零。不是新鲜实拍、真实播放或小车验收。
+- 网关14项单测通过；完整CI退出0，pytest2140通过2跳过，另录像22项、入口1项通过；结构/空白检查通过。接口未变，不重复构建或将旧构建称本轮编译。WSL仅手动GPU进程运行，private token0600；清理临时SSH隧道和key，根配置更新GPU，未动小车、未推送/PR/合并。
+
+- 提交后差异检查发现记录脚本误用文档缓冲区覆盖WORKLOG，已从上一个提交恢复全部历史并补回本轮记录；本地未推送提交已修正，模型及测试不受影响。
+
+## 2026-10-16 WSL到小车：静音实车拍照推理测试
+
+- 用户明确授权小车部署测试并要求先关闭语音播报。先将USB声卡PCM及两个PulseAudio输出静音，确认STOP回执和IDLE/DISARMED、motion_enabled=false；全程不授权运动。保留真实TTS完成确认但硬件不出声，不宣称可听播报通过。
+- 经5060 WSL受限SSH部署隔离目录ROSCAR-capture-infer-2b27f36，Jetson原生3包构建成功46s，反向隧道连接WSL三GPU网关与mock，复用现有真实Gemini、唯一guard/TTS及静止里程计。
+- 首轮遗漏同名旧拍照适配服务，发现2个capture Action server；暂停试验，仅停c518-capture-adapter.service后单实例完整复测。首轮证据保留并排除最终验收；整车主服务、相机和guard未重启。
+- 最终ROS三任务及WSL云端三任务均返回：舌诊无舌体retake，无标注图；安全帽/PCB analyzed并返回JSON+JPEG，SHA匹配，原/images调用0。真实640×480相机输入，未摆标准实物；PCB云端有1处疑似不作为准确率。ROS耗时19.92/19.55/22.45s、云端19.08/15.07/23.60s，含TTS静音播放完成、准备/连拍与网络。
+- 单实例阶段cmd_vel4656条、odom4660条，观测最大速度均0；227次硬件静音检查0失败。6任务租约均申请/释放，13次状态转变含初始空闲，最终租约inactive。旧观察器tts_playing并非实际播报话题，不用其计数作为验证依据。
+- 临时capture三节点、观察器、WSL mock、隧道及私钥/token/authorized_keys条目均清理。旧c518适配恢复active；整车主服务全程active无配置改动，最终IDLE/DISARMED、运动关闭、TaskHold已释放。小车保持静音。隔离部署保留，未永久切主入口infer，未推送或提PR。
+- 证据在忽略的artifacts/inference-loop/robot-20261016/evidence.zip及summary.json。阶段结束CI2140通过2跳过、录像22项/入口1项通过，结构21包/429Python文件及diff空白检查通过；本轮只追加部署验收记录，无产品代码变更。
+
+- 本轮授权的无标准素材静音部署测试已完成，定时续跑automation已停用（保留可恢复），避免继续空转检查。真人/标准实物准确率、可听播报及永久主入口切换留给用户后续明确任务，不自动开启。
+
+## 2026-10-16 拍照推理闭环合并本地主线
+
+- 按用户要求，将 codex/capture-inference-loop@169bf6f 快进合并到本地 main（原 cd13d93），保留全部主线和分支提交，无冲突；保留来源分支，未推送远端。
+- 三个模型继续使用现有 5060 WSL 推理部署，不修改业务逻辑、模型、阈值或接口。本次通过带认证的 /health/ready 实时确认 tongue=cuda、helmet=cuda:0、pcb=cuda:0 均 ready；面诊未配置，不计入这三个模型。舌诊数值比较失败及用户允许GPU的例外记录继续保留。
+- 本次未重新部署或更改小车入口：上次隔离 infer 测试已停止，原 upload 适配已恢复，小车仍保留静音。WSL 推理为现有手动运行服务，不据此宣称已设置开机启动或永久切换车端入口。
+- 最小审查：快进合并不产生代码冲突或逻辑改动；git diff --check 与项目结构检查通过。沿用分支已记录的CI和静音实车测试结果，本次未重复实机测试。
+
+## 2026-10-16 常驻部署现有推理逻辑并恢复小车出声
+
+- 用户明确授权车端部署与恢复播报。58项相关车端源文件与本地主线473ecff逐项SHA一致，复用此前Jetson原生3包overlay；未修改产品逻辑、模型或阈值，未重启整车主服务，运动仍关闭。
+- 新roscar-capture-inference.service已enabled/active、Linger=yes，替换并禁用旧c518上传适配，服务互斥。infer ROS门面仅注册/inspect/*，沿用with_bridge=false，不保留mock或擅自启用HTTP轮询。WSL三GPU网关经专用受限SSH反向转发到车端127.0.0.1:18200，断线循环重连；WSL本身仍手动服务，无开机自启。token0600，本地中转已删。
+- USB PCM及两个PulseAudio输出解除静音，真实/voice/say完成，用户确认能听到且正常。常驻服务下真实640×480相机舌诊retake22.05s、安全帽analyzed16.94s、PCB analyzed24.43s，JSON/JPEG/SHA与GPU设备检查通过；无标准实物，不称准确率通过。
+- 观察cmd_vel1280条、odom1271条，最大速度均0；3任务停车租约全部释放，最终IDLE/DISARMED、motion_enabled=false、无fault；仅1个capture/语音Action server、RGB与速度发布者各1。早期CLI图缓存曾显示旧服务/缺失节点，使用新rclpy节点逐节点查询确认当前唯一活跃门面为/inspect，未按缓存结果重复启动节点。
+- 同步AGENTS当前入口、验收说明与回退命令。最小审查为哈希、unit校验、真实链路、结构/空白检查；只改文档，不重复全量CI。证据在忽略的artifacts/inference-loop/onboard-20261016/report.json；未推送或提PR。
+
+## 2026-10-16 模型入库、云端迁移与接口文档核对
+
+- 用户明确要求当前三个模型文件包含在仓库并分别向main及demo提PR；指定资产例外纳入models/inference，3个二进制通过Git LFS，合计1,727,778,985字节。PCB/helmet与WSL部署权重SHA一致，舌诊原始ZIP SHA a96a781b…20150e，解压45项冻结文件校验通过，不重新打包或改变阈值。非指定权重、凭据、实拍图片与环境仍不入库。
+- 新增纯标准库prepare_inference_deployment.py：校验LFS/源哈希，校验舌诊冻结文件，生成本机路径、两环境启动脚本、独立私有token；默认运行目录被Git忽略。不安装模型环境、不启动推理、不修改车端。已用真实资产执行准备及再次执行，确认token保留、权限0600、自定义8200/8096以外端口、shell语法及路径正确；这不等于新电脑GPU部署验收。
+- 新增云端推理部署与迁移说明，明确inference_url/18200隧道/8200网关/8096舌诊及cloud_url上传端口的区别，包含新机器环境、token轮换、转发迁移、systemd drop-in、回退和验证。当前with_bridge=false，ROS结果不会额外HTTP上传，不改业务逻辑。
+- 只读核对车端当前srv/action定义及3类真实结果。更新ROS手册中旧运行接口、运动开启状态、overlay与取消路径；新增返回值说明和无图JSON样例，明确ROS result_json字符串、保存脚本analysis对象、默认空Header、无舌体labels={}、PCB result无iou_threshold等实际差异。README索引和AGENTS指定资产规则同步。
+- 最小审查包含真实资产/45文件校验、准备工具功能执行、完整纯Python CI、结构和diff空白检查；未重新编译ROS或触发新的小车拍照，沿用已记录实机样例，不声称准确率通过。PR目标demo实际为demo/showcase-20261016，集成时保留其运动/跌倒和语音改动，不用main覆盖demo源码。
+
+### Demo 定向集成与最小审查
+
+- 从origin/demo/showcase-20261016@558f36e单独建立codex/inference-models-demo，移入PCB640质检、拍照推理及本轮模型/文档；保留demo运动、跌倒、跟随、语音源码与README/ROS文档中的demo入口。与demo基线比对这些业务目录无差异，仅公共启动/CI增加显式infer配置及网关检查。
+- 两目标完整纯Python CI退出0。demo原结构脚本仍只列21包，基线已有demo_interfaces/demo_motion导致检查失败；本集成分支补全为23包后通过，不改业务逻辑。主分支准备工具已用真实3资产/45冻结文件验证；demo工具与模型文件与主PR一致。未重复实机拍照或宣称新电脑GPU验收。
+
+- 接口复审进一步修正远程排错中的旧/capture启动建议与“最长95秒”：当前应查/inspect，95秒仅对应默认TTL60的门面预算，显式TTL180时约215秒。主目标CI2140项pytest、demo2166项pytest通过，另各自录像/入口工具通过；结构main21包430Python、demo23包442Python。
+
+### 模型远端上传与双目标PR
+
+- 通过5060 WSL既有GitHub授权，在新建隔离发布仓库导入Git bundle，未改其E盘已有工作区。3个LFS对象实际上传100%（约1.7GB），两个head均推送成功，随后分别创建：main目标PR #29 https://github.com/Shimmersss/ROS-CAR/pull/29 ，demo/showcase-20261016目标PR #30 https://github.com/Shimmersss/ROS-CAR/pull/30 。均未合并，并已附加到当前聊天。
+- 主目标完整CI2140项pytest通过，demo2166项pytest通过，另录像与入口工具通过；两目标结构检查通过。demo核心业务目录保持基线不变。GitHub远端CI与可合并状态另行核查；本次未购买LFS额度，未修改在线模型/小车服务。
+
+- PR30创建后demo目标更新至b1b7352，已合并其最新跌倒确认改进，保留全部上游源码和新增文档，仅解决README索引冲突；新完整CI 2172项pytest通过，结构检查另行核对。发现PR29远端CI缺Pillow（本机已有所以未暴露），将补齐CI与capture_task运行依赖声明，不改校验逻辑。
+
+- 修复远端CI依赖缺口：CI测试入口在GITHUB_ACTIONS环境中显式安装Pillow10.4.0，capture_task声明python3-pil，以支持新增JPEG尺寸探测。保持原模型、接口及校验实现不变；本机相关151项回归通过，远端结果待最终重跑。
+
+- GitHub既有OAuth授权缺workflow scope，拒绝推送workflow文件改动；改为在原CI脚本的GitHub环境分支补齐Pillow，无需扩大授权或更换登录。移除未发布提交中的workflow编辑，保留依赖修复；未绕过测试。

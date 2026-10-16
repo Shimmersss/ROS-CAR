@@ -41,18 +41,28 @@ class Catalog:
             raise ValueError('invalid_tasks')
         bounds = {'task_timeout_sec': (.1, 600), 'speech_timeout_sec': (.1, 120),
                   'frame_timeout_sec': (.05, 10), 'max_frame_age_sec': (.01, .5), 'jpeg_quality': (1, 100)}
-        if set(self.defaults) != set(bounds) | {'quality_policy', 'done_announce', 'fail_announce'}:
+        required_defaults = set(bounds) | {'quality_policy', 'done_announce', 'fail_announce'}
+        if not required_defaults <= set(self.defaults) or set(self.defaults) - required_defaults - {'analysis_done_announce', 'retake_announce'}:
             raise ValueError('invalid_defaults')
         for key, (lo, hi) in bounds.items():
             number(self.defaults[key], lo, hi)
         if type(self.defaults['jpeg_quality']) is not int or self.defaults['quality_policy'] not in ('warn', 'fail'):
             raise ValueError('invalid_quality_policy')
         speech_text(self.defaults['done_announce']); speech_text(self.defaults['fail_announce'])
+        for key in ('analysis_done_announce', 'retake_announce'):
+            if key in self.defaults:
+                speech_text(self.defaults[key])
         for kind, task in self.tasks.items():
             if not isinstance(kind, str) or not re.fullmatch(r'[a-z][a-z0-9_]{0,31}', kind):
                 raise ValueError('invalid_task_type')
-            if not isinstance(task, dict) or set(task) != {'name', 'announce', 'prepare_sec', 'burst', 'upload', 'min_width', 'quality', 'require_hold'}:
+            required = {'name', 'announce', 'prepare_sec', 'burst', 'upload', 'min_width', 'quality', 'require_hold'}
+            if not isinstance(task, dict) or not required <= set(task) or set(task) - required - {'inference'}:
                 raise ValueError('invalid_task')
+            if 'inference' in task:
+                infer = task['inference']
+                if not isinstance(infer, dict) or set(infer) != {'timeout_sec', 'speak_summary'} or type(infer['speak_summary']) is not bool:
+                    raise ValueError('invalid_inference_options')
+                number(infer['timeout_sec'], .1, 600)
             speech_text(task['announce'])
             if not isinstance(task['name'], str) or not 1 <= len(task['name']) <= 100:
                 raise ValueError('invalid_name')

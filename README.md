@@ -117,6 +117,16 @@ docs/      方案、接口、计划；docs/archive/ 为历史文档
 
 **Demo 展示分支（`demo/showcase-20261016`，展示后删除）**：[Demo 文档入口](docs/demo/README.md) · [跌倒暂停与静止延续验收](docs/demo/跌倒暂停与静止延续验收.md) · [A2a/A4 离线优化](docs/demo/A2a与A4离线优化.md) · [T2.6 离线优化评估](docs/demo/T2.6离线检测优化评估.md) · [相对运动 ROS 接口](docs/demo/相对运动ROS接口.md) · [Codex 任务清单](docs/demo/Codex任务清单.md)
 
+- [云端推理部署与迁移](docs/云端推理部署与迁移.md)：新电脑部署三个模型、SSH迁移、小车推理/上传端口与token更新
+- [拍照推理接口返回值](docs/拍照推理接口返回值.md)：当前车端三类真实JSON、图片与状态解释
+- [仓库内推理模型](models/inference/README.md)：Git LFS资产、来源、大小和SHA256
+
+- [拍照推理闭环实现与验收](docs/拍照推理闭环实现与验收.md)：5060 网关、增量 ROS/HTTP 合同与分层验证记录
+- [推理网关使用说明](services/inference_gateway/README.md)：隔离部署、认证和模型状态
+
+- [拍照推理闭环执行指南](docs/拍照推理闭环执行指南.md)：5060 隔离推理与增量闭环实施入口
+
+- [10-15 WSL 模拟云端拍照联调](docs/2026-10-15WSL模拟云端拍照联调.md)：四类真实采集上传、播报、PCB 分辨率告警与测试清理
 - [云端拍照任务修复说明](docs/云端拍照任务修复说明.md)（验收后七项修复要求）
 - [云端拍照任务 ROS 接口方案](docs/云端拍照任务ROS接口方案.md)（可选服务门面实施入口）
 - [云端拍照任务实现与验收](docs/云端拍照任务实现与验收.md)（独立链路、本机联调与待现场项）

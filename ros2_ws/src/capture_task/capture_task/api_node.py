@@ -14,7 +14,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
 from std_msgs.msg import String
 from capture_task_interfaces.action import CaptureTask
-from capture_task_interfaces.srv import RunCapture, CancelCapture
+from capture_task_interfaces.srv import RunCapture, RunInspection, CancelCapture
 from .api_logic import request_goal, service_timeout, response_fields, action_result, rejection_result
 from .catalog import Catalog
 from .protocol import loads
@@ -41,6 +41,12 @@ class CaptureApi(Node):
         super().__init__('capture_api', **kwargs)
         self.declare_parameter('catalog', str(Path(get_package_share_directory('capture_task'))/'config/tasks.yaml'),
                                ParameterDescriptor(read_only=True))
+        self.declare_parameter('pipeline_mode', 'upload', ParameterDescriptor(read_only=True))
+        self.pipeline_mode = self.get_parameter('pipeline_mode').value
+        if self.pipeline_mode not in ('upload', 'infer'):
+            raise ValueError('invalid_pipeline_mode')
+        self.inspection = self.pipeline_mode == 'infer'
+        self.prefix = '/inspect/' if self.inspection else '/capture/'
         self.catalog = Catalog.load(self.get_parameter('catalog').value)
         if 'cancel' in self.catalog.tasks:
             raise ValueError('capture_task_type_conflicts_with_cancel_service')
@@ -55,10 +61,10 @@ class CaptureApi(Node):
         self.client = ActionClient(self, CaptureTask, '/capture_task/run', callback_group=group)
         self.create_subscription(String, '/capture_task/result', self.on_rejection, 10, callback_group=group)
         self.create_subscription(String, '/capture_task/state', self.on_state, 10, callback_group=group)
-        self.capture_services = [self.create_service(RunCapture, '/capture/'+kind,
+        self.capture_services = [self.create_service(RunInspection if self.inspection else RunCapture, self.prefix+kind,
                         lambda request,response,kind=kind: self.run_capture(kind,request,response), callback_group=group)
                          for kind in self.catalog.tasks]
-        self.create_service(CancelCapture, '/capture/cancel', self.cancel_capture, callback_group=group)
+        self.create_service(CancelCapture, self.prefix+'cancel', self.cancel_capture, callback_group=group)
 
     def on_rejection(self, message):
         try:
@@ -79,10 +85,14 @@ class CaptureApi(Node):
             except ValueError:
                 self.executor_state = {};self.executor_at = 0.
 
-    @staticmethod
-    def fill(response, fields):
+    def fill(self, response, fields):
+        if self.inspection:
+            fields = dict(fields)
+            fields.pop('upload_json', None)
+            fields['success'] = fields.get('status') == 'analyzed'
         for key, value in fields.items():
-            setattr(response, key, value)
+            if hasattr(response, key):
+                setattr(response, key, value)
         return response
 
     def check(self, job):
@@ -146,6 +156,10 @@ class CaptureApi(Node):
         with self._lock:
             self.job = job
         try:
+            with self._lock:
+                mode=self.executor_state.get('pipeline_mode') if fresh(self.executor_at,EXECUTOR_MAX_AGE) else None
+            if mode is not None and mode!=self.pipeline_mode:
+                return self.fill(response,response_fields(task_id,'unavailable','pipeline_mode_mismatch'))
             # Check readiness in short intervals so shutdown and cancel stay responsive.
             until = min(job.deadline, time.monotonic()+2.)
             while not self.client.server_is_ready():
@@ -167,7 +181,10 @@ class CaptureApi(Node):
             if not job.handle.accepted:
                 return self.fill(response, self.rejection(job))
             result = self.wait(job.handle.get_result_async(), job).result
-            return self.fill(response, action_result(task_id, result))
+            fields = action_result(task_id, result)
+            if self.inspection:
+                fields.update(result_json=result.result_json, annotated_image=result.annotated_image)
+            return self.fill(response, fields)
         except CallCancelled:
             self.abandon(job)
             return self.fill(response, response_fields(task_id, 'cancelled', 'cancel_requested'))

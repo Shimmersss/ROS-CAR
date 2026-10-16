@@ -33,6 +33,7 @@ def main():
     sub.add_parser('cancel').add_argument('task_id')
     sub.add_parser('speak').add_argument('text')
     sub.add_parser('status')
+    sub.add_parser('result').add_argument('task_id')
     args = parser.parse_args()
     token = token_from_env(args.token_file)
     if args.operation == 'serve':
@@ -47,6 +48,9 @@ def main():
     client = CloudClient(args.url, token)
     if args.operation == 'status':
         code, value = client.admin_request('GET', '/admin/status')
+    elif args.operation == 'result':
+        from capture_task.protocol import identifier
+        code, value = client.admin_request('GET', '/admin/result/' + identifier(args.task_id))
     else:
         cmd = dict(command_id='c-'+uuid.uuid4().hex, type=args.operation)
         if args.operation == 'send':

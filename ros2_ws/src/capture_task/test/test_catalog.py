@@ -11,7 +11,7 @@ def test_unsafe_text(text):
 
 def test_catalog_overrides(catalog):
     assert set(catalog.tasks) == {'face','tongue','helmet','pcb'}
-    assert catalog.resolve('pcb', {'prepare_sec':0})['min_width'] == 1280
+    assert catalog.resolve('pcb', {'prepare_sec':0})['min_width'] == 640
     for params in ({'burst':1}, {'announce':'停车'}, {'prepare_sec':True}, {'prepare_sec':float('nan')}, {'prepare_sec':31}):
         with pytest.raises(ValueError):
             catalog.resolve('face', params)

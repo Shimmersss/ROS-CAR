@@ -8,6 +8,10 @@ cd "$(dirname "$0")/.." || exit 1
 PY=${PYTHON:-python3}
 # Packages are tested from their own directory: make a relative interpreter path absolute.
 case $PY in */*) PY="$(cd "$(dirname "$PY")" && pwd)/$(basename "$PY")" ;; esac
+# JPEG metadata checks need Pillow; bootstrap this lightweight CI-only dependency.
+if [[ "${GITHUB_ACTIONS:-false}" == true ]]; then
+  "$PY" -m pip install --disable-pip-version-check Pillow==10.4.0 || exit 1
+fi
 # These import rclpy; they belong to the ROS runtime checks (Docker/Jetson), not this job.
 NEEDS_ROS=(navigation_bringup/test/test_status_validation.py xfyun_speech/test/test_asr_timeout.py
            voice_command_router/test/test_mode_bridge.py)
@@ -24,6 +28,8 @@ for dir in ros2_ws/src/*/test; do
   # 5: every test of the package needs ROS and was ignored.
   if [ $code -ne 0 ] && [ $code -ne 5 ]; then status=1; fi
 done
+echo "== inference gateway (fake backends, no models)"
+PYTHONPATH=. "$PY" -m pytest -q -p no:cacheprovider services/inference_gateway/tests || status=1
 echo "== recording tools"
 "$PY" tests/test_recording_tools.py || status=1
 "$PY" tests/test_demo_fall_replay.py || status=1

@@ -1,0 +1,19 @@
+host: 127.0.0.1  # Explicitly use 0.0.0.0 only on a trusted LAN/tunnel with a token.
+port: 8200
+token_file: /root/roscar-models/gateway.token
+max_queue: 4
+timeout_sec: 120
+models:
+  pcb:
+    weights: /root/roscar-models/pcb_yolo26m_v1/weights/best.pt
+    sha256: 9923d471fe833e6aef3a06e35e6a47f8325db09c3b6152842a26ad7aecc7eecf
+    device: cuda:0
+    classes: [missing_hole, mouse_bite, open_circuit, short, spur, spurious_copper]
+  helmet:
+    weights: /root/roscar-models/helmet/helmet-yolov8l.pt
+    sha256: 531ff05e731be3b474693515d079a8fd1f3ae6bb2d06d2729f1c661bac0c9384
+    device: cuda:0
+  tongue:
+    port: 8096
+    device: cuda
+  # Face is deliberately unavailable until a verified model is supplied.
