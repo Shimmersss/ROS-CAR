@@ -1798,3 +1798,8 @@
 - 两目标完整纯Python CI退出0。demo原结构脚本仍只列21包，基线已有demo_interfaces/demo_motion导致检查失败；本集成分支补全为23包后通过，不改业务逻辑。主分支准备工具已用真实3资产/45冻结文件验证；demo工具与模型文件与主PR一致。未重复实机拍照或宣称新电脑GPU验收。
 
 - 接口复审进一步修正远程排错中的旧/capture启动建议与“最长95秒”：当前应查/inspect，95秒仅对应默认TTL60的门面预算，显式TTL180时约215秒。主目标CI2140项pytest、demo2166项pytest通过，另各自录像/入口工具通过；结构main21包430Python、demo23包442Python。
+
+### 模型远端上传与双目标PR
+
+- 通过5060 WSL既有GitHub授权，在新建隔离发布仓库导入Git bundle，未改其E盘已有工作区。3个LFS对象实际上传100%（约1.7GB），两个head均推送成功，随后分别创建：main目标PR #29 https://github.com/Shimmersss/ROS-CAR/pull/29 ，demo/showcase-20261016目标PR #30 https://github.com/Shimmersss/ROS-CAR/pull/30 。均未合并，并已附加到当前聊天。
+- 主目标完整CI2140项pytest通过，demo2166项pytest通过，另录像与入口工具通过；两目标结构检查通过。demo核心业务目录保持基线不变。GitHub远端CI与可合并状态另行核查；本次未购买LFS额度，未修改在线模型/小车服务。
