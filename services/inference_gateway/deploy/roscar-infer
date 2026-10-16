@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+# Start/stop the 5060 WSL inference stack: tongue backend, gateway, reverse tunnel to the robot.
+# Each component runs in its own supervised restart loop (own process group, pid file, log).
+# Usage: roscar-infer {start|stop|restart|status|logs|test|boot|keepalive|stop-legacy [--dry-run]|
+#                      install-boot|uninstall-boot|install-windows-autostart|uninstall-windows-autostart} [component...]
+# Components: tongue gateway tunnel (default: all). Settings: $ROOT/roscar-infer.env (optional).
+set -uo pipefail
+
+ROOT="${ROSCAR_INFER_ROOT:-/root/roscar-models}"
+ENV_FILE="${ROSCAR_INFER_ENV:-$ROOT/roscar-infer.env}"
+# shellcheck disable=SC1090
+[[ -f "$ENV_FILE" ]] && . "$ENV_FILE"
+TONGUE_DIR="${TONGUE_DIR:-$ROOT/tongue_cloud_server_20261015}"
+TONGUE_PORT="${TONGUE_PORT:-8096}"
+TONGUE_MAX_QUEUE="${TONGUE_MAX_QUEUE:-4}"
+TONGUE_DEADLINE_MS="${TONGUE_DEADLINE_MS:-120000}"
+GATEWAY_SRC="${GATEWAY_SRC:-$ROOT/gateway-source}"
+GATEWAY_PY="${GATEWAY_PY:-$ROOT/venv-yolo/bin/python}"
+GATEWAY_CONFIG="${GATEWAY_CONFIG:-$ROOT/gpu-20261016/gateway.private.yaml}"
+GATEWAY_PORT="${GATEWAY_PORT:-8200}"
+GATEWAY_TOKEN="${GATEWAY_TOKEN:-$ROOT/gpu-20261016/gateway.token}"
+TONGUE_READY_WAIT="${TONGUE_READY_WAIT:-600}"
+LINK_DIR="${LINK_DIR:-$ROOT/onboard-link}"
+ROBOT="${ROBOT:-wheeltec@192.168.31.145}"
+REMOTE_PORT="${REMOTE_PORT:-18200}"
+TUNNEL_ENABLED="${TUNNEL_ENABLED:-true}"
+RESTART_DELAY="${RESTART_DELAY:-5}"
+WIN_TASK="${WIN_TASK:-ROSCAR WSL inference}"
+WSL_DISTRO="${WSL_DISTRO:-Ubuntu}"
+LOG="$ROOT/logs"
+RUN="$ROOT/run"
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+ALL=(tongue gateway tunnel)
+mkdir -p "$LOG" "$RUN"
+
+say() { printf '%s %s\n' "$(date '+%F %T')" "$*"; }
+port_open() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+loop_pid() { local f="$RUN/$1.pid"; [[ -f $f ]] && cat "$f"; }
+alive() { local p; p="$(loop_pid "$1")"; [[ -n $p ]] && kill -0 "$p" 2>/dev/null \
+  && grep -qa -- "__loop" "/proc/$p/cmdline" 2>/dev/null; }
+rotate() { local f="$LOG/$1.log"; [[ -f $f && $(stat -c %s "$f") -gt 20971520 ]] && mv -f "$f" "$f.1"; true; }
+components() { if (($#)); then for c in "$@"; do case $c in tongue|gateway|tunnel) ;; *) echo "未知组件: $c" >&2; exit 2;; esac; done; printf '%s\n' "$@"; else printf '%s\n' "${ALL[@]}"; fi; }
+
+tongue_ready() {
+  curl --noproxy '*' -s -m 5 "http://127.0.0.1:$TONGUE_PORT/health/ready" 2>/dev/null | grep -q '"ready"'
+}
+gateway_health() {
+  [[ -r $GATEWAY_TOKEN ]] || { echo 'token 不可读'; return 1; }
+  curl --noproxy '*' -s -m 8 -H "Authorization: Bearer $(cat "$GATEWAY_TOKEN")" "http://127.0.0.1:$GATEWAY_PORT/health/ready"
+}
+
+# ---------- supervised loops (run via setsid, never call directly) ----------
+loop_tongue() {
+  while true; do
+    say "start tongue backend :$TONGUE_PORT"
+    OMP_NUM_THREADS=2 "$TONGUE_DIR/.venv/bin/python" "$TONGUE_DIR/code/deploy/cloud/server.py" \
+      --root "$TONGUE_DIR/code" \
+      --manifest "$TONGUE_DIR/code/deploy/configs/cloud/pipeline_r50_384_cvAC10_passthrough_debug.json" \
+      --device cuda --host 127.0.0.1 --port "$TONGUE_PORT" --workers 1 --max-queue "$TONGUE_MAX_QUEUE" \
+      --deadline-ms "$TONGUE_DEADLINE_MS" --uncertain-band 0
+    say "tongue exited rc=$?; restart in ${RESTART_DELAY}s"; sleep "$RESTART_DELAY"
+  done
+}
+loop_gateway() {
+  while true; do
+    # The gateway checks the tongue manifest once at start-up; wait so tongue is not marked unavailable.
+    local waited=0
+    until tongue_ready || (( waited >= TONGUE_READY_WAIT )); do sleep 3; waited=$((waited+3)); done
+    tongue_ready || say "WARN tongue not ready after ${TONGUE_READY_WAIT}s; gateway starts with tongue unavailable"
+    say "start gateway :$GATEWAY_PORT"
+    (cd "$GATEWAY_SRC" && OMP_NUM_THREADS=2 exec "$GATEWAY_PY" -m services.inference_gateway.gateway --config "$GATEWAY_CONFIG")
+    say "gateway exited rc=$?; restart in ${RESTART_DELAY}s"; sleep "$RESTART_DELAY"
+  done
+}
+loop_tunnel() {
+  while true; do
+    say "connect reverse tunnel $ROBOT 127.0.0.1:$REMOTE_PORT -> 127.0.0.1:$GATEWAY_PORT"
+    ssh -NT -i "$LINK_DIR/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+      -o UserKnownHostsFile="$LINK_DIR/known_hosts" -o ConnectTimeout=8 -o ServerAliveInterval=15 \
+      -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes \
+      -R "127.0.0.1:$REMOTE_PORT:127.0.0.1:$GATEWAY_PORT" "$ROBOT"
+    rc=$?
+    if tail -n 3 "$LOG/tunnel.log" 2>/dev/null | grep -q 'remote port forwarding failed'; then
+      say "HINT 小车 127.0.0.1:$REMOTE_PORT 仍被旧 SSH 会话占用（小车 sshd 未检测到断线）。见启停文档“隧道端口被占用”。"
+    fi
+    say "tunnel exited rc=$rc; retry in 10s"; sleep 10
+  done
+}
+
+# ---------- control ----------
+start_one() {
+  local c=$1
+  if alive "$c"; then say "$c 已在运行 (loop pid $(loop_pid "$c"))"; return 0; fi
+  case $c in
+    tongue) port_open "$TONGUE_PORT" && { say "端口 $TONGUE_PORT 被未托管进程占用；先执行 roscar-infer stop-legacy"; return 1; };;
+    gateway) port_open "$GATEWAY_PORT" && { say "端口 $GATEWAY_PORT 被未托管进程占用；先执行 roscar-infer stop-legacy"; return 1; };;
+    tunnel) [[ $TUNNEL_ENABLED == true ]] || { say "tunnel 已在配置中关闭 (TUNNEL_ENABLED=false)"; return 0; }
+            [[ -r $LINK_DIR/id_ed25519 && -r $LINK_DIR/known_hosts ]] || { say "缺少隧道密钥或 known_hosts: $LINK_DIR"; return 1; };;
+  esac
+  rotate "$c"
+  setsid bash "$SELF" __loop "$c" >>"$LOG/$c.log" 2>&1 < /dev/null &
+  echo $! > "$RUN/$c.pid"
+  say "$c 已启动 (loop pid $!)，日志 $LOG/$c.log"
+}
+stop_one() {
+  local c=$1 p
+  p="$(loop_pid "$c")"
+  if ! alive "$c"; then rm -f "$RUN/$c.pid"; say "$c 未在运行"; return 0; fi
+  kill -TERM -- "-$p" 2>/dev/null
+  for _ in $(seq 1 30); do kill -0 -- "-$p" 2>/dev/null || break; sleep .5; done
+  kill -KILL -- "-$p" 2>/dev/null
+  rm -f "$RUN/$c.pid"; say "$c 已停止"
+}
+status() {
+  local c
+  for c in "${ALL[@]}"; do
+    if alive "$c"; then printf '%-8s running  (loop pid %s)\n' "$c" "$(loop_pid "$c")"; else printf '%-8s stopped\n' "$c"; fi
+  done
+  port_open "$TONGUE_PORT" && echo "tongue   127.0.0.1:$TONGUE_PORT listening, ready=$(tongue_ready && echo yes || echo no)" || echo "tongue   127.0.0.1:$TONGUE_PORT closed"
+  if port_open "$GATEWAY_PORT"; then
+    echo "gateway  127.0.0.1:$GATEWAY_PORT listening"
+    gateway_health | python3 -c 'import json,sys
+try:
+  d=json.load(sys.stdin)
+except Exception:
+  print("  health: unreadable"); raise SystemExit
+print("  health:", d.get("status"))
+for k,v in d.get("models",{}).items(): print("   ", k.ljust(7), "ready" if v.get("ready") else "unavailable", v.get("device"), v.get("reason",""))
+g=d.get("gpu") or {}
+if g: print("   GPU free %d / %d MiB" % (g["free_bytes"]>>20, g["total_bytes"]>>20))'
+  else echo "gateway  127.0.0.1:$GATEWAY_PORT closed"; fi
+  if pgrep -f -- "-R 127.0.0.1:$REMOTE_PORT:127.0.0.1:$GATEWAY_PORT" >/dev/null; then
+    echo "tunnel   ssh connected process present -> $ROBOT:$REMOTE_PORT（小车端确认方法见文档）"
+  else echo "tunnel   no ssh connection right now"; fi
+  [[ -f $LOG/tunnel.log ]] && echo "  last tunnel log: $(tail -n 1 "$LOG/tunnel.log" | tr -d '\r')"
+}
+test_infer() {
+  "$GATEWAY_PY" - "$GATEWAY_PORT" "$GATEWAY_TOKEN" <<'PY'
+import base64, hashlib, json, sys, time, urllib.request, uuid
+import cv2, numpy as np
+port, token = sys.argv[1], open(sys.argv[2]).read().strip()
+img = np.full((480, 640, 3), 90, np.uint8); cv2.rectangle(img, (200, 150), (440, 330), (40, 120, 200), -1)
+jpg = cv2.imencode('.jpg', img)[1].tobytes()
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+for kind in ('pcb', 'helmet', 'tongue', 'face'):
+    ids = dict(request_id='selftest-' + uuid.uuid4().hex[:8], task_id='selftest', capture_id='selftest')
+    req = urllib.request.Request('http://127.0.0.1:%s/v1/infer/%s' % (port, kind), data=jpg, method='POST', headers={
+        'Authorization': 'Bearer ' + token, 'Content-Type': 'image/jpeg', 'X-Request-Id': ids['request_id'],
+        'X-Task-Id': ids['task_id'], 'X-Capture-Id': ids['capture_id'], 'X-Robot-Id': 'selftest',
+        'X-Capture-Time': '2026-01-01T00:00:00+00:00'})
+    t = time.time(); d = json.load(opener.open(req, timeout=150)); dt = time.time() - t
+    a = d.get('annotated_image'); sha = None
+    if a: sha = hashlib.sha256(base64.b64decode(a['data_b64'])).hexdigest() == a['sha256']
+    print('%-7s status=%-17s device=%-7s image_sha_ok=%s %.2fs' % (kind, d['status'], d['model'].get('device'), sha, dt))
+print('合成图只验证链路：pcb/helmet 应为 ok，tongue 无舌头应为 retake，face 未配置应为 model_unavailable。')
+PY
+}
+# Exact-match legacy processes started by hand before this script existed.
+stop_legacy() {
+  local pids=() p cmd pg managed=" " c
+  # Never touch processes inside the supervised process groups.
+  for c in "${ALL[@]}"; do alive "$c" && managed+="$(loop_pid "$c") "; done
+  for p in /proc/[0-9]*; do
+    p=${p#/proc/}; [[ $p == "$$" || $p == "$BASHPID" || $p == "$PPID" ]] && continue
+    cmd="$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null)" || continue
+    pg="$(ps -o pgid= -p "$p" 2>/dev/null | tr -d ' ')"
+    [[ -n $pg && $managed == *" $pg "* ]] && continue
+    grep -qa -- "__loop" <<<"$cmd" && continue
+    case $cmd in
+      *"$TONGUE_DIR/code/deploy/cloud/server.py"*"--port $TONGUE_PORT"*) pids+=("$p");;
+      *"-m services.inference_gateway.gateway --config"*) pids+=("$p");;
+      "/bin/bash $LINK_DIR/run.sh"*) pids+=("$p");;
+      "ssh -NT "*"-R 127.0.0.1:$REMOTE_PORT:127.0.0.1:$GATEWAY_PORT"*) pids+=("$p");;
+    esac
+  done
+  if ((${#pids[@]} == 0)); then say "没有未托管的旧进程"; return 0; fi
+  for p in "${pids[@]}"; do say "legacy pid $p: $(tr '\0' ' ' < "/proc/$p/cmdline" | cut -c1-120)"; done
+  [[ ${1:-} == --dry-run ]] && { say "dry-run：未停止任何进程"; return 0; }
+  kill -TERM "${pids[@]}" 2>/dev/null; sleep 3; kill -KILL "${pids[@]}" 2>/dev/null; true
+}
+BOOT_LINE="$SELF boot"
+install_boot() {
+  local f=/etc/wsl.conf
+  grep -qF "$BOOT_LINE" "$f" 2>/dev/null && { say "wsl.conf 已包含开机启动"; return 0; }
+  cp -a "$f" "$f.bak-roscar-infer.$(date +%Y%m%d%H%M%S)" 2>/dev/null
+  python3 - "$f" "$BOOT_LINE" <<'PY'
+import re, sys
+path, line = sys.argv[1], sys.argv[2]
+text = open(path).read() if __import__('os').path.exists(path) else ''
+if re.search(r'^\[boot\]\s*$', text, re.M):
+    m = re.search(r'^command\s*=\s*(.*)$', text, re.M)
+    if m:
+        text = text[:m.start()] + 'command=' + m.group(1).rstrip() + '; ' + line + text[m.end():]
+    else:
+        text = re.sub(r'^\[boot\]\s*$', '[boot]\ncommand=' + line, text, count=1, flags=re.M)
+else:
+    text = text.rstrip('\n') + '\n\n[boot]\ncommand=' + line + '\n'
+open(path, 'w').write(text)
+PY
+  say "已写入 /etc/wsl.conf：WSL 启动时执行 roscar-infer boot（原文件已备份）"
+}
+uninstall_boot() {
+  local f=/etc/wsl.conf
+  grep -qF "$BOOT_LINE" "$f" || { say "wsl.conf 中没有 roscar-infer"; return 0; }
+  cp -a "$f" "$f.bak-roscar-infer.$(date +%Y%m%d%H%M%S)"
+  sed -i "s#; $BOOT_LINE##; s#command=$BOOT_LINE#command=#" "$f"; say "已从 /etc/wsl.conf 移除"
+}
+PS=/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe
+install_windows_autostart() {
+  # Per-user logon task; keeps one hidden WSL client alive so the distro (and boot command) starts at logon.
+  "$PS" -NoProfile -Command "\$a=New-ScheduledTaskAction -Execute 'C:\\Windows\\System32\\conhost.exe' -Argument '--headless C:\\Windows\\System32\\wsl.exe -d $WSL_DISTRO -u root -- $SELF keepalive';
+    \$t=New-ScheduledTaskTrigger -AtLogOn -User \$env:USERNAME;
+    \$s=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1);
+    Register-ScheduledTask -TaskName '$WIN_TASK' -Action \$a -Trigger \$t -Settings \$s -Description 'Start ROSCAR inference in WSL at logon' -Force | Out-Null; 'registered'" | tr -d '\r'
+}
+uninstall_windows_autostart() {
+  "$PS" -NoProfile -Command "Unregister-ScheduledTask -TaskName '$WIN_TASK' -Confirm:\$false; 'removed'" | tr -d '\r'
+}
+
+cmd="${1:-status}"; shift || true
+case $cmd in
+  __loop) "loop_$1";;
+  start) for c in $(components "$@"); do start_one "$c"; done;;
+  stop) mapfile -t cs < <(components "$@"); for ((i=${#cs[@]}-1; i>=0; i--)); do stop_one "${cs[i]}"; done;;
+  restart) mapfile -t cs < <(components "$@"); for ((i=${#cs[@]}-1; i>=0; i--)); do stop_one "${cs[i]}"; done
+           for c in "${cs[@]}"; do start_one "$c"; done;;
+  status) status;;
+  logs) c="${1:?用法: roscar-infer logs <tongue|gateway|tunnel> [-f]}"; shift
+        if [[ ${1:-} == -f ]]; then tail -n 50 -f "$LOG/$c.log"; else tail -n 50 "$LOG/$c.log"; fi;;
+  test) test_infer;;
+  boot) for c in "${ALL[@]}"; do start_one "$c"; done >>"$LOG/boot.log" 2>&1;;
+  keepalive) for c in "${ALL[@]}"; do start_one "$c"; done >>"$LOG/boot.log" 2>&1; exec sleep infinity;;
+  stop-legacy) stop_legacy "${1:-}";;
+  install-boot) install_boot;;
+  uninstall-boot) uninstall_boot;;
+  install-windows-autostart) install_windows_autostart;;
+  uninstall-windows-autostart) uninstall_windows_autostart;;
+  -h|--help|help) sed -n '2,6p' "$SELF";;
+  *) echo "未知命令: $cmd（roscar-infer help）" >&2; exit 2;;
+esac
