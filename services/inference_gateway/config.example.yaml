@@ -15,5 +15,5 @@ models:
     device: cuda:0
   tongue:
     port: 8096
-    device: cpu
+    device: cuda
   # Face is deliberately unavailable until a verified model is supplied.

@@ -129,6 +129,6 @@
 
 ## 拍照推理闭环
 
-- 独立 services/inference_gateway 只运行 5060 端推理，不启动 ROS 或控制运动；冻结舌诊 passthrough_debug 的 digest/八标签不得修改；GPU/CPU 数值比较未达指南要求须暂停该项并报告，CPU 替代方案不得未经确认当作已接入。第三方 .pt 仅在已确认可信来源的隔离环境加载。
+- 独立 services/inference_gateway 只运行 5060 端推理，不启动 ROS 或控制运动；冻结舌诊 passthrough_debug 的 digest/八标签不得修改；GPU/CPU 数值比较未达指南要求须报告并保留失败记录；用户2026-10-16已明确授权舌诊继续使用GPU，该例外不代表数值对齐或准确率验收通过，不改冻结阈值/配置，不默认切CPU。第三方 .pt 仅在已确认可信来源的隔离环境加载。
 - capture_task 默认 pipeline_mode=upload；infer 必须显式配置 inference_url，API 仅注册 /inspect/*，upload 仅 /capture/*，同进程禁止混用。Action 新增 JSON/JPEG 字段后消费者须整体重编译。
 - 结果须核对请求/任务/图像 ID、结构化字段、JPEG 尺寸与哈希；播报由本地固定模板生成，不接受任意模型文本。默认只返回标注图，原图传输须显式选择，不默认落盘；独立有界图片队列不阻塞命令轮询。指南 B4 车端部署须另行授权，不改主服务。
