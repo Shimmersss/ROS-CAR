@@ -1812,3 +1812,7 @@
 - 主目标完整CI2140项pytest通过，demo2166项pytest通过，另录像与入口工具通过；两目标结构检查通过。demo核心业务目录保持基线不变。GitHub远端CI与可合并状态另行核查；本次未购买LFS额度，未修改在线模型/小车服务。
 
 - PR30创建后demo目标更新至b1b7352，已合并其最新跌倒确认改进，保留全部上游源码和新增文档，仅解决README索引冲突；新完整CI 2172项pytest通过，结构检查另行核对。发现PR29远端CI缺Pillow（本机已有所以未暴露），将补齐CI与capture_task运行依赖声明，不改校验逻辑。
+
+- 修复远端CI依赖缺口：CI测试入口在GITHUB_ACTIONS环境中显式安装Pillow10.4.0，capture_task声明python3-pil，以支持新增JPEG尺寸探测。保持原模型、接口及校验实现不变；本机相关151项回归通过，远端结果待最终重跑。
+
+- GitHub既有OAuth授权缺workflow scope，拒绝推送workflow文件改动；改为在原CI脚本的GitHub环境分支补齐Pillow，无需扩大授权或更换登录。移除未发布提交中的workflow编辑，保留依赖修复；未绕过测试。
