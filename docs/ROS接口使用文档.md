@@ -53,7 +53,7 @@ export ROS_LOCALHOST_ONLY=1
 export FASTRTPS_DEFAULT_PROFILES_FILE=/absolute/path/fastdds-profile.xml
 ```
 
-Foxglove 的 WebSocket 连接只负责展示，不能替代 `rclpy` 或 `ros2 service call`。Windows 没有 ROS 环境时，可以通过 SSH 在已经安装 ROS 的小车终端调用。
+Foxglove 的 WebSocket 连接只负责展示，不能替代 `rclpy` 或 `ros2 service call`。Windows 没有 ROS 环境时，可以通过 SSH 在已经安装 ROS 的小车终端调用。从另一台电脑远程调用小车接口的完整步骤见 [2.5 远程连接小车](#25-远程连接小车)。
 
 ### 2.2 服务不会因构建完成而自动启动
 
@@ -102,6 +102,7 @@ ros2 interface show roscar_interfaces/srv/SayText
 | `with_radar`、`radar_required` | false、false | 启动雷达、让 guard 要求扫描/TF/包络保护；两个开关含义不同 |
 | `with_chassis`、`serial_port`、`car_mode` | false、空、空 | 启动底盘必须明确串口与车型；本车使用 mini_akm |
 | `with_voice`、`voice_config` | false、offline_voice/config/offline_voice.yaml | 启动共享录音、常开 KWS、固定规则、ASR、唯一 TTS，同时开放播报 API |
+| `asr_enabled` | true | `with_voice=true` 时的识别启动初值；运行中用 `/voice/set_asr_enabled` 切换 |
 | `enable_wake_driver`、`use_xfyun_asr` | true、false | 仅 with_voice 时生效；讯飞只替换识别，不引入 LLM 运动控制 |
 | `with_speech`、`speech_with_tts`、`with_announcements` | false、false、true | 仅播报桥、额外启动 TTS、阶段播报；已有 TTS 必须保持 speech_with_tts=false；与 with_voice 重复所有者组合会拒绝启动 |
 | `with_tongue`、`tongue_safety_profile` | false、robot | 模式管理器及舌苔；robot 要新鲜静止里程计，bench 必须运动关闭 |
@@ -582,7 +583,7 @@ publisher.publish(msg)  # 放在周期回调中，每次生成新时戳
 
 ### 5.5 语音与这些接口的关系
 
-正式语音入口使用共享录音、Qwen3-ASR、Silero VAD、固定语义规则、常开 KWS 和唯一 MeloTTS。固定规则经 `MotionRequest` 和车辆能力适配后提交请求；`motion_guard` 是最终授权和速度出口。方向口令不会自动授权，不允许 LLM 生成底盘运动控制。
+源码语音入口使用共享录音、Qwen3-ASR、Silero VAD、固定语义规则、常开 KWS 和唯一 Matcha 中文女声（Vocos）播报器。2026-10-14 此次模型替换尚未部署，小车此前运行的仍是 Melo；模型准备见 [文字播报接口](文字播报ROS接口.md)。固定规则经 `MotionRequest` 和车辆能力适配后提交请求；`motion_guard` 是最终授权和速度出口。方向口令不会自动授权，不允许 LLM 生成底盘运动控制。
 
 `/voice/command` 与 `/voice/command_result` 是结构化控制/结果接口，不是文字播报服务，也不是任意自然语言的聊天接口。日常语音操作见[语音控制说明书](语音控制使用说明书.md)，开发边界见[语音优化无车实施与验收](语音优化无车实施与验收.md)。
 
@@ -836,6 +837,8 @@ ros2 topic echo /perception/owner_state
 | `/voice/speak` | execution_mode_interfaces/action/SpeakText | text + 唯一 utterance_id；反馈 phase；result.status=completed 表示完成；可取消自己的 goal |
 | `/voice/tts_text` | std_msgs/msg/String | 兼容无需完成回执的文字播报输入 |
 | `/voice/start_listening`、`/voice/cancel_listening` | std_srvs/srv/Trigger | 触发一次识别 / 取消正在监听的会话 |
+| `/voice/set_asr_enabled` | std_srvs/srv/SetBool | `data=false` 退出识别进程并释放模型内存；`data=true` 重新加载，返回 success/message |
+| `/voice/asr_enabled`、`/voice/asr_status` | std_msgs/msg/Bool、std_msgs/msg/String JSON | 当前识别可用状态 / 模型与进程状态；可靠、transient_local，并周期更新 |
 | `/voice/cancel_speech` | std_srvs/srv/Trigger | 全局取消播报；普通调用超时应用自己的 action goal 取消，避免干扰检测 |
 | `/voice/asr_text`、`/voice/asr_state` | std_msgs/msg/String | 识别结果 / 状态；固定规则入口使用完整结果，讯飞无最终包或截断不发布临时文本 |
 | `/voice/speaking`、`/voice/tts_state` | std_msgs/msg/Bool、std_msgs/msg/String | 播放中 / 播放状态 |
@@ -859,6 +862,40 @@ ros2 topic echo /voice/command_result
 文字不进入意图解析。300 字上限，空白拒绝；服务忙/不可用/失败/超时必须检查 status，见 [文字播报接口](文字播报ROS接口.md)。底层始终复用唯一 TTS 队列，不靠新建播放器实现阶段播报。
 
 B/C 整机入口开启语音及 TTS 时自动启动阶段观察器，通过 `/voice/say` 播报：等待认领、认领成功、开始跟随、主人丢失、主人返回、10 秒到期重新认领、主动释放。相同阶段心跳不重复播，目标故障恢复不重复“开始跟随”。播报忙时短暂重试并合并同来源未发送状态；当前阶段心跳持续时等待语音就绪，心跳中断超过 4 秒的过时内容丢弃，接口不可用不阻塞感知/控制。故障可查看播报节点日志和 `/system/phase`。
+
+#### ASR 开关与内存释放（2026-10-14 已部署验证）
+
+小车 `/home/wheeltec/ROSCAR-current` 已更新并原生构建新版语音入口，`roscar-robot.service` 正在提供此接口，ROS 域号仍为 182。其他部署需要先构建：
+
+```bash
+source /opt/ros/humble/setup.bash
+bash scripts/build_ros.sh --packages-select offline_voice voice_command_router roscar_api
+source install/setup.bash
+```
+
+随后使用原有完整语音/整机入口加载新版本。只启动旧 `asr_node` 不会提供新的开关，不能与 manager 管理的识别进程同时启动。
+
+板端两轮真实 Qwen3/Silero 加载占用约 1.2 GiB RSS，关闭约 0.68 秒后进程消失；重载后的数字音频回放识别到“停止。”。真实 MeloTTS/ALSA 在关闭 ASR 时完成正在播放的内容，关闭期间的新 `/voice/say` 请求也完成。正式主链另外验证了麦克风继续采集、重载后监听/取消服务及 CPU 亲和性 0、1，且语音/速度发布者各只有一份。测试结束 ASR 已开启，小车保持 IDLE/DISARMED；这不代表真人识别准确率或运动/制动验收。
+
+```bash
+# 关闭识别，等待识别进程退出并释放 ASR/VAD 模型内存
+ros2 service call /voice/set_asr_enabled std_srvs/srv/SetBool '{data: false}'
+
+# 恢复识别：模型加载成功后才返回 success=true
+ros2 service call /voice/set_asr_enabled std_srvs/srv/SetBool '{data: true}'
+
+ros2 topic echo /voice/asr_status --once
+```
+
+关闭后的状态为 `enabled=false/state=DISABLED/models_loaded=false/worker_pid=0/worker_rss_kib=0`。开启后为 `ENABLED`，带新进程 PID 与 RSS（KiB）。其他阶段为 `LOADING`、`DISABLING`、`ERROR`；程序应检查服务 `success/message`，不能只看请求已发出。重复设置同一状态可安全调用，已经开启时不重复加载模型。
+
+轻量 `asr_manager` 保持 ROS 开关和原 `/voice/start_listening`、`/voice/cancel_listening` 服务在线，模型在独立工作进程。关闭时先停止转发识别结果，再请求该进程退出；原生推理未响应时有界强制结束。只有进程确认退出才返回关闭成功，因此 Qwen3-ASR、Silero VAD、原生推理会话和该进程的中间缓冲一并释放，而不是仅暂停监听。Linux 可回收的文件页缓存可能仍保留，不代表模型仍驻留在识别进程。
+
+开启默认最多等待 60 秒加载，失败/超时返回 `success=false`、状态 ERROR，并清理失败进程。正在加载时的关闭请求会中止加载；其他并发开启请求可能返回正在切换状态，按 message 稍后重试。识别进程意外退出后不会自动反复加载，需显式重新开启。初始状态参数 `asr_enabled` 只用于启动，运行时使用上述服务。
+
+关闭会清理普通语音会话和待完成的语音授权，丢弃迟到识别结果；恢复后需要重新喊“小微小微”，不会恢复旧动作或旧会话。TTS、现有播报接口、共享录音以及独立 KWS 的原有配置保持不变；此开关不会取消正在播放的提示或检测任务，也不会关闭跟随主链或解除故障。已完成的驾驶授权仍由原保护逻辑管理，尚在等待的语音授权会按既有取消逻辑撤销。当前配置若原本关闭 KWS，此开关也不会自行启用它。
+
+ASR 关闭/加载时，`/voice/start_listening` 返回 `success=false`；取消空会话可成功返回。需要开机先不加载识别模型，可设置 `VOICE_ASR_ENABLED=false` 启动现有语音脚本，或在 launch 中传 `asr_enabled:=false`；默认仍开启。ASR 开关运行状态不写入私有配置，重启按启动参数决定。
 
 ### 9.2 舌苔执行模式
 
@@ -927,6 +964,7 @@ pub.publish(msg)
 
 | 现象 | 先检查什么 |
 |---|---|
+| 远程电脑 `ros2 node list` 为空 | 是否同网段能 ping 通、路由器是否隔离客户端或拦截组播、防火墙、两端 `ROS_DOMAIN_ID=182` 与 `ROS_LOCALHOST_ONLY=0`；不行就改用 SSH 登录小车调用（2.5 方式 A） |
 | 服务列表没有 `/capture/*` | `with_ros_api` 默认关闭；确认 api_node、overlay、域号与 DDS |
 | 拍照返回 busy | 是否已有 ROS、云端或直接 Action 任务占执行器；本接口不排队 |
 | rejected / voice_mode_active | 语音舌苔任务尚未退出；先等其清理完成 |

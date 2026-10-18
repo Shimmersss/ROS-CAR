@@ -24,6 +24,7 @@ setup(
         'audio_node = offline_voice.audio_node:main',
         'emergency_node = offline_voice.emergency_node:main',
         'asr_node = offline_voice.asr_node:main',
+        'asr_manager = offline_voice.asr_manager:main',
         'tts_node = offline_voice.tts_node:main',
         'chat_node = offline_voice.chat_node:main',
     ]},

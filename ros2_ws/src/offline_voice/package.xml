@@ -7,6 +7,7 @@
   <license>Proprietary</license>
   <buildtool_depend>ament_python</buildtool_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>roscar_interfaces</exec_depend>
   <exec_depend>std_srvs</exec_depend>
@@ -14,6 +15,7 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
   <exec_depend>alsa-utils</exec_depend>
   <exec_depend>xfyun_speech</exec_depend>
   <exec_depend>deepseek_ros2</exec_depend>
