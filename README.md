@@ -144,6 +144,7 @@ docs/      方案、接口、计划；docs/archive/ 为历史文档
 - [多源融合设计](docs/方案C多源人体感知融合设计.md) · [文献与开源项目评估](docs/方案C文献与开源项目评估.md)
 - 数据：[重拍视频要求](docs/重拍视频要求20261010.md) · [Gemini 彩色偏蓝排查](docs/Gemini彩色偏蓝排查20261010.md) · [现场实测要求](docs/现场实测要求20261008.md) · [C 上车跟随交接](docs/C上车跟随交接20261012.md)
 - [云台跟随设计与串口协议](docs/云台跟随设计与串口协议.md)（草案）
+- [URDF 模型 3D 查看](docs/diagrams/URDF模型3D.html)：厂商 mini_akm 静态 TF 与云台 URDF（占位值）合并坐标树，`scripts/export_urdf.py` 导出 `docs/diagrams/urdf/*.urdf`
 
 **语音与本次合并**
 - [10-14 Matcha 语音部署与验证](docs/2026-10-14Matcha语音部署与验证.md)：新女声、ASR 开关、车端验证及当前运动关闭状态

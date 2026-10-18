@@ -1,3 +1,9 @@
+## 2026-10-18：URDF 提取与 3D 可视化
+
+- 仓库内没有 `.urdf/.xacro` 文件；厂商带网格的 `wheeltec_robot_urdf/urdf/mini_akm_robot.urdf` 随厂商原包留在本地、不入库。新增 `scripts/export_urdf.py`，从现有配置导出三份 URDF 到 `docs/diagrams/urdf/`：`mini_akm_static_tf.urdf`（`robot_model.yaml` 中 mini_akm 的 base_footprint 子坐标系，按 `robot_mode_description.launch.py` 的 yaw/pitch/roll 顺序换成 URDF rpy）、`roscar_gimbal.urdf`（直接调用 `gimbal_bridge.urdf.build_urdf()`）、`mini_akm_gimbal_combined.urdf`（按 `gimbal.launch.py` 要求以云台链替换厂商固定 base_footprint→camera_link）。`--check` 可检查导出是否过期。
+- 新增 `docs/diagrams/URDF模型3D.html`：内嵌导出的 URDF，在浏览器端解析并绘制坐标树、revolute 关节轴及 pan/tilt 滑块、正运动学读数、关节表与原文；来源以“厂商源码 / 占位·待实测 / 关节待实机验证”区分。车体只按此前厂商 URDF 核对记录的轴距/轮距/轮径画示意。README 文档索引已登记。
+- 验证：三份 URDF 经 yourdfpy 解析与校验通过；pan 30°、tilt 20° 时页面读数 camera_link = (0.059, 0.017, 0.235) m，与 yourdfpy 正运动学 (0.0592, 0.0169, 0.2346) 一致；Chromium 渲染桌面与 400 px 深色无横向滚动（本机 CDN 不通，用 npm 同版本 three@0.128.0 本地替换加载）。云台安装仍为 `confirmed: false` 占位值，不代表实测、标定或实车验收；未改运行时代码。
+
 ## 2026-10-18：Demo 分支同步最新 main
 
 - 用户明确授权推送 `demo/showcase-20261016`。以远端 demo（`cec24a7`）为基础合入 `origin/main`（`3c99368`）；demo 此前已通过 PR #30/#32 移入拍照推理、模型入库与 5060 推理服务，本次补齐 main 的远程 ROS 接入说明、ASR 运行开关（asr_manager）、Matcha 中文 TTS、10-14/10-15 部署与联调记录等提交。不改 main，不部署板端。

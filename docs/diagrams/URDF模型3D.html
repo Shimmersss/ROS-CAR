@@ -1,0 +1,565 @@
+<title>ROSCAR URDF 模型</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: same instrument-style TF viewer as 云台坐标系3D.html — 3D stage left, joint/readout rail right, URDF tables below. */
+:root {
+  --bg: #eef0f2;
+  --panel: #ffffff;
+  --fg: #1a1e23;
+  --muted: #5b6470;
+  --line: #d6dbe1;
+  --accent: #0e7c86;
+  --stage: #e6e9ed;
+  --grid-major: #b9c0c9;
+  --grid-minor: #d5dae0;
+  --edge: #1a1e23;
+  --link: #6b7480;
+  --label-bg: rgba(255, 255, 255, 0.88);
+  --warn: #b4540a;
+  --code-bg: #f5f6f8;
+  --font-sans: "IBM Plex Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1216; --panel: #161a20; --fg: #e4e8ed; --muted: #98a1ac; --line: #29303a;
+    --accent: #4fc3cd; --stage: #0b0e12; --grid-major: #333b46; --grid-minor: #1d232b;
+    --edge: #a9b2bd; --link: #8a939e; --label-bg: rgba(22, 26, 32, 0.88); --warn: #f0a050;
+    --code-bg: #12161b; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1216; --panel: #161a20; --fg: #e4e8ed; --muted: #98a1ac; --line: #29303a;
+  --accent: #4fc3cd; --stage: #0b0e12; --grid-major: #333b46; --grid-minor: #1d232b;
+  --edge: #a9b2bd; --link: #8a939e; --label-bg: rgba(22, 26, 32, 0.88); --warn: #f0a050;
+  --code-bg: #12161b; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--font-sans); line-height: 1.5; }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 28px; max-width: 1440px; margin: 0 auto; display: grid; gap: 16px; }
+header { display: grid; gap: 6px; }
+h1 { margin: 0; font-size: 1.25rem; font-weight: 600; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); max-width: 78ch; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.stage { position: relative; background: var(--stage); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; height: min(72vh, 680px); min-height: 380px; }
+#view { position: absolute; inset: 0; }
+#view canvas { display: block; }
+.labels { position: absolute; inset: 0; pointer-events: none; }
+.frame-label { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--fg); background: var(--label-bg); border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; white-space: nowrap; transform: translate(8px, -130%); }
+.frame-label.placeholder { border-color: var(--warn); color: var(--warn); }
+.frame-label.moving { border-color: var(--accent); color: var(--accent); }
+.overlay { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; pointer-events: none; font-size: 12px; color: var(--muted); }
+.axes-key { display: flex; gap: 10px; font-family: var(--font-mono); }
+.axes-key span::before { content: ""; display: inline-block; width: 14px; height: 3px; margin-right: 5px; vertical-align: middle; background: currentColor; }
+.kx { color: #e5484d; } .ky { color: #2f9e62; } .kz { color: #3e63dd; }
+.view-buttons { position: absolute; top: 10px; left: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+aside { display: grid; gap: 12px; min-width: 0; }
+.group { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; display: grid; gap: 10px; min-width: 0; }
+.group h2, section h2 { margin: 0; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: 88px minmax(0, 1fr) 58px; gap: 8px; align-items: center; font-size: 13px; }
+.row label { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.row output, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12px; text-align: right; }
+.empty { margin: 0; font-size: 12px; color: var(--muted); }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.seg label { flex: 1; text-align: center; font-size: 13px; padding: 5px 4px; cursor: pointer; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg input:checked + span { color: var(--accent); font-weight: 600; }
+.seg label:has(input:checked) { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+.check { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.check input { accent-color: var(--accent); margin: 0; }
+button { font: inherit; font-size: 13px; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 4px 10px; cursor: pointer; pointer-events: auto; }
+button:hover { border-color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+dl { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; font-size: 12px; }
+dt { color: var(--muted); }
+dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
+.chip { display: inline-block; font-size: 11px; line-height: 1.5; padding: 0 5px; border-radius: 3px; border: 1px solid var(--line); white-space: nowrap; }
+.chip.vendor { color: var(--fg); }
+.chip.placeholder { border-color: var(--warn); color: var(--warn); }
+.chip.moving { border-color: var(--accent); color: var(--accent); }
+section { display: grid; gap: 10px; min-width: 0; }
+.table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+th, td { text-align: left; padding: 6px 10px; border-top: 1px solid var(--line); white-space: nowrap; vertical-align: top; }
+thead th { border-top: 0; color: var(--muted); font-weight: 500; }
+td.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.sources { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 12px; align-items: start; }
+details { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
+summary { cursor: pointer; padding: 8px 12px; font-size: 13px; display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+summary span { font-family: var(--font-mono); overflow-wrap: anywhere; }
+pre { margin: 0; padding: 10px 12px; border-top: 1px solid var(--line); background: var(--code-bg); font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55; overflow-x: auto; max-height: 360px; }
+.note { margin: 0; font-size: 12px; color: var(--muted); max-width: 96ch; }
+code { font-family: var(--font-mono); font-size: 0.95em; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>ROSCAR URDF 模型</h1>
+    <p>从仓库配置导出的 URDF 坐标树：厂商 mini_akm 静态 TF（<code>robot_model.yaml</code>），以及 <code>gimbal_bridge</code> 按 <code>gimbal_mount.yaml</code> 生成的云台 URDF。拖动旋转，滚轮缩放，右侧滑块驱动 pan / tilt 关节。</p>
+    <div class="legend">
+      <span><span class="chip vendor">厂商源码</span> 厂商配置中的静态 TF</span>
+      <span><span class="chip placeholder">占位·待实测</span> 云台安装 confirmed: false，尚未卷尺/标定</span>
+      <span><span class="chip moving">关节</span> revolute 关节，硬件待实机验证</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="stage">
+      <div id="view"></div>
+      <div class="view-buttons">
+        <button type="button" data-view="iso" aria-pressed="true">斜视</button>
+        <button type="button" data-view="side" aria-pressed="false">侧视 (−y)</button>
+        <button type="button" data-view="top" aria-pressed="false">俯视</button>
+        <button type="button" data-view="front" aria-pressed="false">正视 (+x)</button>
+      </div>
+      <div class="overlay">
+        <div class="axes-key"><span class="kx">x</span><span class="ky">y</span><span class="kz">z</span></div>
+        <span>网格 1 cm / 10 cm · REP-103（x 前、y 左、z 上）</span>
+      </div>
+    </div>
+
+    <aside>
+      <div class="group">
+        <h2>模型</h2>
+        <div class="seg" role="radiogroup" aria-label="URDF 模型">
+          <label><input type="radio" name="model" id="model-combined" value="combined" checked><span>整车 + 云台</span></label>
+          <label><input type="radio" name="model" id="model-vendor" value="vendor"><span>厂商静态 TF</span></label>
+        </div>
+        <dl>
+          <dt>robot</dt><dd id="robot-name">—</dd>
+          <dt>link / joint</dt><dd id="robot-count">—</dd>
+        </dl>
+        <label class="check"><input type="checkbox" id="show-chassis" checked>车体示意（轴距、轮距、轮径）</label>
+        <label class="check"><input type="checkbox" id="show-labels" checked>坐标系名称</label>
+      </div>
+
+      <div class="group">
+        <h2>关节</h2>
+        <div id="joints"></div>
+        <button type="button" id="zero">关节归零</button>
+      </div>
+
+      <div class="group">
+        <h2>正运动学</h2>
+        <dl id="fk"></dl>
+      </div>
+    </aside>
+  </div>
+
+  <section>
+    <h2>关节表</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>joint</th><th>类型</th><th>parent → child</th><th>origin xyz (m)</th><th>origin rpy (rad)</th><th>axis</th><th>限位</th><th>来源</th></tr></thead>
+        <tbody id="joint-table"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>URDF 原文</h2>
+    <div class="sources">
+      <details open>
+        <summary><span>docs/diagrams/urdf/mini_akm_gimbal_combined.urdf</span><button type="button" data-copy="urdf-combined">复制</button></summary>
+        <pre id="pre-combined"></pre>
+      </details>
+      <details>
+        <summary><span>docs/diagrams/urdf/mini_akm_static_tf.urdf</span><button type="button" data-copy="urdf-vendor">复制</button></summary>
+        <pre id="pre-vendor"></pre>
+      </details>
+    </div>
+  </section>
+
+  <p class="note">URDF 文本由 <code>scripts/export_urdf.py</code> 从仓库配置生成并嵌入本页，改配置后重跑该脚本同步。云台坐标是 3D 草图里的占位值，不是实测安装；合并模型按 <code>gimbal.launch.py</code> 的要求用云台链替换了厂商固定的 base_footprint → camera_link。厂商带外形网格的 <code>mini_akm_robot.urdf</code> 不在仓库中，车体只按厂商 URDF 核对记录（轴距约 0.143 m、轮距约 0.16 m、轮半径约 0.034 m）画示意；camera_link → 光学系由相机驱动发布，不属于这里的 URDF。本页只展示几何关系，不代表实车标定或验收。</p>
+</div>
+
+<script type="text/plain" id="urdf-vendor">
+<?xml version="1.0" ?>
+<!-- Generated by scripts/export_urdf.py from ros2_ws/src/chassis_vendor/turn_on_wheeltec_robot/config/robot_model.yaml (mini_akm); frames only, no meshes. -->
+<robot name="mini_akm_static_tf">
+  <link name="base_footprint"/>
+  <link name="base_link"/>
+  <joint name="base_to_link" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0.000000 0.000000 0.019000" rpy="0.000000 0.000000 0.000000"/>
+  </joint>
+  <link name="gyro_link"/>
+  <joint name="base_to_gyro" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="gyro_link"/>
+    <origin xyz="0.000000 0.000000 0.000000" rpy="0.000000 0.000000 0.000000"/>
+  </joint>
+  <link name="laser"/>
+  <joint name="base_to_laser" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="laser"/>
+    <origin xyz="0.051340 0.000000 0.094520" rpy="0.000000 0.000000 0.000000"/>
+  </joint>
+  <link name="camera_link"/>
+  <joint name="base_to_camera" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="camera_link"/>
+    <origin xyz="0.113650 0.000170 0.076200" rpy="0.000000 0.000000 0.000000"/>
+  </joint>
+  <link name="radar"/>
+  <joint name="base_to_radar" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="radar"/>
+    <origin xyz="0.000000 0.000000 0.300000" rpy="0.000000 0.000000 0.000000"/>
+  </joint>
+</robot>
+</script>
+<script type="text/plain" id="urdf-combined">
+<?xml version="1.0" ?>
+<!-- Generated by scripts/export_urdf.py: vendor mini_akm static TFs with base_to_camera replaced by the gimbal chain; gimbal PLACEHOLDER (confirmed: false, not measured). -->
+<robot name="mini_akm_gimbal">
+  <link name="base_footprint"/>
+  <link name="base_link"/>
+  <link name="gyro_link"/>
+  <link name="laser"/>
+  <link name="camera_link"/>
+  <link name="radar"/>
+  <link name="pan_link"/>
+  <link name="tilt_link"/>
+  <link name="imu_link"/>
+  <joint name="base_to_link" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0.000000 0.000000 0.019000" rpy="0.000000 0.000000 0.000000"/>
+  </joint>
+  <joint name="base_to_gyro" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="gyro_link"/>
+    <origin xyz="0.000000 0.000000 0.000000" rpy="0.000000 0.000000 0.000000"/>
+  </joint>
+  <joint name="base_to_laser" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="laser"/>
+    <origin xyz="0.051340 0.000000 0.094520" rpy="0.000000 0.000000 0.000000"/>
+  </joint>
+  <joint name="base_to_radar" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="radar"/>
+    <origin xyz="0.000000 0.000000 0.300000" rpy="0.000000 0.000000 0.000000"/>
+  </joint>
+  <joint name="pan_joint" type="revolute">
+    <parent link="base_footprint"/>
+    <child link="pan_link"/>
+    <origin xyz="0.030000 0.000000 0.170000" rpy="0.000000 0.000000 0.000000"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-2.967000" upper="2.967000" effort="1" velocity="3"/>
+  </joint>
+  <joint name="tilt_joint" type="revolute">
+    <parent link="pan_link"/>
+    <child link="tilt_link"/>
+    <origin xyz="0.000000 0.000000 0.045000" rpy="0.000000 0.000000 0.000000"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-0.524000" upper="0.785000" effort="1" velocity="3"/>
+  </joint>
+  <joint name="camera_mount_joint" type="fixed">
+    <parent link="tilt_link"/>
+    <child link="camera_link"/>
+    <origin xyz="0.025000 0.000000 0.030000" rpy="0.000000 0.000000 0.000000"/>
+  </joint>
+  <joint name="imu_mount_joint" type="fixed">
+    <parent link="tilt_link"/>
+    <child link="imu_link"/>
+    <origin xyz="-0.012000 0.030000 0.050000" rpy="0.000000 0.000000 0.000000"/>
+  </joint>
+</robot>
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+<script>
+(() => {
+  const DEG = 180 / Math.PI;
+  const $ = id => document.getElementById(id);
+  const v3 = (x, y, z) => new THREE.Vector3(x, y, z);
+  // Chassis sketch from the vendor mini_akm URDF check recorded in WORKLOG (metres).
+  const REAR_AXLE_X = -0.0697, FRONT_AXLE_X = 0.0736, TRACK = 0.16, WHEEL_R = 0.034;
+  const VENDOR_JOINTS = new Set(['base_to_link', 'base_to_gyro', 'base_to_laser', 'base_to_camera', 'base_to_radar']);
+
+  // ---------- URDF parsing ----------
+  const nums = (s, n = 3) => { const v = (s || '').trim().split(/\s+/).map(Number); return v.length === n && v.every(Number.isFinite) ? v : Array(n).fill(0); };
+  function parseUrdf(text) {
+    const doc = new DOMParser().parseFromString(text.trim(), 'application/xml');
+    if (doc.querySelector('parsererror')) throw new Error('URDF 解析失败');
+    const robot = doc.documentElement;
+    const kids = tag => [...robot.children].filter(e => e.tagName === tag);
+    const comment = [...doc.childNodes].find(n => n.nodeType === 8);
+    const joints = kids('joint').map(j => {
+      const o = j.querySelector('origin'), a = j.querySelector('axis'), l = j.querySelector('limit');
+      return {
+        name: j.getAttribute('name'), type: j.getAttribute('type'),
+        parent: j.querySelector('parent').getAttribute('link'), child: j.querySelector('child').getAttribute('link'),
+        xyz: nums(o && o.getAttribute('xyz')), rpy: nums(o && o.getAttribute('rpy')),
+        axis: a ? nums(a.getAttribute('xyz')) : [1, 0, 0],
+        lower: l ? Number(l.getAttribute('lower')) : null, upper: l ? Number(l.getAttribute('upper')) : null,
+      };
+    });
+    return { name: robot.getAttribute('name'), comment: comment ? comment.data.trim() : '', links: kids('link').map(l => l.getAttribute('name')), joints };
+  }
+  const MODELS = {};
+  for (const key of ['combined', 'vendor']) {
+    const text = $('urdf-' + key).textContent;
+    $('pre-' + key).textContent = text.trim();
+    MODELS[key] = parseUrdf(text);
+  }
+  const placeholder = MODELS.combined.comment.includes('PLACEHOLDER');
+  const source = j => VENDOR_JOINTS.has(j.name) ? 'vendor' : (placeholder ? 'placeholder' : 'measured');
+  const SOURCE_TEXT = { vendor: '厂商源码', placeholder: '占位·待实测', measured: '已确认' };
+
+  // ---------- scene ----------
+  const stage = $('view');
+  const token = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  stage.appendChild(renderer.domElement);
+  const labelRenderer = new THREE.CSS2DRenderer();
+  labelRenderer.domElement.className = 'labels';
+  stage.appendChild(labelRenderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(35, 1, 0.005, 20);
+  camera.up.set(0, 0, 1);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x666a70, 0.85));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.7);
+  sun.position.set(1, -2, 3);
+  scene.add(sun);
+
+  const edgeLines = [], linkLines = [];
+  function mesh(geo, color, parent, pos, rot, opacity = 1) {
+    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0.05, transparent: opacity < 1, opacity }));
+    if (pos) m.position.copy(pos);
+    if (rot) m.rotation.set(rot[0], rot[1], rot[2]);
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 25), new THREE.LineBasicMaterial({ transparent: true, opacity: 0.3 }));
+    m.add(e); edgeLines.push(e);
+    parent.add(m);
+    return m;
+  }
+
+  // Chassis sketch (not from the exported URDF; see note).
+  const chassis = new THREE.Group(); scene.add(chassis);
+  mesh(new THREE.BoxGeometry(0.27, 0.11, 0.012), 0x33373d, chassis, v3(0.01, 0, 0.045), null, 0.35);
+  const wheelGeo = new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, 0.026, 32);
+  [[REAR_AXLE_X, TRACK / 2], [REAR_AXLE_X, -TRACK / 2], [FRONT_AXLE_X, TRACK / 2], [FRONT_AXLE_X, -TRACK / 2]]
+    .forEach(([x, y]) => mesh(wheelGeo, 0x24272b, chassis, v3(x, y, WHEEL_R), null, 0.45));
+
+  let robotRoot = null, labelsOn = true;
+  const linkObjs = {}, jointMotion = {}, jointValue = {};
+  function makeLabel(text, cls) {
+    const wrap = document.createElement('div');
+    const span = document.createElement('span');
+    span.className = cls; span.textContent = text;
+    wrap.appendChild(span);
+    return new THREE.CSS2DObject(wrap);
+  }
+  function axesTriad(len) {
+    const g = new THREE.Group(), head = len * 0.22;
+    [[v3(1, 0, 0), 0xe5484d], [v3(0, 1, 0), 0x2f9e62], [v3(0, 0, 1), 0x3e63dd]]
+      .forEach(([d, c]) => g.add(new THREE.ArrowHelper(d, v3(0, 0, 0), len, c, head, head * 0.5)));
+    return g;
+  }
+
+  function build(model) {
+    if (robotRoot) {
+      robotRoot.traverse(o => { if (o.element) o.element.remove(); });
+      scene.remove(robotRoot);
+    }
+    linkLines.length = 0;
+    for (const k of Object.keys(linkObjs)) delete linkObjs[k];
+    for (const k of Object.keys(jointMotion)) delete jointMotion[k];
+    const childOf = Object.fromEntries(model.joints.map(j => [j.child, j]));
+    for (const name of model.links) {
+      const g = new THREE.Group(); g.name = name;
+      const j = childOf[name], src = j ? source(j) : 'vendor';
+      g.add(axesTriad(name === 'base_footprint' ? 0.09 : 0.035));
+      const cls = 'frame-label' + (j && j.type !== 'fixed' ? ' moving' : src === 'placeholder' ? ' placeholder' : '');
+      g.add(makeLabel(name, cls));
+      linkObjs[name] = g;
+    }
+    robotRoot = new THREE.Group(); scene.add(robotRoot);
+    const roots = model.links.filter(n => !childOf[n]);
+    roots.forEach(n => robotRoot.add(linkObjs[n]));
+    for (const j of model.joints) {
+      const origin = new THREE.Group();
+      origin.position.set(...j.xyz);
+      origin.rotation.set(j.rpy[0], j.rpy[1], j.rpy[2], 'ZYX'); // URDF rpy: fixed-axis X, Y, Z
+      const motion = new THREE.Group();
+      origin.add(motion); motion.add(linkObjs[j.child]);
+      linkObjs[j.parent].add(origin);
+      // Kinematic link drawn from the parent origin to this joint origin.
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([v3(0, 0, 0), v3(...j.xyz)]),
+        new THREE.LineDashedMaterial({ dashSize: 0.008, gapSize: 0.005 }));
+      line.computeLineDistances();
+      linkObjs[j.parent].add(line); linkLines.push(line);
+      if (j.type === 'revolute' || j.type === 'continuous') {
+        const axis = v3(...j.axis).normalize();
+        const arrow = new THREE.ArrowHelper(axis, axis.clone().multiplyScalar(-0.03), 0.06, 0xd9822b, 0.012, 0.007);
+        origin.add(arrow);
+        jointMotion[j.name] = { motion, axis, joint: j };
+        if (!(j.name in jointValue)) jointValue[j.name] = 0;
+        motion.setRotationFromAxisAngle(axis, jointValue[j.name]);
+      }
+    }
+    setLabels(labelsOn);
+    applyTheme();
+    $('robot-name').textContent = model.name;
+    $('robot-count').textContent = `${model.links.length} / ${model.joints.length}`;
+    renderJoints(model); renderTable(model);
+  }
+
+  function setLabels(on) {
+    labelsOn = on;
+    if (robotRoot) robotRoot.traverse(o => { if (o.isCSS2DObject) o.visible = on; });
+  }
+
+  // ---------- UI ----------
+  function renderJoints(model) {
+    const box = $('joints'); box.textContent = '';
+    const movable = model.joints.filter(j => jointMotion[j.name]);
+    if (!movable.length) {
+      const p = document.createElement('p'); p.className = 'empty';
+      p.textContent = '厂商静态 TF 全部是 fixed 关节，没有可动关节。';
+      box.appendChild(p); $('zero').hidden = true; return;
+    }
+    $('zero').hidden = false;
+    for (const j of movable) {
+      const row = document.createElement('div'); row.className = 'row';
+      const id = 'j-' + j.name;
+      const lo = Math.round(j.lower * DEG), hi = Math.round(j.upper * DEG);
+      row.innerHTML = `<label for="${id}">${j.name}</label><input type="range" id="${id}" min="${lo}" max="${hi}" step="1"><output id="${id}-out"></output>`;
+      box.appendChild(row);
+      const input = row.querySelector('input'), out = row.querySelector('output');
+      input.value = Math.round(jointValue[j.name] * DEG);
+      out.textContent = input.value + '°';
+      input.addEventListener('input', () => {
+        jointValue[j.name] = input.value / DEG;
+        out.textContent = input.value + '°';
+        const m = jointMotion[j.name]; m.motion.setRotationFromAxisAngle(m.axis, jointValue[j.name]);
+      });
+    }
+  }
+  $('zero').addEventListener('click', () => {
+    for (const name of Object.keys(jointMotion)) {
+      jointValue[name] = 0; const m = jointMotion[name]; m.motion.setRotationFromAxisAngle(m.axis, 0);
+      const input = $('j-' + name); if (input) { input.value = 0; $('j-' + name + '-out').textContent = '0°'; }
+    }
+  });
+
+  const f3 = (v, d = 3) => v.map(x => (Math.abs(x) < 5e-7 ? 0 : x).toFixed(d)).join(' ');
+  const limitText = j => j.lower === null ? '—' : `${(j.lower * DEG).toFixed(1)}° … ${(j.upper * DEG).toFixed(1)}°`;
+  function renderTable(model) {
+    const tb = $('joint-table'); tb.textContent = '';
+    for (const j of model.joints) {
+      const src = source(j);
+      const tr = document.createElement('tr');
+      const cells = [[j.name, 'mono'], [j.type, ''], [`${j.parent} → ${j.child}`, 'mono'], [f3(j.xyz), 'mono'], [f3(j.rpy), 'mono'],
+        [j.type === 'fixed' ? '—' : f3(j.axis, 0), 'mono'], [limitText(j), 'mono']];
+      for (const [text, cls] of cells) { const td = document.createElement('td'); td.textContent = text; if (cls) td.className = cls; tr.appendChild(td); }
+      const td = document.createElement('td');
+      const chip = document.createElement('span'); chip.className = 'chip ' + src; chip.textContent = SOURCE_TEXT[src];
+      td.appendChild(chip); tr.appendChild(td); tb.appendChild(tr);
+    }
+  }
+
+  // Forward kinematics readout: every non-root frame expressed in base_footprint.
+  const fkCache = {};
+  function updateFk() {
+    const dl = $('fk');
+    const base = linkObjs.base_footprint; if (!base) return;
+    base.updateWorldMatrix(true, true);
+    const inv = base.matrixWorld.clone().invert();
+    const targets = ['camera_link', 'imu_link', 'laser'].filter(n => linkObjs[n]);
+    const key = targets.join();
+    if (dl.dataset.key !== key) {
+      dl.textContent = ''; dl.dataset.key = key;
+      for (const n of targets) {
+        const dt = document.createElement('dt'); dt.textContent = n;
+        const dd = document.createElement('dd'); dd.id = 'fk-' + n;
+        dl.append(dt, dd);
+      }
+    }
+    for (const n of targets) {
+      const m = inv.clone().multiply(linkObjs[n].matrixWorld);
+      const p = v3().setFromMatrixPosition(m);
+      const e = new THREE.Euler().setFromRotationMatrix(m, 'ZYX');
+      const text = `xyz ${f3([p.x, p.y, p.z])} m\nrpy ${f3([e.x * DEG, e.y * DEG, e.z * DEG], 1)}°`;
+      if (fkCache[n] !== text) { fkCache[n] = text; $('fk-' + n).style.whiteSpace = 'pre-line'; $('fk-' + n).textContent = text; }
+    }
+  }
+
+  // ---------- theme ----------
+  let grids = [];
+  function applyTheme() {
+    scene.background = new THREE.Color(token('--stage'));
+    grids.forEach(g => { scene.remove(g); g.geometry.dispose(); });
+    const major = new THREE.GridHelper(1.0, 10, new THREE.Color(token('--grid-major')), new THREE.Color(token('--grid-major')));
+    const minor = new THREE.GridHelper(0.4, 40, new THREE.Color(token('--grid-minor')), new THREE.Color(token('--grid-minor')));
+    grids = [minor, major];
+    grids.forEach((g, i) => { g.rotation.x = Math.PI / 2; g.position.z = -0.0005 * (i + 1); scene.add(g); });
+    const edge = new THREE.Color(token('--edge')), link = new THREE.Color(token('--link'));
+    edgeLines.forEach(e => e.material.color.copy(edge));
+    linkLines.forEach(l => l.material.color.copy(link));
+  }
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+  new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // ---------- views ----------
+  const target = v3(0.02, 0, 0.12);
+  const VIEWS = { iso: v3(0.55, -0.62, 0.42), side: v3(0.02, -0.8, 0.14), top: v3(0.021, 0.0001, 0.95), front: v3(0.85, 0, 0.16) };
+  function setView(kind) {
+    camera.position.copy(VIEWS[kind]); controls.target.copy(target); controls.update();
+    document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === kind)));
+  }
+  document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+
+  // ---------- controls ----------
+  document.querySelectorAll('input[name="model"]').forEach(r => r.addEventListener('change', () => build(MODELS[r.value])));
+  $('show-chassis').addEventListener('change', e => { chassis.visible = e.target.checked; });
+  $('show-labels').addEventListener('change', e => setLabels(e.target.checked));
+  document.querySelectorAll('[data-copy]').forEach(btn => btn.addEventListener('click', ev => {
+    ev.preventDefault();
+    const text = $(btn.dataset.copy).textContent.trim();
+    const done = msg => { btn.textContent = msg; setTimeout(() => { btn.textContent = '复制'; }, 1400); };
+    const fallback = () => {
+      const pre = btn.closest('details').querySelector('pre');
+      const range = document.createRange(); range.selectNodeContents(pre);
+      const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); done('已选中');
+    };
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => done('已复制'), fallback); else fallback();
+  }));
+
+  build(MODELS.combined);
+  setView('iso');
+
+  function tick() {
+    controls.update();
+    updateFk();
+    renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
+    requestAnimationFrame(tick);
+  }
+  function resize() {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    renderer.setSize(w, h); labelRenderer.setSize(w, h);
+    camera.aspect = w / Math.max(h, 1); camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(stage);
+  resize();
+  requestAnimationFrame(tick);
+})();
+</script>
