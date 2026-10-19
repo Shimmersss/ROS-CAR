@@ -28,7 +28,7 @@ class DemoEntry(unittest.TestCase):
         self.assertEqual(env['FOLLOW_AUTO_ARM'], 'false')
         self.assertEqual(env['FOLLOW_TARGET_AUTO_RECOVER'], 'false')
         self.assertEqual(env['FOLLOW_PAUSE_ON_FALL'], 'true')
-        self.assertEqual(env['FOLLOW_TARGET_GRACE_S'], '0.0')
+        self.assertEqual(env['FOLLOW_TARGET_GRACE_S'], '0.6')
         self.assertTrue(env['POSE_CONFIG'].endswith('pose_fixed_27cm_demo.yaml'))
         self.assertEqual(env['FOLLOW_TARGET_DISTANCE_M'], '1.3')
         self.assertEqual(env['FOLLOW_MAX_LINEAR_MPS'], '0.35')
@@ -38,7 +38,7 @@ class DemoEntry(unittest.TestCase):
         self.assertEqual(env['MOTION_ENABLED'], 'true')
         self.assertEqual(env['REID_REACQUIRE_ENABLED'], 'false')
         self.assertEqual(env['FOLLOW_AUTO_ARM'], 'false')
-        self.assertEqual(env['FOLLOW_TARGET_AUTO_RECOVER'], 'false')
+        self.assertEqual(env['FOLLOW_TARGET_AUTO_RECOVER'], 'true')
 
     def test_onboard_preserves_reacquire_override(self):
         prefix = (ROOT/'scripts/run_robot_onboard.sh').read_text().split('for device in ')[0]

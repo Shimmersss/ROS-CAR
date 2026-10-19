@@ -20,7 +20,7 @@ context.launch_configurations['with_motion_adapter'] = 'false'
 assert adapter.condition.evaluate(context) is False
 print('PASS: voice adapter enabled by default, disabled explicitly in demo')
 
-# Evaluate follow launch parameters and reject grace that could replay pre-fall velocity.
+# Evaluate follow launch parameters: the final guard overrides grace during fall pause.
 from launch.actions import DeclareLaunchArgument
 from launch.utilities import perform_substitutions
 from launch_ros.utilities import evaluate_parameters
@@ -39,7 +39,7 @@ nodes=module.start(context)
 parameters=evaluate_parameters(context,nodes[0]._Node__parameters)
 assert parameters[0]['pause_on_fall'] is True and parameters[0]['fall_resume_s']==3.
 context.launch_configurations['target_grace_s']='0.6'
-try:module.start(context)
-except ValueError as exc:assert 'target_grace_s=0' in str(exc)
-else:raise AssertionError('fall pause must reject old-command grace')
-print('PASS: default follow unchanged; fall pause wired with zero grace; unsafe combination rejected')
+nodes=module.start(context)
+parameters=evaluate_parameters(context,nodes[1]._Node__parameters)
+assert parameters[1]['pause_on_fall'] is True and parameters[1]['target_grace_s']==.6
+print('PASS: fall pause is wired to final guard independently of target grace')

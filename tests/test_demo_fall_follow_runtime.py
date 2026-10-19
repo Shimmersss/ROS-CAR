@@ -30,7 +30,7 @@ tmp=tempfile.TemporaryDirectory()
 guard=MotionGuard(parameter_overrides=params(motion_enabled=True,geometry_confirmed=True,
     mount_calibrated=True,stopping_model_confirmed=True,emergency_kws_required=False,
     radar_required=False,command_mode='FOLLOW',auto_arm=True,target_auto_recover=True,
-    target_grace_s=0.,expected_source='yolo',target_frame='camera_color_optical_frame',
+    target_grace_s=.6,pause_on_fall=True,expected_source='yolo',target_frame='camera_color_optical_frame',
     estop_latch_path=tmp.name+'/latch.json'))
 follower=PersonFollowerNode(parameter_overrides=params(enabled=True,expected_source='yolo',pause_on_fall=True))
 owner=TrackerNode(backend=Backend(),namespace='owner_test',parameter_overrides=params(
@@ -78,6 +78,15 @@ def call(name):
 
 try:
     pump(.7);assert vel[-1].linear.x>0.
+    flags['target']=False;pump(.15)
+    assert guard.authority.armed and vel[-1].linear.x>0., 'short gap must not latch'
+    flags['stage']=1;pump(.1);zeros()
+    flags.update(target=True,stage=0);pump(3.3)
+    assert vel[-1].linear.x>0.
+    flags['target']=False;pump(.8);zeros()
+    assert guard.authority.state=='FAULT'
+    flags['target']=True;pump(.4)
+    assert guard.authority.state=='ARMED_FOLLOW' and vel[-1].linear.x>0.
     owner.owner.claim();pump(.3)
     owner_lost_before=owner.owner.lost_for(time.monotonic())
     flags['stage']=1;pump(.2);zeros()
@@ -103,7 +112,8 @@ try:
     flags['stage']=1;pump(.2);zeros()
     flags['stage']=0;pump(.15)
     assert call('/demo/resume_follow').success
-    pump(.2);assert vel[-1].linear.x>0.
+    pump(.2);assert all(v.linear.x==0. and v.angular.z==0. for v in vel[-3:]) # Final guard overrides resumed requests.
+    pump(3.);assert vel[-1].linear.x>0.
     flags['stage']=2;pump(.2);zeros()
     assert call('/control/estop').success
     flags['stage']=0;pump(.2);assert call('/demo/resume_follow').success

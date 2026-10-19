@@ -28,10 +28,11 @@ from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String, Bool
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformListener, TransformException
-from person_interfaces.msg import TargetState
+from person_interfaces.msg import TargetState, FallAlarm
 from roscar_interfaces.srv import SetControlMode, AuthorizeMotion
 from execution_mode_interfaces.srv import TaskHold
 from astra_body_adapter.follow_control import observation_is_fresh
+from astra_body_adapter.fall_pause import FallPause
 from .safety import SafetyConfig, clearance
 from .authority import MotionAuthority, AuthorityError
 from .task_hold import StationaryLease
@@ -51,6 +52,7 @@ class MotionGuard(Node):
                         target_frame='astra_depth_optical_frame', request_topic='/control/cmd_vel_request',
                         scan_topic='/scan', target_topic='/perception/target_state',
                         radar_required=False, auto_arm=False, target_grace_s=0., target_auto_recover=False,
+                        pause_on_fall=False, fall_resume_s=3., fall_alarm_timeout_s=.5,
                         emergency_kws_required=True,
                         emergency_health_timeout_s=0.5, allow_legacy_arm=False, estop_latch_path=str(Path(
                             os.environ.get('XDG_STATE_HOME', str(Path.home() / '.local/state'))) / 'roscar/estop.json'))
@@ -96,6 +98,9 @@ class MotionGuard(Node):
         self.buffer = Buffer()
         self.listener = TransformListener(self.buffer,self)
         self.pub = self.create_publisher(Twist,'/cmd_vel',1)
+        self.fall_pause = FallPause(self.cfg['fall_resume_s'], self.cfg['fall_alarm_timeout_s'])
+        if self.cfg['pause_on_fall']:
+            self.create_subscription(FallAlarm, '/perception/fall_alarm', self.on_fall, 10)
         self.status_pub = self.create_publisher(String,'/control/state',10)
         self.create_subscription(TwistStamped,self.cfg['request_topic'],self.on_request,1)
         self.create_subscription(TwistStamped,'/chassis/cmd_vel',self.on_external,1)
@@ -354,6 +359,15 @@ class MotionGuard(Node):
             response.success, response.detail = False, str(exc)
         return response
 
+    def on_fall(self, message):
+        now = time.monotonic()
+        ros_now = self.get_clock().now().nanoseconds*1e-9
+        self.fall_pause.observe(message.valid, message.stage, seconds(message.header.stamp), now, ros_now)
+        if self.command_mode == 'FOLLOW' and (self.fall_pause.paused or not self.fall_pause.fresh(now, ros_now)):
+            # Never replay a pre-fall command through target grace.
+            self.last_cmd = (0., 0.)
+            self.publish(0., 0.)
+
     def tick(self):
         if self.task_hold.expire(time.monotonic()):
             self.stop_service(None, Trigger.Response())
@@ -373,6 +387,14 @@ class MotionGuard(Node):
             self.authority.recover_follow()
             self.last_ok_at, self.last_cmd = -math.inf, (0., 0.)
             self.get_logger().info('Target valid again after '+self.last_fault+'; re-armed')
+        fall_blocked = False
+        if follow and self.cfg['pause_on_fall']:
+            ros_now = self.get_clock().now().nanoseconds*1e-9
+            self.fall_pause.update(now, ros_now, can_resume=ready)
+            fall_blocked = self.fall_pause.paused or not self.fall_pause.fresh(now, ros_now)
+            if fall_blocked:
+                v, w = 0., 0.
+                self.last_cmd = (0., 0.)
         grace = self.cfg['target_grace_s']
         in_grace = (self.authority.armed and not ready and self.command_mode == 'FOLLOW' and grace > 0
                     and reason in TARGET_REASONS and 0 <= now-self.last_ok_at <= grace)
@@ -386,12 +408,12 @@ class MotionGuard(Node):
         if self.authority.armed and ready:
             self.last_ok_at, self.last_cmd = now, (v, w)
         self.reason = reason
-        allowed = self.authority.armed and (ready or in_grace) and self.cfg['motion_enabled']
+        allowed = self.authority.armed and (ready or in_grace) and self.cfg['motion_enabled'] and not fall_blocked
         self.publish(v if allowed else 0., w if allowed else 0.)
         self.status_pub.publish(String(data=json.dumps(dict(
             mode=self.mode, authority_state=self.authority.state,
             authority_epoch=self.authority.epoch, command_mode=self.command_mode,
-            ready=ready, reason=reason, last_fault=self.last_fault,
+            ready=ready, reason=reason, last_fault=self.last_fault, fall_paused=fall_blocked,
             motion_enabled=self.cfg['motion_enabled'], emergency_healthy=self.emergency_healthy(),
             task_hold=dict(active=self.task_hold.active(time.monotonic()), owner=self.task_hold.owner,
                            session_id=self.task_hold.session_id)))))

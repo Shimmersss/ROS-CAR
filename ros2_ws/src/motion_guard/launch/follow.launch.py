@@ -15,8 +15,6 @@ def start(context):
     source=LaunchConfiguration('expected_source').perform(context) or c['expected_source']
     target_frame=LaunchConfiguration('target_frame').perform(context) or c['target_frame']
     pause=LaunchConfiguration('pause_on_fall').perform(context)=='true'
-    if pause and float(LaunchConfiguration('target_grace_s').perform(context)) > 0:
-        raise ValueError('pause_on_fall requires target_grace_s=0 (old commands must not continue)')
     auto=LaunchConfiguration('auto_arm').perform(context)=='true'
     recover=LaunchConfiguration('target_auto_recover').perform(context)=='true'
     linear=float(LaunchConfiguration('max_linear_mps').perform(context) or c['max_linear_mps'])
@@ -29,7 +27,9 @@ def start(context):
                     'max_angular_rps':float(c['max_angular_rps']),
                     'target_distance_m':float(LaunchConfiguration('target_distance_m').perform(context))}]),
             Node(package='motion_guard',executable='guard',output='screen',
-                 parameters=[path,{'max_linear_mps':linear,'motion_enabled':motion,'expected_source':source,'target_frame':target_frame,
+                 parameters=[path,{'pause_on_fall':pause,
+                    'fall_resume_s':float(LaunchConfiguration('fall_resume_s').perform(context)),
+                    'max_linear_mps':linear,'motion_enabled':motion,'expected_source':source,'target_frame':target_frame,
                     'radar_required':LaunchConfiguration('radar_required').perform(context)=='true',
                     'auto_arm':auto,
                     # An auto-arming follow entry must start in FOLLOW; otherwise the guard starts IDLE.
