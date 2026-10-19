@@ -1,3 +1,11 @@
+## 2026-10-19：连续主人 ReID 重新确认与多视角补充
+
+- 分析新实录 20261019-173404-reid-fixed-follow：本次确实认领、绑定主人且授权跟随，45 秒后测试脚本 STOP；后续找回失败不能再归因为没有主人身份。提取 346 对同帧真实 OSNet 描述子，复用 295 条 valid 推理事件，OwnerState 近似重建 focus（原段未录 owner_focus），不宣称闭环/准确率验证。
+- 新增默认关闭、仅 owner_trial 启用的 owner_continuity_verify：只对 pinned 主人当前连续跟随轨迹，在无重叠时用已有 verify_distance=0.30 重新做三帧确认；真正丢失/异轨迹仍 match_distance=0.25，竞争/互斥/龄期均不放宽。掩码重叠也传入 overlapped，禁止借其学习新视角。
+- 同一特征候选 VERIFIED 4→14、REASSOCIATED 0→4、返回轨迹正身份 0→6、额外视角 0→1，质量拒绝 368 不变。人工看完 19 个正身份裁剪均为白衣主人；完整 OwnerSelection 回放仍因重叠打断确认而未找回，不称功能验收通过。未采用更宽松重叠候选，保留现有保护。新增可复现回放入口及评估文档，维护索引、任务清单；录制补齐 owner_focus/performance。
+- 329 项感知测试（含 8 subtests）及完整 CI 通过；Jetson 2 包编译、隔离域原 ReID/确认链/2与20秒主人回归通过。首次主人回归因部署测试缺 helper 报错，补齐既有 monotonic_ros_clock 后重跑通过，非跳过验证。
+- 已部署 demo 并读取确认新参数 true、阈值 0.25/0.30，速度/相机/ReID 单发布者，126 条速度全零、IDLE/DISARMED。核对发现另有 17:47 创建的运行时 99-c518-live-test.conf 覆盖运动能力为 true（并非本轮创建），持久开机 demo 配置未变；保留外部临时配置、不授予运动，不能把当前 runtime 写成 motion_enabled=false。源码/日志/录像保留；main 不变。
+
 ## 2026-10-19：更新并推送 Demo 相对运动调用文档
 
 - 用户要求推送 demo 新调用接口文档。更新相对运动接口的验证状态、车端 overlay/私有通信环境加载、接口发现及运动关闭边界；保持既有调用字段、限速与逐请求授权说明。

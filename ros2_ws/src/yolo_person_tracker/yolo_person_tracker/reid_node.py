@@ -138,7 +138,8 @@ class ReIDNode(Node):
                 age=self.get_clock().now().nanoseconds*1e-9-stamp
                 if generation==self.generation and 0<=age<=self.cfg['max_age_s']:
                     results=self.manager.update(stamp,observations,
-                        {t for t,r in reasons.items() if r=='overlapping people'},
+                        {t for t,r in reasons.items()
+                         if r in ('overlapping people', 'pose-masked overlapping crop')},
                         self.owner_hint())
                     msg=PersonIdentityArray(header=copy.deepcopy(header),enabled=True,valid=True,
                         detail='Appearance hypotheses only; no target lock or prior transfer',

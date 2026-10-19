@@ -29,6 +29,7 @@ class IdentityConfig:
     reconfirm_on_overlap_only: bool = False  # other bad crops pause, but need not re-confirm, a bound track
     owner_views: int = 0  # >0: a pinned owner collects up to this many extra views while followed
     owner_view_novelty: float = .1  # a view is added only if this far from every stored view
+    owner_continuity_verify: bool = False  # focused owner may reconfirm within verify_distance
 
     def __post_init__(self):
         for name in ('confirm_frames', 'max_identities', 'gallery_size'):
@@ -47,7 +48,7 @@ class IdentityConfig:
             raise ValueError('confirm_min_interval_s must be finite and non-negative')
         if type(self.owner_views) is not int or self.owner_views < 0 or not 0 < self.owner_view_novelty < 1:
             raise ValueError('owner_views must be a non-negative integer, novelty in (0, 1)')
-        for name in ('co_visible_exclusion', 'reconfirm_on_overlap_only'):
+        for name in ('co_visible_exclusion', 'reconfirm_on_overlap_only', 'owner_continuity_verify'):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f'{name} must be boolean')
 
@@ -214,7 +215,13 @@ class IdentityManager:
             # Also reject two current people competing for the same identity.
             competitors = [v[best] for t, v in scores.items() if t != track] if best else []
             column_ambiguous = bool(competitors and min(competitors)-score < self.cfg.margin)
-            matched = bool(best and score <= self.cfg.match_distance)
+            # A fresh focus hint identifies the still-followed track, not a search
+            # candidate. After a stream interruption it must still collect the full
+            # multi-frame confirmation and pass the ordinary competition gates.
+            focused_owner = (self.cfg.owner_continuity_verify and track == focus
+                             and best == self.pinned and track not in overlapped)
+            matched = bool(best and (score <= self.cfg.match_distance
+                                    or (focused_owner and score <= verify)))
             new = not ranked or score >= self.cfg.new_identity_distance
             excluded = best in self.excluded.get(track, ())
             if (matched and (row_ambiguous or column_ambiguous or excluded

@@ -29,3 +29,6 @@
     mask_overlap: true
     # Owner following (C reid_reacquire): extra views of the pinned owner; inactive without owner_focus.
     owner_views: 24
+    # Reconfirm only the pinned, currently followed and unoccluded owner track.
+    # Lost-owner search still uses match_distance and all normal competition gates.
+    owner_continuity_verify: true

@@ -16,6 +16,7 @@ TOPICS = ['/camera/color/image_raw', '/camera/color/image_rect',
           '/camera/depth/image_raw', '/camera/depth/camera_info',
           '/perception/person_states', '/perception/person_states_continued',
           '/perception/fall_alarm', '/perception/owner_state',
+          '/perception/owner_focus', '/perception/performance',
           '/perception/person_identities', '/perception/target_state',
           '/control/state', '/control/cmd_vel_request', '/cmd_vel', '/odom',
           '/tf', '/tf_static', '/rosout']

@@ -257,3 +257,54 @@ class OwnerPinTests(unittest.TestCase):
 
 def unit_(v):
     return v/np.linalg.norm(v)
+
+
+class OwnerContinuityVerifyTests(unittest.TestCase):
+    def setup_owner(self, enabled=True):
+        manager = IdentityManager(IdentityConfig(owner_continuity_verify=enabled,
+            verify_distance=.30, owner_views=4))
+        for stamp in (10., 10.2, 10.4):
+            identity = manager.update(stamp, {'0:1': A})[0].person_id
+        manager.pin(identity)
+        manager.suspend()
+        return manager, identity
+
+    def test_focused_owner_reconfirms_then_learns_view(self):
+        manager, owner = self.setup_owner()
+        side = near(A, .27)
+        for i, stamp in enumerate((11., 11.2, 11.4)):
+            row = manager.update(stamp, {'0:1': side}, focus='0:1')[0]
+            self.assertEqual(bool(row.person_id), i == 2)
+        self.assertEqual(row.person_id, owner)
+        self.assertEqual(len(manager.galleries[owner].views), 0)
+        row = manager.update(11.6, {'0:1': side}, focus='0:1')[0]
+        self.assertEqual(row.state, 'VERIFIED')
+        self.assertEqual(len(manager.galleries[owner].views), 1)
+        # The learned viewpoint may later identify a new track with normal search gates.
+        manager.suspend()
+        for stamp in (12., 12.2, 12.4):
+            row = manager.update(stamp, {'0:9': side})[0]
+        self.assertEqual(row.person_id, owner)
+
+    def test_no_relaxation_without_current_focus_or_when_occluded(self):
+        for enabled, focus, track, overlapped in (
+            (False, '0:1', '0:1', ()), (True, None, '0:1', ()),
+            (True, '0:1', '0:9', ()), (True, '0:1', '0:1', ('0:1',))):
+            manager, owner = self.setup_owner(enabled)
+            for stamp in (11., 11.2, 11.4, 11.6):
+                row = manager.update(stamp, {track: near(A, .27)}, overlapped, focus)[0]
+                self.assertFalse(row.person_id)
+            self.assertFalse(manager.galleries[owner].views)
+
+    def test_competitor_or_distant_descriptor_still_rejected(self):
+        for observations in ({'0:1': near(A, .27), '0:2': near(A, .27)},
+                             {'0:1': near(A, .34)}):
+            manager, owner = self.setup_owner()
+            for stamp in (11., 11.2, 11.4):
+                rows = manager.update(stamp, observations, focus='0:1')
+                self.assertTrue(all(not row.person_id for row in rows))
+            self.assertFalse(manager.galleries[owner].views)
+
+    def test_option_requires_boolean(self):
+        with self.assertRaises(ValueError):
+            IdentityConfig(owner_continuity_verify=1)
