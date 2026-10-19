@@ -1,3 +1,8 @@
+## 2026-10-19：Demo 关闭 ReID 重新认领
+
+- 按用户要求 demo 强制关闭 `REID_REACQUIRE_ENABLED`；修正共用 onboard 入口硬编码覆盖，改为可显式覆盖且通用默认仍 true。保留 VitTrack 连续性、ReID 观察输出及原主人超时，不改变速度、距离、暂停或运动授权。
+- 入口测试覆盖默认关闭、外部 true 被 demo 覆盖及 onboard 尊重 false；shell 语法与 diff 检查通过。同步至车端独立 demo 目录，不切换当前旧服务或开启运动；仅推送 demo 分支。
+
 ## 2026-10-18：Demo 分支同步最新 main
 
 - 用户明确授权推送 `demo/showcase-20261016`。以远端 demo（`cec24a7`）为基础合入 `origin/main`（`3c99368`）；demo 此前已通过 PR #30/#32 移入拍照推理、模型入库与 5060 推理服务，本次补齐 main 的远程 ROS 接入说明、ASR 运行开关（asr_manager）、Matcha 中文 TTS、10-14/10-15 部署与联调记录等提交。不改 main，不部署板端。

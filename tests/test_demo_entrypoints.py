@@ -24,6 +24,7 @@ class DemoEntry(unittest.TestCase):
         env = self.run_wrapper()
         self.assertEqual(env['MOTION_ENABLED'], 'false')
         self.assertEqual(env['WITH_DEMO_MOTION'], 'true')
+        self.assertEqual(env['REID_REACQUIRE_ENABLED'], 'false')
         self.assertEqual(env['FOLLOW_AUTO_ARM'], 'false')
         self.assertEqual(env['FOLLOW_TARGET_AUTO_RECOVER'], 'false')
         self.assertEqual(env['FOLLOW_PAUSE_ON_FALL'], 'true')
@@ -33,9 +34,20 @@ class DemoEntry(unittest.TestCase):
         self.assertEqual(env['FOLLOW_MAX_LINEAR_MPS'], '0.35')
 
     def test_explicit_motion_does_not_auto_arm(self):
-        env = self.run_wrapper(MOTION_ENABLED='true', FOLLOW_AUTO_ARM='true', FOLLOW_TARGET_AUTO_RECOVER='true')
+        env = self.run_wrapper(MOTION_ENABLED='true', FOLLOW_AUTO_ARM='true', FOLLOW_TARGET_AUTO_RECOVER='true', REID_REACQUIRE_ENABLED='true')
         self.assertEqual(env['MOTION_ENABLED'], 'true')
+        self.assertEqual(env['REID_REACQUIRE_ENABLED'], 'false')
         self.assertEqual(env['FOLLOW_AUTO_ARM'], 'false')
         self.assertEqual(env['FOLLOW_TARGET_AUTO_RECOVER'], 'false')
+
+    def test_onboard_preserves_reacquire_override(self):
+        prefix = (ROOT/'scripts/run_robot_onboard.sh').read_text().split('for device in ')[0]
+        for value in ('false', 'true'):
+            env = dict(os.environ, GEMINI_SERIAL='test', MODEL_PATH='/test',
+                       YOLO_PYTHON='/test', POSE_CONFIG='/test', REID_REACQUIRE_ENABLED=value)
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh') as script:
+                script.write(prefix+'\nprintf "%s" "$REID_REACQUIRE_ENABLED"'); script.flush()
+                result = subprocess.check_output(['bash', script.name], env=env, text=True)
+            self.assertEqual(result, value)
 
 if __name__ == '__main__': unittest.main()

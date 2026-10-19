@@ -3,6 +3,8 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export WITH_DEMO_MOTION=true
+# Prefer tracker continuity; disable appearance-based owner reacquisition in demo.
+export REID_REACQUIRE_ENABLED=false
 export FOLLOW_PAUSE_ON_FALL=true FOLLOW_TARGET_GRACE_S=0.0
 export POSE_CONFIG="${POSE_CONFIG:-$ROOT/ros2_ws/src/perception_bringup/config/pose_fixed_27cm_demo.yaml}"
 export MOTION_ENABLED="${MOTION_ENABLED:-false}"
