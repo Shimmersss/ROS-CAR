@@ -24,7 +24,9 @@ class DemoEntry(unittest.TestCase):
         env = self.run_wrapper()
         self.assertEqual(env['MOTION_ENABLED'], 'false')
         self.assertEqual(env['WITH_DEMO_MOTION'], 'true')
-        self.assertEqual(env['REID_REACQUIRE_ENABLED'], 'false')
+        self.assertEqual(env['AUTO_LOCK_SINGLE'], 'false')
+        self.assertEqual(env['SOT_ENABLED'], 'true')
+        self.assertEqual(env['REID_REACQUIRE_ENABLED'], 'true')
         self.assertEqual(env['FOLLOW_AUTO_ARM'], 'false')
         self.assertEqual(env['FOLLOW_TARGET_AUTO_RECOVER'], 'false')
         self.assertEqual(env['FOLLOW_PAUSE_ON_FALL'], 'true')
@@ -34,9 +36,11 @@ class DemoEntry(unittest.TestCase):
         self.assertEqual(env['FOLLOW_MAX_LINEAR_MPS'], '0.35')
 
     def test_explicit_motion_does_not_auto_arm(self):
-        env = self.run_wrapper(MOTION_ENABLED='true', FOLLOW_AUTO_ARM='true', FOLLOW_TARGET_AUTO_RECOVER='true', REID_REACQUIRE_ENABLED='true')
+        env = self.run_wrapper(MOTION_ENABLED='true', FOLLOW_AUTO_ARM='true', FOLLOW_TARGET_AUTO_RECOVER='true', REID_REACQUIRE_ENABLED='false', AUTO_LOCK_SINGLE='true', SOT_ENABLED='false')
         self.assertEqual(env['MOTION_ENABLED'], 'true')
-        self.assertEqual(env['REID_REACQUIRE_ENABLED'], 'false')
+        self.assertEqual(env['AUTO_LOCK_SINGLE'], 'false')
+        self.assertEqual(env['SOT_ENABLED'], 'true')
+        self.assertEqual(env['REID_REACQUIRE_ENABLED'], 'true')
         self.assertEqual(env['FOLLOW_AUTO_ARM'], 'false')
         self.assertEqual(env['FOLLOW_TARGET_AUTO_RECOVER'], 'true')
 

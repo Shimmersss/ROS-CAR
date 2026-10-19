@@ -46,11 +46,19 @@ class PoseTrackerNode(TrackerNode):
         self.reid_lock_enabled = self.get_parameter('reid_lock_enabled').value
         # Bridge-primary owner following: ReID only re-acquires the owner and vetoes another person.
         self.declare_parameter('reid_reacquire_enabled', False)
+        self.declare_parameter('reid_reacquire_only_after_loss', False)
+        self.declare_parameter('reid_reacquire_confirm_frames', 2)
+        self.declare_parameter('reid_reacquire_min_s', 0.)
         self.reid_reacquire_enabled = self.get_parameter('reid_reacquire_enabled').value
         if self.reid_reacquire_enabled:
             if self.reid_lock_enabled or not self.cfg['sot_enabled']:
                 raise ValueError('reid_reacquire_enabled requires sot_enabled and excludes reid_lock_enabled')
-            self.selection = OwnerSelection(lose_after_s=self.cfg['owner_continuity_reset_s'] or 1.)
+            self.selection = OwnerSelection(
+                lose_after_s=self.cfg['owner_continuity_reset_s'] or 1.,
+                max_age_s=self.get_parameter('reid_lock_max_age_s').value,
+                reacquire_frames=self.get_parameter('reid_reacquire_confirm_frames').value,
+                reacquire_only_after_loss=self.get_parameter('reid_reacquire_only_after_loss').value,
+                reacquire_min_s=self.get_parameter('reid_reacquire_min_s').value)
             self.create_subscription(PersonIdentityArray, 'person_identities',
                                      self.on_identities, 10, callback_group=self.state_group)
             self.owner_pub = self.create_publisher(PersonIdentity, 'owner_focus', 10)

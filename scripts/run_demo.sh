@@ -3,8 +3,10 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export WITH_DEMO_MOTION=true
-# Prefer tracker continuity; disable appearance-based owner reacquisition in demo.
-export REID_REACQUIRE_ENABLED=false
+# Continuous following uses detection/VitTrack; ReID only re-acquires a lost owner.
+export REID_ENABLED=true REID_REACQUIRE_ENABLED=true SOT_ENABLED=true
+# First claim and every expired-owner claim are explicit; never auto-pick another person.
+export AUTO_LOCK_SINGLE=false
 export FOLLOW_PAUSE_ON_FALL=true FOLLOW_TARGET_GRACE_S=0.6
 export POSE_CONFIG="${POSE_CONFIG:-$ROOT/ros2_ws/src/perception_bringup/config/pose_fixed_27cm_demo.yaml}"
 export MOTION_ENABLED="${MOTION_ENABLED:-false}"

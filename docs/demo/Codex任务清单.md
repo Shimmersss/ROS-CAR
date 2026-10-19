@@ -75,3 +75,7 @@ T2.2–T2.4 已实现，配置和验证边界见 [跌倒暂停与静止延续验
 - WORKLOG.md 每项一条；README 文档索引已指向 `docs/demo/`。
 - 不部署到 `/home/wheeltec/ROSCAR-current`；板端用独立目录（如 `/home/wheeltec/ROSCAR-demo`），切换前停 `roscar-robot.service`，展示后恢复。
 - 分支删除时连同 `demo_interfaces`、`demo_motion`、`docs/demo/` 一起删除。
+
+## 2026-10-19 主人跟随优化补充
+
+本机已实现并验证[连续跟随与丢失找回](主人连续跟随与丢失找回.md)：正常跟随不被 ReID 波动否决、异位置返回连续确认、主人过期后禁止自动认领陌生人；后台多视角补充保留。待用户安排一起部署，再验收真人找回率/误认率及跟随效果，本轮不勾选现场通过。

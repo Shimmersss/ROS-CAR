@@ -6,6 +6,9 @@
     # Recording trial: bypass temporal depth jump/relocalization rejection only.
     depth_gate_enabled: false
     owner_continuity_reset_s: 2.0
+    reid_reacquire_only_after_loss: true
+    reid_reacquire_confirm_frames: 3
+    reid_reacquire_min_s: 0.4
     pose_confidence: 0.5
     reid_lock_confirm_frames: 3
     reid_lock_max_age_s: 0.5
