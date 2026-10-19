@@ -7,6 +7,8 @@
 
 ## Demo 展示分支（仅 `demo/showcase-20261016`）
 
+- Demo 显式开启 `FOLLOW_ACKERMANN=true`：1.3米内两轴停车，距离足够才以受曲率限制的前进弧线转向；通用模式默认仍关闭。`FOLLOW_MIN_TURN_RADIUS_M=0.4` 是暂定软件边界，未作机械半径验收。跟随请求用稳定时钟，测量/授权/跌倒时效保护不变。控制说明与验证边界见 `docs/demo/20261019阿克曼跟随与测距核对.md`，只读状态协议见 `docs/interfaces/README.md`。
+
 - 本分支只为展示，之后删除，不合并 main；入口 `docs/demo/README.md`，剩余工作按 `docs/demo/Codex任务清单.md` 执行。一键入口 `scripts/run_demo.sh`（运动默认关闭、不自动续跟），合成验收 `scripts/test_demo_container.sh`。新增包 `demo_interfaces`、`demo_motion`（相对运动 `/demo/move_relative` 等）只在本分支存在。上述运动、急停与验收约定在本分支照常适用。
 
 ## 项目概况

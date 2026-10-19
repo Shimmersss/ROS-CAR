@@ -45,7 +45,7 @@ bash scripts/start_project.sh
 
 > `scripts/start_robot.sh` 会打开底盘串口、语音和跟随器，但默认运动关闭、几何确认关闭且不自动授权。开启运动能力仍需显式模式授权；相机/制动参数须现场核验。它默认仍走 B；新 Gemini 摄像头请用 C 入口。此轮未更改小车正在运行的服务。
 
-**对外 ROS 2 接口**：`ros2 launch roscar_api api.launch.py` 默认 IDLE、运动关闭、不启动硬件。外部速度只发 `/chassis/cmd_vel`，由唯一的 motion_guard 输出 `/cmd_vel`。不要与已包含 motion_guard 的入口叠加启动。详见 [ROS 接口使用文档](docs/ROS接口使用文档.md)。
+**对外 ROS 2 接口**（[demo 跟随状态补充](docs/interfaces/README.md)）：`ros2 launch roscar_api api.launch.py` 默认 IDLE、运动关闭、不启动硬件。外部速度只发 `/chassis/cmd_vel`，由唯一的 motion_guard 输出 `/cmd_vel`。不要与已包含 motion_guard 的入口叠加启动。详见 [ROS 接口使用文档](docs/ROS接口使用文档.md)。
 
 主人认领使用 `ros2 run roscar_api target claim [--id epoch:track_id]`；丢失满 10 秒释放旧主人并允许重新认领，不延长运动保护宽限。启用语音/TTS 后，主人和跟随阶段自动简短播报，舌苔逐阶段播报并等待播放完成。`ros2 run roscar_api interfaces --json` 可枚举全部运行中接口；API 可选接入语音、舌苔和云台，参数及调用示例集中在上述手册。
 
@@ -117,7 +117,7 @@ docs/      方案、接口、计划；docs/archive/ 为历史文档
 
 ## 文档索引
 
-**Demo 展示分支（`demo/showcase-20261016`，展示后删除）**：[Demo 文档入口](docs/demo/README.md) · [跌倒暂停与静止延续验收](docs/demo/跌倒暂停与静止延续验收.md) · [ReID 确认链修复](docs/demo/20261019ReID低帧率修复.md) · [主人找回优化](docs/demo/20261019主人找回优化.md) · [跟随请求超时修复](docs/demo/20261019跟随请求超时修复.md) · [主人跟随与找回](docs/demo/主人连续跟随与丢失找回.md) · [跟随实录分析](docs/demo/20261019跟随实录分析.md) · [车端部署与补录](docs/demo/车端部署与补录.md) · [1.3 m 出画评估](docs/demo/1.3米近距离出画离线评估.md) · [A2a/A4 离线优化](docs/demo/A2a与A4离线优化.md) · [T2.6 离线优化评估](docs/demo/T2.6离线检测优化评估.md) · [相对运动 ROS 接口](docs/demo/相对运动ROS接口.md) · [Codex 任务清单](docs/demo/Codex任务清单.md)
+**Demo 展示分支（`demo/showcase-20261016`，展示后删除）**：[Demo 文档入口](docs/demo/README.md) · [跌倒暂停与静止延续验收](docs/demo/跌倒暂停与静止延续验收.md) · [ReID 确认链修复](docs/demo/20261019ReID低帧率修复.md) · [主人找回优化](docs/demo/20261019主人找回优化.md) · [阿克曼跟随与测距核对](docs/demo/20261019阿克曼跟随与测距核对.md) · [跟随请求超时修复](docs/demo/20261019跟随请求超时修复.md) · [主人跟随与找回](docs/demo/主人连续跟随与丢失找回.md) · [跟随实录分析](docs/demo/20261019跟随实录分析.md) · [车端部署与补录](docs/demo/车端部署与补录.md) · [1.3 m 出画评估](docs/demo/1.3米近距离出画离线评估.md) · [A2a/A4 离线优化](docs/demo/A2a与A4离线优化.md) · [T2.6 离线优化评估](docs/demo/T2.6离线检测优化评估.md) · [相对运动 ROS 接口](docs/demo/相对运动ROS接口.md) · [Codex 任务清单](docs/demo/Codex任务清单.md)
 
 - [5060 推理服务启停](docs/5060推理服务启停.md)：`roscar-infer` 启停/状态/日志、开机自启、隧道端口占用处理
 - [云端推理部署与迁移](docs/云端推理部署与迁移.md)：新电脑部署三个模型、SSH迁移、小车推理/上传端口与token更新

@@ -90,5 +90,45 @@ class FollowControlTest(unittest.TestCase):
             FollowConfig(bearing_deadband_rad=0.7, turn_in_place_rad=0.6)
 
 
+class AckermannFollowTest(unittest.TestCase):
+    def setUp(self):
+        self.config = FollowConfig(target_distance_m=1.3, max_linear_mps=.2,
+            distance_gain=1., bearing_gain=1.6, ackermann=True, min_turn_radius_m=.4)
+
+    def test_close_target_stops_both_axes_even_when_off_center(self):
+        for distance in (.4, 1., 1.3):
+            for bearing in (-.7, 0., .7):
+                self.assertEqual(compute_command(distance, bearing, True, self.config), (0., 0.))
+
+    def test_far_target_turns_in_an_arc_beyond_legacy_in_place_threshold(self):
+        for bearing in (-.7, .7):
+            v, w = compute_command(2., bearing, True, self.config)
+            self.assertGreater(v, 0.)
+            self.assertLessEqual(v, .2)
+            self.assertLess(w*bearing, 0.)
+            self.assertLessEqual(abs(w), v/.4+1e-12)
+
+    def test_front_center_follows_and_behind_stops(self):
+        self.assertEqual(compute_command(2., 0., True, self.config), (.2, 0.))
+        for bearing in (-math.pi, -math.pi/2, math.pi/2, math.pi):
+            self.assertEqual(compute_command(2., bearing, True, self.config), (0., 0.))
+
+    def test_no_minimum_creep_or_reverse_and_all_limits_hold(self):
+        for distance in (.5, 1.3, 1.300001, 1.4, 2., 5.):
+            for i in range(-160, 161):
+                bearing=i/100.
+                v,w=compute_command(distance,bearing,True,self.config)
+                self.assertGreaterEqual(v,0.)
+                self.assertLessEqual(v,.2)
+                self.assertLessEqual(abs(w),min(.5,v/.4)+1e-12)
+        self.assertLess(compute_command(1.300001,.3,True,self.config)[0],.00001)
+
+    def test_invalid_observation_and_configuration(self):
+        for distance,bearing,tracked in ((2.,0.,False),(math.nan,0.,True),(2.,math.nan,True)):
+            self.assertEqual(compute_command(distance,bearing,tracked,self.config),(0.,0.))
+        for kw in ({'ackermann':1},{'min_turn_radius_m':0.},{'min_turn_radius_m':math.nan}):
+            with self.assertRaises(ValueError):FollowConfig(**kw)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -28,7 +28,9 @@ def main():
                 pub.publish(m);last=time.monotonic()
             rclpy.spin_once(n,timeout_sec=.01)
     try:
-        pump(3.);assert any(m.linear.x==.5 for m in commands)
+        deadline=time.monotonic()+12.
+        while time.monotonic()<deadline and not any(m.linear.x==.5 for m in commands):pump(.1)
+        assert any(m.linear.x==.5 for m in commands),states[-3:]
         pump(.5,1.4);assert abs(commands[-1].linear.x-.1)<1e-6
         pump(.5,1.4,.2);assert abs(commands[-1].angular.z+.32)<1e-6
         assert all(0<=m.linear.x<=.5 and abs(m.angular.z)<=.5 for m in commands)

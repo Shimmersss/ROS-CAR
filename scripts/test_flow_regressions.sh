@@ -29,3 +29,5 @@ done
 ROS_DOMAIN_ID=186 python3 tests/test_speech_api_runtime.py
 ROS_DOMAIN_ID=194 python3 tests/test_asr_switch_runtime.py
 ROS_DOMAIN_ID=222 python3 tests/test_guard_request_scheduling_runtime.py
+ROS_DOMAIN_ID=225 python3 tests/test_ackermann_follow_runtime.py
+ROS_DOMAIN_ID=227 python3 tests/test_follower_steady_timer_runtime.py

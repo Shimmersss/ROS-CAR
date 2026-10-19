@@ -18,7 +18,7 @@ TOPICS = ['/camera/color/image_raw', '/camera/color/image_rect',
           '/perception/fall_alarm', '/perception/owner_state',
           '/perception/owner_focus', '/perception/performance',
           '/perception/person_identities', '/perception/target_state',
-          '/control/state', '/control/cmd_vel_request', '/cmd_vel', '/odom',
+          '/control/state', '/control/follow_state', '/control/cmd_vel_request', '/cmd_vel', '/odom',
           '/tf', '/tf_static', '/rosout']
 REQUIRED = ['/camera/color/image_raw', '/camera/depth/image_raw',
             '/perception/person_states', '/perception/fall_alarm', '/odom']

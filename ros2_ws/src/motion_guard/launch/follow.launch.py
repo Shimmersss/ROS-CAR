@@ -24,6 +24,8 @@ def start(context):
                     'max_linear_mps':linear,
                     'distance_gain':float(LaunchConfiguration('distance_gain').perform(context)),
                     'bearing_gain':float(LaunchConfiguration('bearing_gain').perform(context)),
+                    'ackermann':LaunchConfiguration('ackermann').perform(context)=='true',
+                    'min_turn_radius_m':float(LaunchConfiguration('min_turn_radius_m').perform(context)),
                     'max_angular_rps':float(c['max_angular_rps']),
                     'target_distance_m':float(LaunchConfiguration('target_distance_m').perform(context))}]),
             Node(package='motion_guard',executable='guard',output='screen',
@@ -68,4 +70,6 @@ def generate_launch_description():
         DeclareLaunchArgument('max_linear_mps',default_value=''),
         DeclareLaunchArgument('distance_gain',default_value='0.6'),
         DeclareLaunchArgument('bearing_gain',default_value='1.2'),
+        DeclareLaunchArgument('ackermann',default_value='false',choices=['true','false']),
+        DeclareLaunchArgument('min_turn_radius_m',default_value='0.4'),
         OpaqueFunction(function=start)])

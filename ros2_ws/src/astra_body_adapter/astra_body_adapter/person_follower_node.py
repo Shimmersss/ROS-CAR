@@ -13,6 +13,7 @@ import signal
 import rclpy
 from rclpy.signals import SignalHandlerOptions
 from rclpy.node import Node
+from rclpy.clock import Clock, ClockType
 from rcl_interfaces.msg import ParameterDescriptor
 
 from .performance import Performance
@@ -37,6 +38,8 @@ class PersonFollowerNode(Node):
         self.declare_parameter('max_angular_rps', defaults.max_angular_rps)
         self.declare_parameter('distance_gain', defaults.distance_gain)
         self.declare_parameter('bearing_gain', defaults.bearing_gain)
+        self.declare_parameter('ackermann', defaults.ackermann)
+        self.declare_parameter('min_turn_radius_m', defaults.min_turn_radius_m)
         self.declare_parameter('message_timeout_s', 0.5)
 
         self.config = FollowConfig(
@@ -51,6 +54,8 @@ class PersonFollowerNode(Node):
             max_angular_rps=self.get_parameter('max_angular_rps').value,
             distance_gain=self.get_parameter('distance_gain').value,
             bearing_gain=self.get_parameter('bearing_gain').value,
+            ackermann=self.get_parameter('ackermann').value,
+            min_turn_radius_m=self.get_parameter('min_turn_radius_m').value,
         )
         self.message_timeout_s = float(
             self.get_parameter('message_timeout_s').value)
@@ -72,13 +77,18 @@ class PersonFollowerNode(Node):
         self.latest_target = None
         self.received_at = None
         self.publisher = self.create_publisher(TwistStamped, '/control/cmd_vel_request', 1)
+        self.state_publisher = self.create_publisher(String, '/control/follow_state', 10)
+        self._state_reason, self._state_at = None, -math.inf
         self.subscription = self.create_subscription(
             TargetState,
             '/perception/target_state',
             self._target_callback,
             10,
         )
-        self.timer = self.create_timer(0.05, self._control_tick)
+        # Keep request/zero heartbeats running when ROS time pauses or steps.
+        # Target freshness still checks both real arrival age and ROS stamps.
+        self.timer = self.create_timer(0.05, self._control_tick,
+                                       clock=Clock(clock_type=ClockType.STEADY_TIME))
         self.get_logger().info(
             'person follower ready; nonzero requests require fresh ARMED_FOLLOW authority')
 
@@ -162,6 +172,21 @@ class PersonFollowerNode(Node):
                 self.config,
             )
         self._publish(linear, angular)
+        reason = ('target_invalid_or_stale' if not usable else
+                  'not_authorized' if not authorized else
+                  'fall_paused' if fall_blocked else
+                  'within_follow_distance' if target.horizontal_distance_m <= (
+                      self.config.target_distance_m+self.config.distance_deadband_m) else
+                  'outside_forward_half_plane' if self.config.ackermann and abs(target.bearing_rad) >= math.pi/2 else
+                  'following')
+        if reason != self._state_reason or now-self._state_at >= 1.:
+            self._state_reason, self._state_at = reason, now
+            self.state_publisher.publish(String(data=json.dumps(dict(
+                reason=reason, target_id=target.target_id if target is not None else '',
+                distance_m=target.horizontal_distance_m if usable else None,
+                bearing_rad=target.bearing_rad if usable else None,
+                target_distance_m=self.config.target_distance_m,
+                ackermann=self.config.ackermann, linear_mps=linear, angular_rps=angular))))
         if usable:
             self.performance.record('control_latency', self.performance.observation_age(target.observation_stamp))
 
