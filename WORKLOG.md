@@ -2087,3 +2087,18 @@
 - 新增 `services/inference_gateway/deploy/roscar-infer`：tongue/gateway/tunnel 三个独立守护循环（进程组、pid、日志、崩溃自动重启、网关等待舌诊就绪）；start/stop/restart/status/logs/test、stop-legacy（精确命令行匹配并支持 --dry-run）、WSL boot 与 Windows 登录计划任务的安装/卸载。安装到 5060 `/root/roscar-models/bin/roscar-infer`，与仓库版本哈希一致。
 - 5060 实测：dry-run 仅列出 4 个已知旧进程后完成迁移，约 30 秒网关就绪；`test` 四任务结果符合预期（pcb/helmet ok 且标注图 SHA 正确，tongue 合成图 retake，face 不可用）；强制杀网关子进程后 5 秒自动恢复；停隧道时小车 18200 立即释放，重启后重新绑定，小车经隧道 /health/ready 三模型 ready。`/etc/wsl.conf` 增加 boot 命令（已备份），注册当前用户登录计划任务 `ROSCAR WSL inference` 并手动触发验证运行。未做 `wsl --shutdown`/Windows 重启的实际开机验证。
 - 遗留：小车 sshd 无 ClientAlive，异常断网后旧会话仍可能占用 18200 约 2 小时；文档给出需用户 sudo 一次的配置。新增 `docs/5060推理服务启停.md` 并登记 README。仅本地提交，未推送。
+
+## 2026-10-19：Demo 按需 ROS 模式、面诊采集与常驻语音
+
+- 用户现场确认当前跟随及跌倒效果良好，授权整理完整 ROS 调用、自启动、互斥与内存管理；面诊明确只交付采集，返回模型未接入。此前 60 秒实车跟随记录 `data/demo-trials/20261019-201841-gpu-follow60` 已 STOP，录制自然收尾 returncode=0（140.43 秒含准备），不作为本轮接口静止验证的运动记录。保留原算法、1.3 m、0.2 m/s、当前转向和跌倒暂停参数。
+- 新 `demo_motion/runtime_manager` 和 `SetRuntimeMode`：语音/唯一 TTS、底盘、唯一 motion_guard 与轻量控制器常驻；FOLLOW/PERCEPTION、ROS_CONTROL、RELATIVE、FACE、FACE_UPLOAD、PCB、HELMET、TONGUE 互斥。新模式先 STOP、取消自身 goal，等待旧 cgroup、相机和租约释放；不恢复旧授权、不清非目标故障或 ESTOP。FOLLOW 调用自身认领并以零请求和当前 epoch 授权，无需额外人工授权步骤；开机仍 IDLE/DISARMED，不加载相机/模型、不录制。
+- ROS 速度经 `/robot/cmd_vel` 输入，调度器独占 `/chassis/cmd_vel`；保留时间戳/支持轴校验、0.2 秒输入超时及 Ackermann 曲率限制，授权前的输入不复用。跟随内部请求仅透传原时间戳；原相对运动接口在 RELATIVE 模式独占，通过同一速度出口。修复相对控制器退出时向已关闭 ROS context 发布零的清理异常。
+- 面诊新增 `/face/capture`（CaptureFace）：复用原新鲜采集、TTS 完成确认、TaskHold、静止里程计与质量检查，以 collect 模式直接返回原始 JPEG 和采集时间戳，明确 `model_not_integrated`；原图不落盘、无模型或模拟结论。CaptureTask.Result 增加独立 original_image，与 annotated_image 分开，板端统一重编译接口及客户端。旧 `/capture/face` 上传保留，但既有接收端对 ROS 自建 task_id 返回 upload_http_404，此外部接入问题未宣称解决。
+- 按模式只开必要资源：采集仅原始 RGB、不启深度/配准/本机 Pose/ReID/VitTrack；退出直接终止模型进程释放内存。车端稳态待机可用内存约 3.8 GB，旧全栈约 2.2 GB；感知运行时约 2.3 GB。该快照受 ASR 预热/缓存影响，不作为固定内存保证。
+- 部署 `/home/wheeltec/ROSCAR-demo-20261016`，current 不变；`roscar-robot.service` 改用 `deploy/systemd/roscar-demo-runtime.service`，enabled、Restart=no。旧持久与运行时 drop-in 存于 `/home/wheeltec/.config/roscar/backups/demo-runtime-20261019-203900`；旧 capture-inference/c518 适配常驻服务停用。唯一重型单元 BindsTo 核心服务，整个 cgroup 退出后才允许下一模式。保留原私有凭据、模型与部署备份。
+- 软件验证：完整纯 Python CI 脚本通过；demo_motion 20 项、采集 flow 11 项通过。Jetson Humble 实际 colcon 构建 demo_interfaces、capture_task_interfaces、capture_task、demo_motion、motion_guard 通过；隔离 ROS 域 228 用真实 manager/guard 与合成输入验证冷启动待机、零握手、FOLLOW→ROS_CONTROL、陈旧/授权前输入、面诊未接模型、采集后清理、取消旧推理再启动新模式、STOP 取消待启动跟随；旧相对运动合成 ROS 回归通过，采集 API 14 项与推理 API 6 项回归通过。launch 默认兼容检查通过。隔离输入/假模型不算实车识别。
+- 车端静止接口验证：PERCEPTION 加载真实相机/Pose 后退出；面诊 collect 返回真实 640×480 JPEG（约 31 KB）及 model_not_integrated，RGB=1、深度/人体发布者=0；PCB/安全帽真实网关返回 analyzed 和标注图（空场景无目标），舌苔真实网关对无舌体画面返回 retake；不据此声称内容准确率通过。ROS_CONTROL 仅以零请求进入/退出，RELATIVE 加载及退出；`/voice/say` 返回 completed/Playback completed。整段观察非零底盘命令=0，最终相机=0、/cmd_vel 唯一、IDLE/DISARMED、无 TaskHold。
+- 故障生命周期实测：在无运动的 RELATIVE 模式强制结束核心主进程，核心 failed 且子模式 inactive，没有自动重启；人工 start 后回到 IDLE/DISARMED、无相机/录像、唯一底盘出口。验证用户服务重启与故障清理，未做断电重启验收。
+- 最小审查：逐项核对取消代次、晚到授权/goal、唯一速度发布者、故障锁存、模式白名单、无 shell 输入拼接、完整 cgroup 退出、图像/凭据不入 Git、collect 不访问 HTTP/模型；修复旧发现信息滞留导致清理误超时，优雅 SIGINT 并使用有上限等待；终态 goal 不重复取消。接口文档/README 索引、demo 入口说明及长期 AGENTS 入口同步维护。
+- 验证证据保留本机 `artifacts/demo-runtime-validation/` 和车端 `artifacts/demo-runtime-onboard.json`、`demo-face-onboard.json`、`demo-runtime-lifecycle.json` 及日志；不提交图像/录像/模型。只提交、推送 demo/showcase-20261016，main 不变。剩余边界：旧上传接收端接入、机械/绝对测距标定、各模型内容准确率及断电开机现场验收。
+- 收尾清理：车端仅删除本任务五个包的可重建 build 目录约 12 MB，保留 install、源码、原始录制、模型、服务备份和全部验证证据；没有创建新环境、容器或下载大文件。

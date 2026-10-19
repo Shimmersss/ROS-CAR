@@ -1,0 +1,18 @@
+[Unit]
+Description=ROSCAR demo voice and on-demand mutually exclusive ROS modes
+Conflicts=roscar-capture-inference.service c518-capture-adapter.service
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/roscar/robot.env
+WorkingDirectory=/home/wheeltec/ROSCAR-current
+ExecStart=/bin/bash /home/wheeltec/ROSCAR-current/scripts/run_demo_onboard.sh
+KillMode=control-group
+TimeoutStopSec=30
+SendSIGKILL=yes
+Restart=no
+StandardOutput=journal
+StandardError=inherit
+
+[Install]
+WantedBy=default.target

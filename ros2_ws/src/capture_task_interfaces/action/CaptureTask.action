@@ -11,6 +11,8 @@ string capture_id
 string upload_json
 string result_json
 sensor_msgs/CompressedImage annotated_image
+# Only collect mode returns the original image here; never an inferred annotation.
+sensor_msgs/CompressedImage original_image
 ---
 string phase
 string detail

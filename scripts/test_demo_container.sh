@@ -8,9 +8,10 @@ docker run --rm -e ROS_LOCALHOST_ONLY=1 -e ROS_DOMAIN_ID=214 \
   "${ROSCAR_C_TEST_IMAGE:-roscar-humble-test}" bash -c '
     set -e
     source /opt/ros/humble/setup.bash
-    colcon build --base-paths /workspace/ros2_ws/src --packages-up-to demo_motion motion_guard yolo_person_tracker
+    colcon build --base-paths /workspace/ros2_ws/src --packages-up-to demo_motion motion_guard yolo_person_tracker capture_task
     source install/setup.bash
     PYTHONPATH=/workspace/ros2_ws/src/demo_motion python3 -m pytest -q -p no:cacheprovider /workspace/ros2_ws/src/demo_motion/test
+    ROS_DOMAIN_ID=228 python3 /workspace/tests/test_demo_runtime_manager.py
     python3 /workspace/tests/test_demo_launch.py
     python3 /workspace/tests/test_demo_relative_motion_runtime.py
     python3 /workspace/tests/test_demo_entrypoints.py

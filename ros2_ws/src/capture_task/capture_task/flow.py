@@ -40,14 +40,15 @@ class CaptureFlow:
             frames.append((frame, measure(frame.rgb)))
         ports.stage('QUALITY')
         infer = getattr(ports, 'pipeline_mode', 'upload') == 'infer'
-        selected = [max(frames,key=lambda item:item[1]['sharpness'])] if infer or task['upload'] == 'best' else frames
+        collect = getattr(ports, 'pipeline_mode', 'upload') == 'collect'
+        selected = [max(frames,key=lambda item:item[1]['sharpness'])] if infer or collect or task['upload'] == 'best' else frames
         records = []
         # Check all selected frames before uploading any in fail policy.
         for frame, metrics in selected:
             issues = warnings(metrics,task)
             if issues and defaults['quality_policy'] == 'fail':
                 raise ValueError('quality_failed:'+','.join(issues))
-        ports.stage('INFER' if infer else 'UPLOAD')
+        ports.stage('COLLECT' if collect else 'INFER' if infer else 'UPLOAD')
         for index, (frame, metrics) in enumerate(selected):
             ports.check()
             issues = warnings(metrics,task)
@@ -57,7 +58,9 @@ class CaptureFlow:
                           frame_index=index, frame_sequence=frame.sequence, frame_stamp=frame.ros_stamp,
                           capture_time=datetime.fromtimestamp(frame.ros_stamp,timezone.utc).isoformat(), quality=metrics,
                           warnings=issues, bytes=len(image),sha256=hashlib.sha256(image).hexdigest())
-            if infer:
+            if collect:
+                ports.collect(image, record)
+            elif infer:
                 analysis = ports.infer(image, record)
                 record['analysis'] = analysis
             else:
@@ -65,7 +68,10 @@ class CaptureFlow:
             ports.check()
             ports.record(record,image)
             records.append(record)
-        if infer:
+        if collect:
+            ports.stage('DONE_ANNOUNCE'); ports.speak('图像采集完成，面诊模型尚未接入。')
+            ports.stage('CAPTURED', 'model_not_integrated')
+        elif infer:
             status = records[0]['analysis']['status']
             ports.stage('DONE_ANNOUNCE')
             if status in ('ok', 'uncertain'):

@@ -108,3 +108,16 @@ def test_failed_notification_preserves_original_outcome():
     ports=FailedSpeaker()
     assert failure_result(ports,'upload_http_500')==dict(status='failed',detail='upload_http_500')
     assert ports.reason=='RuntimeError'
+
+
+def test_collect_returns_capture_without_http_or_model(catalog):
+    class Collect(Ports):
+        pipeline_mode='collect'
+        def upload(self,*args):raise AssertionError('collect must not upload')
+        def infer(self,*args):raise AssertionError('collect must not infer')
+        def collect(self,image,record):self.image=image;record['model_status']='model_not_integrated'
+    ports=Collect()
+    records=CaptureFlow().run(ports,dict(task_id='t',task_type='face'),catalog.tasks['face'],catalog.defaults)
+    assert len(records)==1 and records[0]['model_status']=='model_not_integrated'
+    assert ports.image[:2]==b'\xff\xd8' and ports.phases[-1]=='CAPTURED'
+    assert '模型尚未接入' in ports.said[-1]

@@ -22,6 +22,11 @@ Registration(data)
 assert (data['color_intrinsic']['width'],data['color_intrinsic']['height'])==(640,480)
 assert (data['depth_intrinsic']['width'],data['depth_intrinsic']['height'])==(640,400)
 PY
+GEMINI_DEPTH_ENABLED="${GEMINI_DEPTH_ENABLED:-true}"
+[[ "$GEMINI_DEPTH_ENABLED" == true || "$GEMINI_DEPTH_ENABLED" == false ]] || exit 2
+if [[ "$GEMINI_DEPTH_ENABLED" == false && "${GEMINI_INPROCESS_REGISTRATION:-false}" != true ]]; then
+  echo 'RGB-only requires registration disabled.' >&2; exit 2
+fi
 PIDS=()
 # shellcheck disable=SC2329 # Invoked by EXIT/INT/TERM traps.
 cleanup() {
@@ -39,7 +44,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 setsid ros2 launch astra_camera gemini.launch.xml camera_name:=camera \
   serial_number:="$GEMINI_SERIAL" depth_registration:=false \
-  enable_color:=true enable_depth:=true enable_ir:=false enable_point_cloud:=false \
+  enable_color:=true enable_depth:="$GEMINI_DEPTH_ENABLED" enable_ir:=false enable_point_cloud:=false \
   color_width:=640 color_height:=480 color_fps:=30 \
   depth_width:=640 depth_height:=400 depth_fps:=30 &
 PIDS+=("$!")

@@ -66,13 +66,13 @@ class CaptureExecutor(Node):
         defaults = dict(catalog=str(Path(get_package_share_directory('capture_task'))/'config/tasks.yaml'),
                         camera_topic='/camera/color/image_raw',camera_profile='raw_rgb_v1',safety_profile='bench',
                         cloud_url='http://127.0.0.1:8090',robot_id='roscar-01',storage_dir='artifacts/capture-task',
-                        save_images=False,token_file='',hold_lease_sec=3.,pipeline_mode='upload',
+                        allowed_task_type='',save_images=False,token_file='',hold_lease_sec=3.,pipeline_mode='upload',
                         inference_url='',inference_token_file='',return_original_image=False)
         for key,value in defaults.items():
             self.declare_parameter(key,value,ParameterDescriptor(read_only=True))
         self.cfg={key:self.get_parameter(key).value for key in defaults}
         self.pipeline_mode=self.cfg['pipeline_mode']
-        if self.pipeline_mode not in ('upload','infer'):
+        if self.pipeline_mode not in ('upload','infer','collect'):
             raise ValueError('invalid_pipeline_mode')
         self.inference=None
         if self.pipeline_mode=='infer':
@@ -143,6 +143,10 @@ class CaptureExecutor(Node):
                 return self.rejection(request,'busy')
             try:
                 identifier(request.task_id)
+                if self.pipeline_mode == 'collect' and request.task_type != 'face':
+                    raise ValueError('collect_face_only')
+                if self.cfg['allowed_task_type'] and request.task_type != self.cfg['allowed_task_type']:
+                    raise ValueError('mode_task_mismatch')
                 if request.source not in ('cloud','local_test','ros_api'):
                     raise ValueError()
                 params=loads(request.params_json or '{}')
@@ -168,7 +172,7 @@ class CaptureExecutor(Node):
 
     def tick(self):
         job=self.job
-        state=dict(active=job is not None,pipeline_mode=self.pipeline_mode,task_id=job.request.task_id if job else '',
+        state=dict(active=job is not None,pipeline_mode=self.pipeline_mode,task_mode=self.cfg['allowed_task_type'],task_id=job.request.task_id if job else '',
                    task_type=job.request.task_type if job else '',phase=job.phase if job else 'IDLE',detail=job.detail if job else '',
                    camera_ok=self.count_publishers(self.cfg['camera_topic'])==1,tts_ok=self.speech.server_is_ready())
         self.state_pub.publish(String(data=json.dumps(state)))
@@ -403,6 +407,10 @@ class CaptureExecutor(Node):
             self.job.pending_images.append((root/'image.jpg',image))
         self.job.records.append(record)
 
+    def collect(self,image,record):
+        self.job.original_image=image
+        record['model_status']='model_not_integrated'
+
     def infer(self,image,record):
         job=self.job
         timeout=job.task.get('inference',{}).get('timeout_sec',120.)
@@ -433,7 +441,7 @@ class CaptureExecutor(Node):
             self.check()
             for image_path,image in job.pending_images:
                 self.check();image_path.write_bytes(image)
-            status=('retake' if records[0]['analysis']['status']=='retake' else 'analyzed') if self.pipeline_mode=='infer' else 'uploaded'
+            status='captured' if self.pipeline_mode=='collect' else ('retake' if records[0]['analysis']['status']=='retake' else 'analyzed') if self.pipeline_mode=='infer' else 'uploaded'
             detail=job.detail
         except Cancelled:
             status='cancelled';detail='cancelled'
@@ -467,9 +475,9 @@ class CaptureExecutor(Node):
                     release_ok=False
                 if not release_ok:
                     status='failed';detail='hold_release_unconfirmed'
-            if status in ('uploaded','analyzed','retake') and (job.cancel.is_set() or goal.is_cancel_requested):
+            if status in ('uploaded','analyzed','retake','captured') and (job.cancel.is_set() or goal.is_cancel_requested):
                 status='cancelled';detail='cancelled'
-            if status not in ('uploaded','analyzed'):
+            if status not in ('uploaded','analyzed','captured'):
                 for image_path,_ in job.pending_images:
                     image_path.unlink(missing_ok=True)
             job.pending_images.clear()
@@ -484,7 +492,7 @@ class CaptureExecutor(Node):
             self.result_pub.publish(String(data=json.dumps(data,ensure_ascii=False)))
             if goal.is_cancel_requested:
                 goal.canceled()
-            elif status in ('uploaded','analyzed','retake'):
+            elif status in ('uploaded','analyzed','retake','captured'):
                 goal.succeed()
             else:
                 goal.abort()
@@ -492,6 +500,11 @@ class CaptureExecutor(Node):
                                       upload_json=json.dumps([r['receipt'] for r in job.records if 'receipt' in r]),
                                       result_json=job.result_json)
             # A failed cleanup must never expose an apparently successful annotation.
+            if status=='captured':
+                result.original_image=CompressedImage(format='jpeg',data=job.original_image)
+                stamp=job.records[0]['frame_stamp']
+                result.original_image.header.stamp.sec=int(stamp)
+                result.original_image.header.stamp.nanosec=int((stamp-int(stamp))*1e9)
             if status=='analyzed':
                 result.annotated_image=CompressedImage(format='jpeg',data=job.annotated_image)
                 if job.original_image and self.original_pub:

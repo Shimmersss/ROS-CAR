@@ -22,10 +22,12 @@
 
 ## 本轮入口
 
-- `bash scripts/run_demo_onboard.sh`：车端默认开机入口，读取私有配置后强制运动关闭、不自动授权；服务与回退见[车端部署与补录](车端部署与补录.md)。
+- `bash scripts/run_demo_onboard.sh`：车端按需开机入口，语音、唯一底盘/guard 常驻；开机 IDLE/DISARMED、不启相机、不录制。调用 `/follow/start` 才启动当前跟随及跌倒并完成授权；其余模式互斥。见[按需模式 ROS 接口](../interfaces/Demo按需模式ROS接口.md)。
 
 - `bash scripts/run_demo.sh`：沿用板端相机/模型必填环境变量，增加相对运动节点，关闭语音运动适配器。默认运动关闭，跟随自动授权关闭，运动启用时仅目标故障自动恢复；跟随距离默认 1.3 m（用户最新选择）、速度上限 0.35 m/s。相对动作自身仍限 0.2 m/s。开启运动仍需现场授权。
-- `bash scripts/test_demo_container.sh`：复用 `roscar-humble-test`，编译 9 个相关包并运行纯 Python、launch 条件及合成 ROS 回归；容器退出自动删除，证据在 `artifacts/demo-validation/acceptance.log`。测试无硬件，不能作为实车验收。
+- `bash scripts/test_demo_container.sh`：复用 `roscar-humble-test`，编译相关主动包及接口依赖并运行纯 Python、launch 条件及合成 ROS 回归；容器退出自动删除，证据在 `artifacts/demo-validation/acceptance.log`。测试无硬件，不能作为实车验收。
 - `python3 tests/test_demo_entrypoints.py`：验证演示入口默认关闭运动、显式开启也不自动授权跟随。
 
 已接入跌倒暂停、静止延续与主人冻结，详见验收文档。demo 目标运动宽限为 0.6 秒，最终 guard 独立保证跌倒立即输出零速度，运动/里程计失效会作废延续框；停车前已出画的人仍无法靠旧框找回。已部署到板端独立目录，见[车端部署与补录](车端部署与补录.md)；现场标定及新版本实车效果仍待验收。
+
+- [Demo 按需模式 ROS 接口](../interfaces/Demo按需模式ROS接口.md)：语音常开，跟随、ROS 控制、面诊采集与检测模式按需互斥启动。

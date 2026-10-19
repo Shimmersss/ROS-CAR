@@ -8,4 +8,5 @@ setup(name='demo_motion', version='0.0.1', packages=['demo_motion'],
       install_requires=['setuptools'], license='Proprietary',
       maintainer='ROSCAR', maintainer_email='maintainer@example.invalid',
       description='Demo-branch only relative motion executor', entry_points={'console_scripts': [
-          'relative_motion = demo_motion.relative_motion_node:main']})
+          'relative_motion = demo_motion.relative_motion_node:main',
+          'runtime_manager = demo_motion.runtime_node:main']})

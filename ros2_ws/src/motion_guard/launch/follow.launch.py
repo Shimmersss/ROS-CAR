@@ -19,6 +19,7 @@ def start(context):
     recover=LaunchConfiguration('target_auto_recover').perform(context)=='true'
     linear=float(LaunchConfiguration('max_linear_mps').perform(context) or c['max_linear_mps'])
     return [Node(package='astra_body_adapter',executable='person_follower',output='screen',
+                 remappings=[('/control/cmd_vel_request', LaunchConfiguration('follow_request_topic'))],
                  parameters=[{'pause_on_fall':pause, 'fall_resume_s':float(LaunchConfiguration('fall_resume_s').perform(context)), 'enabled':True,'expected_source':source,'base_frame':c['base_frame'],
                     'performance_enabled':LaunchConfiguration('performance_enabled').perform(context)=='true',
                     'max_linear_mps':linear,
@@ -48,6 +49,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('safety_config',default_value=str(Path(
             get_package_share_directory('motion_guard'))/'config/safety.yaml')),
+        DeclareLaunchArgument('follow_request_topic',default_value='/control/cmd_vel_request'),
         DeclareLaunchArgument('motion_enabled',default_value='false',choices=['true','false']),
         DeclareLaunchArgument('radar_required',default_value='false',choices=['true','false']),
         # Follow-only: arm by itself once every check passes; STOP returns to IDLE and is not undone.

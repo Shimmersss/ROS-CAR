@@ -1,0 +1,9 @@
+# IDLE, FOLLOW, PERCEPTION (stationary preview), ROS_CONTROL, RELATIVE,
+# FACE (capture only), FACE_UPLOAD, PCB, HELMET, TONGUE.
+string mode
+# FOLLOW only: empty selects the central fresh tracked person.
+string target_id
+---
+bool success
+string mode
+string detail

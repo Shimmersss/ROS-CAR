@@ -1,0 +1,11 @@
+string task_id
+string announce
+float64 prepare_sec
+float64 timeout_sec
+---
+bool success
+string status
+string detail
+string task_id
+string capture_id
+sensor_msgs/CompressedImage image

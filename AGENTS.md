@@ -9,9 +9,11 @@
 
 - Demo 显式开启 `FOLLOW_ACKERMANN=true`：1.3米内两轴停车，距离足够才以受曲率限制的前进弧线转向；通用模式默认仍关闭。`FOLLOW_MIN_TURN_RADIUS_M=0.4` 是暂定软件边界，未作机械半径验收。跟随请求用稳定时钟，测量/授权/跌倒时效保护不变。控制说明与验证边界见 `docs/demo/20261019阿克曼跟随与测距核对.md`，只读状态协议见 `docs/interfaces/README.md`。
 
-- 本分支只为展示，之后删除，不合并 main；入口 `docs/demo/README.md`，剩余工作按 `docs/demo/Codex任务清单.md` 执行。一键入口 `scripts/run_demo.sh`（运动默认关闭、不自动续跟），合成验收 `scripts/test_demo_container.sh`。新增包 `demo_interfaces`、`demo_motion`（相对运动 `/demo/move_relative` 等）只在本分支存在。上述运动、急停与验收约定在本分支照常适用。
+- 本分支只为展示，之后删除，不合并 main；入口 `docs/demo/README.md`，剩余工作按 `docs/demo/Codex任务清单.md` 执行。旧直接全栈调试入口 `scripts/run_demo.sh`（运动默认关闭、不自动续跟），当前开机使用下述按需入口，合成验收 `scripts/test_demo_container.sh`。新增包 `demo_interfaces`、`demo_motion`（相对运动 `/demo/move_relative` 等）只在本分支存在。上述运动、急停与验收约定在本分支照常适用。
 
 - Demo 板端可显式用 `SOT_MODEL_PATH` 指向同机构建的 VitTrack FP32 TensorRT engine；构建入口 `scripts/build_vittrack_engine.sh`，保留相邻源 ONNX/清单并校验两者哈希及固定输入输出。engine 加载失败即报错，不回退CPU；未指定engine的通用入口仍用原ONNX策略。源码与验证见 `docs/方案C单目标跟踪联动.md`。
+
+- Demo 按需开机入口为 `scripts/run_demo_onboard.sh` → `run_demo_runtime.sh`；语音/唯一底盘/guard 常驻，重型模式由 `/robot/set_mode` 与拍照门面互斥启动，禁止叠加旧整车或 capture 服务。公共说明见 `docs/interfaces/Demo按需模式ROS接口.md`；跟随调用本身完成零请求与 epoch 授权，开机仍 IDLE/DISARMED、不录制。
 
 ## 项目概况
 
@@ -127,7 +129,7 @@
 
 ## 固定机位开机入口
 
-- 2026-10-19 用户授权默认开机切到 demo：`ROSCAR-current` 指向 `/home/wheeltec/ROSCAR-demo-20261016`，`roscar-robot.service` 通过 drop-in 运行 `scripts/run_demo_onboard.sh`，固定运动关闭、不自动授权，距离 1.3 m、主人丢失保留 20 秒。原 Matcha 部署及服务配置已备份，既有拍照推理服务保留；环境链接复用 `/home/wheeltec/ROSCAR/.venv-yolo`。启动器不清急停，进程故障不自动重启授权，现场跟随另行开启。入口、验证与回退见 `docs/demo/车端部署与补录.md`。
+- 2026-10-19 用户确认跟随/跌倒效果并授权按需 ROS 整合：`ROSCAR-current` 指向 `/home/wheeltec/ROSCAR-demo-20261016`，`roscar-robot.service` 使用 demo runtime 模板直接启动 `scripts/run_demo_onboard.sh`；底盘能力开启、开机 IDLE/DISARMED，只有显式 ROS 跟随/控制调用才授权。距离 1.3 m、上限 0.2 m/s、主人保留 20 秒、不录制；旧 drop-in 已备份移出，旧拍照常驻服务停用，由互斥模块按需替代。启动器不清急停、不自动重启授权。接口与面诊仅采集范围见 `docs/interfaces/Demo按需模式ROS接口.md`。
 
 - `scripts/run_robot_onboard.sh` / `deploy/systemd/roscar-robot.service` 是显式板端 C 入口，默认参数仍运动关闭。板端私有 env 按用户授权开机 FOLLOW 自动授权，并沿用 1.3 m、无避障；用户最新明确选择最高 0.5 m/s（私有 FOLLOW_MAX_LINEAR_MPS），距离/转向增益 1.0/1.6；三项确认仅表示本次临时授权，不作为正式标定验收。启动器不清 ESTOP，进程故障不自动重启授权。见 `docs/2026-10-13板端联调与开机跟随.md`。
 - 当前固定机位入口按用户最新确认重新开启 ReID 找回（REID_ENABLED / REID_REACQUIRE_ENABLED=true，锁定 false）：首次连续丢失 2 秒清轨迹/VitTrack，保留主人身份至同一次丢失 5 秒；期限内通过新鲜身份确认返回，5 秒到期清主人及该身份外观库并开放单人三帧新认领。通用默认仍十秒、连续性定时重置关闭；不改 0.6 秒运动宽限或非目标故障锁存。

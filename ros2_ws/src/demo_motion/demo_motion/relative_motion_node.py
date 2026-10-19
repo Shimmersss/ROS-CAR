@@ -296,7 +296,8 @@ class RelativeMotion(Node):
         msg = TwistStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'
-        self.pub.publish(msg)
+        if rclpy.ok(context=self.context):
+            self.pub.publish(msg)
         return super().destroy_node()
 
 
@@ -307,7 +308,7 @@ def main(args=None):
     executor.add_node(node)
     try:
         executor.spin()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
