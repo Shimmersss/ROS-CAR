@@ -11,6 +11,8 @@
 
 - 本分支只为展示，之后删除，不合并 main；入口 `docs/demo/README.md`，剩余工作按 `docs/demo/Codex任务清单.md` 执行。一键入口 `scripts/run_demo.sh`（运动默认关闭、不自动续跟），合成验收 `scripts/test_demo_container.sh`。新增包 `demo_interfaces`、`demo_motion`（相对运动 `/demo/move_relative` 等）只在本分支存在。上述运动、急停与验收约定在本分支照常适用。
 
+- Demo 板端可显式用 `SOT_MODEL_PATH` 指向同机构建的 VitTrack FP32 TensorRT engine；构建入口 `scripts/build_vittrack_engine.sh`，保留相邻源 ONNX/清单并校验两者哈希及固定输入输出。engine 加载失败即报错，不回退CPU；未指定engine的通用入口仍用原ONNX策略。源码与验证见 `docs/方案C单目标跟踪联动.md`。
+
 ## 项目概况
 
 - 目标：室内人体跟随小车（含跌倒检测）。主控 Orin Nano Super 8GB：Ubuntu 22.04.5 aarch64、JetPack 6.2 / CUDA 12.6、ROS 2 Humble；Mac 上用 Foxglove 与 SSH 调试。

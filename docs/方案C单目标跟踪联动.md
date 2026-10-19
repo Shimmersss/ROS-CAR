@@ -52,14 +52,14 @@ ros2 launch perception_bringup perception.launch.py route:=yolo_pose ... \
 - B、C 路线都可用（参数在 `TrackerNode`），默认关闭；关闭时节点行为不变。
 - 必须指定本地模型和同名 `.onnx.json` 校验文件；缺失或无法加载时拒绝启动，不回退。
 - 可与 ReID 身份锁定同时开启（`REID_ENABLED=true REID_LOCK_ENABLED=true SOT_ENABLED=true`），行为见下文"与 ReID 身份锁定合用"。
-- 其余参数（节点参数，均有默认值）：`sot_backend`（auto/onnxruntime/opencv）、`sot_min_score`、`sot_max_bridge_s`、`sot_depth_rejects`、`sot_conflict_frames`、`sot_handover_frames`、`sot_mask_refresh`（默认 true），以及 C 节点的 `reid_lock_bridge_carry_s`（默认 3 秒）。
+- 其余参数（节点参数，均有默认值）：`sot_backend`（auto/onnxruntime/opencv/tensorrt）、`sot_min_score`、`sot_max_bridge_s`、`sot_depth_rejects`、`sot_conflict_frames`、`sot_handover_frames`、`sot_mask_refresh`（默认 true），以及 C 节点的 `reid_lock_bridge_carry_s`（默认 3 秒）。
 
 ## 模型与运行环境
 
 - 模型：OpenCV Zoo `object_tracking_vittrack_2023sep.onnx`，714,726 字节，Apache-2.0，来源提交 `fef72f8`，经用户同意下载，登记在 `models/manifest.json`。
-- ROS Humble 自带的 OpenCV 4.5.4 无法加载该模型（不支持 HardSwish 算子），也没有 `cv2.TrackerVit`。因此按 OpenCV 4.10 `tracker_vit.cpp` 逐行移植了 numpy 前后处理，推理后端可选 onnxruntime 或 OpenCV ≥ 4.8 DNN。
+- ROS Humble 自带的 OpenCV 4.5.4 无法加载该模型（不支持 HardSwish 算子），也没有 `cv2.TrackerVit`。因此按 OpenCV 4.10 `tracker_vit.cpp` 逐行移植了 numpy 前后处理，推理后端可选 onnxruntime、OpenCV ≥ 4.8 DNN，或下述显式目标板 TensorRT engine。
 - 与 OpenCV 自带实现对比（每帧从相同的上一帧框出发）：97% 的帧框差 ≤ 1 像素，最大 3 像素，得分差 ≤ 0.0026；两种后端结果相同。
-- Mac CPU 耗时：onnxruntime 约 15 ms/帧，OpenCV DNN 约 44 ms/帧。**Jetson 上尚未安装 onnxruntime，也未测速**；上车前需安装 aarch64 版 onnxruntime 或改用 TensorRT，并实测耗时。
+- Mac CPU 耗时：onnxruntime 约 15 ms/帧，OpenCV DNN 约 44 ms/帧。Jetson demo已复用现有onnxruntime；2026-10-19在同板同录像109组输入上，CPU更新中位约16ms，显式FP32 TensorRT约8ms；这是离线计算对比，不是实车跟随或身份准确率验收。
 
 ## 录像离线评估
 
@@ -161,3 +161,18 @@ REID_ENABLED=true SOT_ENABLED=true REID_REACQUIRE_ENABLED=true bash scripts/star
 - 底盘控制层仍是主要瓶颈：`person_follower` 目标一帧不可用就发零速度；`motion_guard` 跟随模式下目标一帧无效即进入 FAULT 且不自动恢复。感知侧的短暂停顿在实车上都会变成停车并需要重新授权。这一项涉及运动安全规则，需用户确认后再改（见 WORKLOG）。
 
 测试：`test_owner_selection.py` 7 项（立即跟随、否决需连续证据后寻找并找回、主人在别的编号即否决、无桥接缺失后丢失且未绑定需重锁、桥接保持、未记录/过期帧忽略、释放清除主人）；`test_reid.py` 新增 3 项（主人不过期、多视角只来自跟随中未遮挡且已确认的主人、新视角扩展识别范围）；运行时测试补充 `OwnerSelection` 装配、`owner_focus` 发布和缺少 `sot_enabled` 时拒绝启动。ReID 节点订阅 `owner_focus` 的 ROS 路径尚无运行时测试。本机 CI 273 项、ARM64 Humble 完整 C 容器套件通过。离线模拟与合成测试，不是 Jetson 或实车验证。
+
+
+## Demo显式FP32 TensorRT入口（2026-10-19）
+
+只在目标Jetson构建，使用相邻的原ONNX及其哈希清单；不下载或转换成FP16。已有输出时脚本拒绝覆盖。
+
+```bash
+bash scripts/build_vittrack_engine.sh models/weights/object_tracking_vittrack_2023sep.onnx models/weights/object_tracking_vittrack_2023sep-fp32.engine
+```
+
+显式设置 `SOT_MODEL_PATH` 为构建出的绝对engine路径；`sot_backend=auto`会按该扩展名只使用TensorRT，也可显式`tensorrt`。原ONNX仍只使用既有auto/onnxruntime/opencv路径，不能用tensorrt参数静默构建。TensorRT运行需现有Pose Python中的Torch/CUDA与TensorRT10；IO固定为template(1,3,128,128)、search(1,3,256,256)和三个16×16输出，全部FP32。源ONNX、源清单、engine清单及哈希不匹配或设备不兼容均报错，没有CPU回退。
+
+实际demo私有env仅新增SOT_MODEL_PATH指向 `/home/wheeltec/ROSCAR-demo-20261016/models/weights/object_tracking_vittrack_2023sep-fp32.engine`，备份保留在板上私有配置目录，权限0600。开机仍运动关闭，运行时测试仍不自动授权。回退只将该变量改回相邻原ONNX后重启停车服务，通用默认不改。engine和实拍数据不提交Git。
+
+同一批109组真实配准画面/检测种子，CPU/GPU框差为0像素，三个原始输出最大绝对差约1.85e-6、score最大差约3.58e-7，生产score门槛决策一致。仲裁器、同框陌生人排除、深度矛盾检查、桥接时限和身份恢复规则未更改。这些结果不能证明未标注场景不会误跟；最新跟随复测与剩余项见[阿克曼跟随与测距核对](demo/20261019阿克曼跟随与测距核对.md)。

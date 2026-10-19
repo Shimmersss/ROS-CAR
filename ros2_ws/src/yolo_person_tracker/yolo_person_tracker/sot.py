@@ -79,14 +79,36 @@ class _OpenCV:
 class VitTrack:
     def __init__(self, model_path, backend='auto'):
         path = Path(model_path)
-        if not model_path or path.suffix != '.onnx' or not path.is_file():
-            raise ValueError('Configure a local VitTrack ONNX; no automatic downloads/fallback')
+        if not model_path or path.suffix not in ('.onnx', '.engine') or not path.is_file():
+            raise ValueError('Configure a local VitTrack ONNX/engine; no automatic downloads/fallback')
         metadata = json.loads(Path(str(path)+'.json').read_text())
         if (metadata.get('architecture') != ARCHITECTURE
                 or metadata.get('sha256') != hashlib.sha256(path.read_bytes()).hexdigest()):
             raise ValueError('VitTrack metadata/hash mismatch')
-        if backend not in ('auto', 'onnxruntime', 'opencv'):
-            raise ValueError('backend must be auto, onnxruntime or opencv')
+        if backend not in ('auto', 'onnxruntime', 'opencv', 'tensorrt'):
+            raise ValueError('backend must be auto, onnxruntime, opencv or tensorrt')
+        if path.suffix == '.engine':
+            if backend not in ('auto', 'tensorrt'):
+                raise ValueError('VitTrack engine requires the TensorRT backend')
+            source_name = metadata.get('source_onnx', '')
+            if not source_name or Path(source_name).name != source_name or Path(source_name).suffix != '.onnx':
+                raise ValueError('VitTrack engine requires a local source ONNX filename')
+            source = path.parent/source_name
+            original = json.loads(Path(str(source)+'.json').read_text())
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            if (metadata.get('source_onnx_sha256') != digest or original.get('sha256') != digest
+                    or original.get('architecture') != ARCHITECTURE
+                    or metadata.get('precision') != 'FP32-no-TF32'):
+                raise ValueError('VitTrack engine source metadata/hash/precision mismatch')
+            from .vittrack_tensorrt import VitTrackTensorRT
+            self.run = VitTrackTensorRT(path)
+            self.backend = 'tensorrt'
+            self.window = hann2d()
+            self.template = self.rect = None
+            self.score = math.nan
+            return
+        if backend == 'tensorrt':
+            raise ValueError('TensorRT VitTrack requires an explicitly built local engine')
         errors = []
         for name, cls in (('onnxruntime', _OnnxRuntime), ('opencv', _OpenCV)):
             if backend in ('auto', name):

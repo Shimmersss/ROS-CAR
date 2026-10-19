@@ -181,20 +181,25 @@ def _measure_region(depth, bounds, intrinsics, min_fraction, repair_small_holes=
     if roi.size == 0:
         return None
     valid = np.isfinite(roi) & (roi >= .2) & (roi <= 8.)
+    valid_count = int(valid.sum())
     # Repair only small holes surrounded by real depth samples. Large missing
     # regions remain invalid instead of being filled with a stale/background value.
-    if repair_small_holes and valid.sum() >= max(12, roi.size * .03) and not valid.all():
+    if repair_small_holes and valid_count >= max(12, roi.size * .03) and valid_count != roi.size:
         padded = np.pad(np.where(valid, roi, np.nan), 1, constant_values=np.nan)
-        neighbours = np.stack([
-            padded[:-2, :-2], padded[:-2, 1:-1], padded[:-2, 2:],
-            padded[1:-1, :-2], padded[1:-1, 1:-1], padded[1:-1, 2:],
-            padded[2:, :-2], padded[2:, 1:-1], padded[2:, 2:]], axis=0)
-        count = np.isfinite(neighbours).sum(axis=0)
+        # Count with byte masks; gather float neighbourhoods only for holes
+        # that can be repaired. Avoid nine full float ROI copies per region.
+        padded_valid = np.pad(valid, 1, constant_values=False)
+        count = np.zeros(roi.shape, dtype=np.uint8)
+        for dy in range(3):
+            for dx in range(3):
+                count += padded_valid[dy:dy+roi.shape[0], dx:dx+roi.shape[1]]
         fill = (~valid) & (count >= 5)
         if fill.any():
             # Only missing pixels need a median. Computing it for every valid
             # pixel in a large bridge box dominated the Jetson tracking path.
-            samples = np.sort(neighbours[:, fill], axis=0)  # NaNs sort after real depths.
+            yy, xx = np.nonzero(fill)
+            samples = np.sort(np.stack([padded[yy+dy, xx+dx]
+                                       for dy in range(3) for dx in range(3)]), axis=0)
             sizes = count[fill]
             columns = np.arange(len(sizes))
             filled = np.asarray((samples[(sizes-1)//2, columns]
@@ -202,20 +207,22 @@ def _measure_region(depth, bounds, intrinsics, min_fraction, repair_small_holes=
             roi = roi.copy()
             roi[fill] = filled
             valid[fill] = np.isfinite(filled)
-    if valid.sum() < max(12, roi.size * min_fraction):
+            valid_count += int(np.isfinite(filled).sum())
+    if valid_count < max(12, roi.size * min_fraction):
         return None
     values = roi[valid]
     z = float(np.median(values))
     # Reject a region that mixes foreground and background, while tolerating
     # the depth holes and edge quantisation common in Astra frames.
-    if float(np.percentile(values, 75) - np.percentile(values, 25)) > max(.35, .3*z):
+    q25, q75 = np.percentile(values, [25, 75])
+    if float(q75 - q25) > max(.35, .3*z):
         return None
     v, u = np.nonzero(valid & (np.abs(roi-z) <= max(.1, .1*z)))
     if not len(u):
         return None
     u, v = float(np.median(u))+left, float(np.median(v))+top
     fx, fy, cx, cy = intrinsics
-    return ((u-cx)*z/fx, (v-cy)*z/fy, z), float(valid.sum()) / roi.size
+    return ((u-cx)*z/fx, (v-cy)*z/fy, z), float(valid_count) / roi.size
 
 
 def region_candidates(depth, box, intrinsics, min_fraction=.15, repair_small_holes=True):
