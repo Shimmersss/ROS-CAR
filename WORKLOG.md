@@ -2102,3 +2102,9 @@
 - 最小审查：逐项核对取消代次、晚到授权/goal、唯一速度发布者、故障锁存、模式白名单、无 shell 输入拼接、完整 cgroup 退出、图像/凭据不入 Git、collect 不访问 HTTP/模型；修复旧发现信息滞留导致清理误超时，优雅 SIGINT 并使用有上限等待；终态 goal 不重复取消。接口文档/README 索引、demo 入口说明及长期 AGENTS 入口同步维护。
 - 验证证据保留本机 `artifacts/demo-runtime-validation/` 和车端 `artifacts/demo-runtime-onboard.json`、`demo-face-onboard.json`、`demo-runtime-lifecycle.json` 及日志；不提交图像/录像/模型。只提交、推送 demo/showcase-20261016，main 不变。剩余边界：旧上传接收端接入、机械/绝对测距标定、各模型内容准确率及断电开机现场验收。
 - 收尾清理：车端仅删除本任务五个包的可重建 build 目录约 12 MB，保留 install、源码、原始录制、模型、服务备份和全部验证证据；没有创建新环境、容器或下载大文件。
+
+## 2026-10-19：最新 ROS 调用 Markdown 手册
+
+- 按用户要求扩充 `docs/interfaces/Demo按需模式ROS接口.md` 为当前 demo 的完整调用文档：SSH/ROS 环境、模式及返回值、跟随/停车、流式前进后退与弧线转向、距离/角度动作、面诊原图、PCB/安全帽/舌苔、语音 service/action、取消、状态与故障、自启动与日志。注明对应运行实现 31d3693，强调面诊模型未接入、旧上传 404、任务时限不等于整个切换耗时、旧 target_id 不跨感知进程复用。
+- 旧通用接口手册顶部与 interfaces 索引引导到此最新文档，避免混用旧 `/chassis/cmd_vel` 直接输入与 demo 的 `/robot/cmd_vel`。未修改运行代码或参数。
+- 最小审查：19 个 service、2 个 action、4 个速度示例对照消息定义核对字段，Bash/Python 片段语法及相对文档链接检查通过，git diff --check 通过。未执行运动示例、未重启车端程序；只读确认核心 active、按需子模式 inactive。证据 `artifacts/demo-runtime-validation/document-call-review.log`。文档同步车端并推送 demo/showcase-20261016，main 不变。
