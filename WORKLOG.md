@@ -1,3 +1,10 @@
+## 2026-10-19：部署 ReID 丢失找回与 20 秒主人保留
+
+- 用户明确授权部署，确认车端 IP 仍 192.168.31.145 后本次 SSH 已可达；未修改本机网络或代理。车端剩余约 70 GiB，先备份 demo 原 yolo 源码/安装包及入口配置，更新独立 /home/wheeltec/ROSCAR-demo-20261016，不改正式 current 指向、开机配置或 main。
+- Jetson 原生编译 yolo_person_tracker 通过，325 项感知单测、4 项入口测试、实际单调时钟 2/20 秒合成 ROS 回归通过（旧 5 秒后仍可找回、20 秒到期及不自动认领陌生人）。日志保留车端 artifacts/deployment/owner-20s-*，本机镜像 artifacts/owner-recovery-only/jetson。
+- 停原 roscar-robot 服务，以临时 roscar-demo-ready-20s.service 启动运动关闭 demo；现场读取确认 ReID 仅丢失后找回、3 帧/0.4 秒、20 秒保留、2 秒清连续性、AUTO_LOCK_SINGLE=false，8+24 特征库及 Matcha 女声。ReID valid 输出持续，主人 UNCLAIMED、控制 IDLE/DISARMED，51 条 cmd_vel 采样全零，速度/目标/ReID 输出均单发布者。
+- 最小审查核对本地源码、车端源码和实际安装 Python 哈希，功能提交 028d5b2 一致；更新文档/任务清单部署状态。备份、模型、录像及验证证据保留，清理本轮可重建 yolo 构建树及未使用的临时部署压缩包。真人跟随、转身/异位置找回和特征补充效果待验收，本轮未授予运动权限。
+
 ## 2026-10-19：Demo 主人找回窗口改为 20 秒（待部署）
 
 - 按用户“重新认领改为20s刷新”解释为同一次主人丢失保留 20 秒，demo 固定 OWNER_LOST_TIMEOUT_S=20.0；共用 onboard 入口尊重显式覆盖，通用默认保留 5 秒。成功找回后清零本次丢失计时，下次重新计 20 秒；到期仍需人工认领，不启用定时自动换人。
