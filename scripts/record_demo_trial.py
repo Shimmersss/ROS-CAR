@@ -85,12 +85,21 @@ def main():
                                  '--max-bag-size', '1073741824', *TOPICS], stdout=log, stderr=log,
                                 start_new_session=True)
         try:
-            # Announce recording only after storage was created, not merely process launch.
+            # Inspect only the recorder log and file sizes while SQLite is being
+            # written. Query message counts only after the writer has exited.
             deadline = time.monotonic()+15
-            while not list((out/'bag').glob('*.db3')):
+            while True:
                 if stopped or proc.poll() is not None or time.monotonic() > deadline:
                     raise RuntimeError('recorder did not become ready; inspect recorder.log')
+                startup_log = (out/'recorder.log').read_text(errors='replace')
+                storage_bytes = sum(p.stat().st_size for p in (out/'bag').glob('*.db3'))
+                if (storage_bytes >= 1024**2
+                        and all("Subscribed to topic '%s'" % topic in startup_log for topic in REQUIRED)):
+                    break
                 time.sleep(.2)
+            (out/'recording-ready.json').write_text(json.dumps(dict(
+                recorder_pid=proc.pid, storage_bytes=storage_bytes,
+                required_subscriptions=REQUIRED, note='Writer active; counts verified only after finalization')))
             started = time.monotonic()
             say('录制已开始，计划录制%d秒。' % args.seconds)
             next_progress = 30
@@ -105,6 +114,7 @@ def main():
                     next_progress += 30
                 time.sleep(.2)
         finally:
+            (out/'recording-ready.json').unlink(missing_ok=True)
             if proc.poll() is None:
                 os.killpg(proc.pid, signal.SIGINT)
                 try:
