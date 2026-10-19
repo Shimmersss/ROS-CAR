@@ -23,4 +23,5 @@ docker run --rm -e ROS_LOCALHOST_ONLY=1 -e ROS_DOMAIN_ID=214 \
     ROS_DOMAIN_ID=217 python3 /workspace/tests/test_owner_recovery_deadlines_runtime.py
     ROS_DOMAIN_ID=218 python3 /workspace/tests/test_demo_owner_recovery_runtime.py
     ROS_DOMAIN_ID=219 python3 /workspace/tests/test_reid_output_gap_runtime.py
+    ROS_DOMAIN_ID=222 python3 /workspace/tests/test_guard_request_scheduling_runtime.py
   ' 2>&1 | tee "$ROOT/artifacts/demo-validation/acceptance.log"

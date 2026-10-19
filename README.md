@@ -117,7 +117,7 @@ docs/      方案、接口、计划；docs/archive/ 为历史文档
 
 ## 文档索引
 
-**Demo 展示分支（`demo/showcase-20261016`，展示后删除）**：[Demo 文档入口](docs/demo/README.md) · [跌倒暂停与静止延续验收](docs/demo/跌倒暂停与静止延续验收.md) · [ReID 确认链修复](docs/demo/20261019ReID低帧率修复.md) · [主人找回优化](docs/demo/20261019主人找回优化.md) · [主人跟随与找回](docs/demo/主人连续跟随与丢失找回.md) · [跟随实录分析](docs/demo/20261019跟随实录分析.md) · [车端部署与补录](docs/demo/车端部署与补录.md) · [1.3 m 出画评估](docs/demo/1.3米近距离出画离线评估.md) · [A2a/A4 离线优化](docs/demo/A2a与A4离线优化.md) · [T2.6 离线优化评估](docs/demo/T2.6离线检测优化评估.md) · [相对运动 ROS 接口](docs/demo/相对运动ROS接口.md) · [Codex 任务清单](docs/demo/Codex任务清单.md)
+**Demo 展示分支（`demo/showcase-20261016`，展示后删除）**：[Demo 文档入口](docs/demo/README.md) · [跌倒暂停与静止延续验收](docs/demo/跌倒暂停与静止延续验收.md) · [ReID 确认链修复](docs/demo/20261019ReID低帧率修复.md) · [主人找回优化](docs/demo/20261019主人找回优化.md) · [跟随请求超时修复](docs/demo/20261019跟随请求超时修复.md) · [主人跟随与找回](docs/demo/主人连续跟随与丢失找回.md) · [跟随实录分析](docs/demo/20261019跟随实录分析.md) · [车端部署与补录](docs/demo/车端部署与补录.md) · [1.3 m 出画评估](docs/demo/1.3米近距离出画离线评估.md) · [A2a/A4 离线优化](docs/demo/A2a与A4离线优化.md) · [T2.6 离线优化评估](docs/demo/T2.6离线检测优化评估.md) · [相对运动 ROS 接口](docs/demo/相对运动ROS接口.md) · [Codex 任务清单](docs/demo/Codex任务清单.md)
 
 - [5060 推理服务启停](docs/5060推理服务启停.md)：`roscar-infer` 启停/状态/日志、开机自启、隧道端口占用处理
 - [云端推理部署与迁移](docs/云端推理部署与迁移.md)：新电脑部署三个模型、SSH迁移、小车推理/上传端口与token更新

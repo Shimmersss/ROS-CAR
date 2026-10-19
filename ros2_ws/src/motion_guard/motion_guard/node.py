@@ -14,11 +14,14 @@ import math
 import os
 from pathlib import Path
 import time
+import threading
 from dataclasses import fields
 import signal
 import rclpy
 from rclpy.signals import SignalHandlerOptions
 from rclpy.node import Node
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.clock import Clock, ClockType
 from rclpy.time import Time
 from rclpy.qos import qos_profile_sensor_data
@@ -94,6 +97,10 @@ class MotionGuard(Node):
         self.last_fault = ''
         self.task_hold = StationaryLease()
         self.request = self.scan = self.target = None
+        self.request_lock = threading.Lock()
+        # Only velocity input is concurrent. Authorization, STOP, ESTOP, fall
+        # handling and final publication remain serialized in the default group.
+        self.request_group = MutuallyExclusiveCallbackGroup()
         self.received = {}
         self.buffer = Buffer()
         self.listener = TransformListener(self.buffer,self)
@@ -102,8 +109,10 @@ class MotionGuard(Node):
         if self.cfg['pause_on_fall']:
             self.create_subscription(FallAlarm, '/perception/fall_alarm', self.on_fall, 10)
         self.status_pub = self.create_publisher(String,'/control/state',10)
-        self.create_subscription(TwistStamped,self.cfg['request_topic'],self.on_request,1)
-        self.create_subscription(TwistStamped,'/chassis/cmd_vel',self.on_external,1)
+        self.create_subscription(TwistStamped,self.cfg['request_topic'],self.on_request,1,
+                                 callback_group=self.request_group)
+        self.create_subscription(TwistStamped,'/chassis/cmd_vel',self.on_external,1,
+                                 callback_group=self.request_group)
         self.create_service(SetControlMode,'/control/set_mode',self.set_mode)
         self.create_subscription(LaserScan,self.cfg['scan_topic'],self.on_scan,qos_profile_sensor_data)
         self.create_subscription(TargetState,self.cfg['target_topic'],self.on_target,1)
@@ -133,9 +142,10 @@ class MotionGuard(Node):
         return self.authority.state
 
     def clear_requests(self):
-        self.request = None
-        self.received.pop('request', None)
-        self.mode_since = self.get_clock().now().nanoseconds * 1e-9
+        with self.request_lock:
+            self.request = None
+            self.received.pop('request', None)
+            self.mode_since = self.get_clock().now().nanoseconds * 1e-9
 
     def set_mode(self, request, response):
         self.publish(0., 0.)
@@ -214,9 +224,10 @@ class MotionGuard(Node):
         return response
 
     def accept_request(self, msg, source):
-        if (self.authority.state != 'ESTOP' and self.command_mode == source
-                and seconds(msg.header.stamp) > self.mode_since):
-            self.request=msg; self.received['request']=time.monotonic()
+        with self.request_lock:
+            if (self.authority.state != 'ESTOP' and self.command_mode == source
+                    and seconds(msg.header.stamp) > self.mode_since):
+                self.request=msg; self.received['request']=time.monotonic()
 
     def on_request(self,msg):
         self.accept_request(msg, 'FOLLOW')
@@ -250,14 +261,20 @@ class MotionGuard(Node):
         for topic in topics:
             if self.count_publishers(topic) != 1:
                 return False,'missing_or_multiple_publishers:'+topic,0.,0.
+        # Snapshot the message and its receive time together, after graph checks.
+        # Never validate one request and later output a different concurrently
+        # received request whose values have not passed these checks.
+        with self.request_lock:
+            request = self.request
+            received = self.received.copy()
         now_ros=self.get_clock().now().nanoseconds*1e-9
-        inputs = [('request',self.request,self.safety.request_timeout_s)]
+        inputs = [('request',request,self.safety.request_timeout_s)]
         if self.cfg['radar_required']:
             inputs.append(('scan',self.scan,self.safety.scan_timeout_s))
         if self.command_mode == 'FOLLOW':
             inputs.append(('target',self.target,self.safety.target_timeout_s))
         for key, msg, timeout in inputs:
-            if msg is None or time.monotonic()-self.received.get(key,-math.inf)>timeout:
+            if msg is None or time.monotonic()-received.get(key,-math.inf)>timeout:
                 return False,key+'_timeout',0.,0.
             stamp=seconds(msg.header.stamp)
             if stamp<=0 or not 0 <= now_ros-stamp <= timeout:
@@ -271,9 +288,9 @@ class MotionGuard(Node):
                     seconds(target.observation_stamp),target.measurement_age_s,
                     self.safety.target_timeout_s,target.source,self.cfg['expected_source'])):
             return False,'target_invalid',0.,0.
-        t=self.request.twist
+        t=request.twist
         values=(t.linear.x,t.linear.y,t.linear.z,t.angular.x,t.angular.y,t.angular.z)
-        if (self.request.header.frame_id != self.cfg['base_frame'] or not all(map(math.isfinite,values))
+        if (request.header.frame_id != self.cfg['base_frame'] or not all(map(math.isfinite,values))
                 or any(x!=0 for x in (t.linear.y,t.linear.z,t.angular.x,t.angular.y))
                 or not -self.safety.max_reverse_mps <= t.linear.x <= self.safety.max_linear_mps
                 or abs(t.angular.z)>self.safety.max_angular_rps):
@@ -315,11 +332,16 @@ class MotionGuard(Node):
             self.publish(0., 0.)
             return response
         try:
-            ready, reason, _, _ = self.check()
+            ready, reason, v, w = self.check()
             # Arming must never launch a buffered nonzero command.
-            zero = self.request is not None and all(v == 0 for v in (
-                self.request.twist.linear.x, self.request.twist.angular.z))
-            self.authority.arm(ready and zero, self.cfg['motion_enabled'])
+            # Both the validated snapshot and the latest queued request must
+            # be zero. Commit authority under the input lock so a nonzero
+            # request cannot slip into the buffer during authorization.
+            with self.request_lock:
+                zero = (v == 0. and w == 0. and self.request is not None
+                        and self.request.twist.linear.x == 0.
+                        and self.request.twist.angular.z == 0.)
+                self.authority.arm(ready and zero, self.cfg['motion_enabled'])
             response.success, response.message = True, 'Explicitly armed at zero velocity'
         except (AuthorityError, ValueError) as exc:
             self.publish(0., 0.)
@@ -438,8 +460,10 @@ def main(args=None):
     signal.signal(signal.SIGINT, terminate)
     signal.signal(signal.SIGTERM, terminate)
     rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO); node=MotionGuard()
+    executor = MultiThreadedExecutor(num_threads=2)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     except RuntimeError:
@@ -448,5 +472,6 @@ def main(args=None):
         if not stopping:
             raise
     finally:
+        executor.shutdown()
         node.destroy_node()
         if rclpy.ok(): rclpy.shutdown()
