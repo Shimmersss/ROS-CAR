@@ -25,6 +25,7 @@ class DemoEntry(unittest.TestCase):
         self.assertEqual(env['MOTION_ENABLED'], 'false')
         self.assertEqual(env['WITH_DEMO_MOTION'], 'true')
         self.assertEqual(env['AUTO_LOCK_SINGLE'], 'false')
+        self.assertEqual(env['OWNER_LOST_TIMEOUT_S'], '20.0')
         self.assertEqual(env['SOT_ENABLED'], 'true')
         self.assertEqual(env['REID_REACQUIRE_ENABLED'], 'true')
         self.assertEqual(env['FOLLOW_AUTO_ARM'], 'false')
@@ -36,9 +37,10 @@ class DemoEntry(unittest.TestCase):
         self.assertEqual(env['FOLLOW_MAX_LINEAR_MPS'], '0.35')
 
     def test_explicit_motion_does_not_auto_arm(self):
-        env = self.run_wrapper(MOTION_ENABLED='true', FOLLOW_AUTO_ARM='true', FOLLOW_TARGET_AUTO_RECOVER='true', REID_REACQUIRE_ENABLED='false', AUTO_LOCK_SINGLE='true', SOT_ENABLED='false')
+        env = self.run_wrapper(MOTION_ENABLED='true', FOLLOW_AUTO_ARM='true', FOLLOW_TARGET_AUTO_RECOVER='true', REID_REACQUIRE_ENABLED='false', AUTO_LOCK_SINGLE='true', SOT_ENABLED='false', OWNER_LOST_TIMEOUT_S='5.0')
         self.assertEqual(env['MOTION_ENABLED'], 'true')
         self.assertEqual(env['AUTO_LOCK_SINGLE'], 'false')
+        self.assertEqual(env['OWNER_LOST_TIMEOUT_S'], '20.0')
         self.assertEqual(env['SOT_ENABLED'], 'true')
         self.assertEqual(env['REID_REACQUIRE_ENABLED'], 'true')
         self.assertEqual(env['FOLLOW_AUTO_ARM'], 'false')
@@ -53,5 +55,15 @@ class DemoEntry(unittest.TestCase):
                 script.write(prefix+'\nprintf "%s" "$REID_REACQUIRE_ENABLED"'); script.flush()
                 result = subprocess.check_output(['bash', script.name], env=env, text=True)
             self.assertEqual(result, value)
+
+    def test_onboard_owner_timeout_default_and_override(self):
+        prefix = (ROOT/'scripts/run_robot_onboard.sh').read_text().split('for device in ')[0]
+        for override, expected in ((None, '5.0'), ('20.0', '20.0')):
+            env = dict(os.environ, GEMINI_SERIAL='test', MODEL_PATH='/test', YOLO_PYTHON='/test', POSE_CONFIG='/test')
+            env.pop('OWNER_LOST_TIMEOUT_S', None)
+            if override is not None: env['OWNER_LOST_TIMEOUT_S'] = override
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh') as script:
+                script.write(prefix+'\nprintf "%s" "$OWNER_LOST_TIMEOUT_S"'); script.flush()
+                self.assertEqual(subprocess.check_output(['bash', script.name], env=env, text=True), expected)
 
 if __name__ == '__main__': unittest.main()

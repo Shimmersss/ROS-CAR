@@ -29,7 +29,7 @@ rclpy.init(); backend=Backend(); tracker=Tracker()
 node=PoseTrackerNode(backend=backend,sot_tracker=tracker,parameter_overrides=[Parameter(k,value=v) for k,v in dict(
     use_sim_time=True,depth_registered=True,sot_enabled=True,reid_reacquire_enabled=True,
     reid_reacquire_only_after_loss=True,reid_reacquire_confirm_frames=3,reid_reacquire_min_s=.4,
-    auto_lock_single=False,owner_continuity_reset_s=2.,owner_lost_timeout_s=5.,visualization_fps=0.).items()])
+    auto_lock_single=False,owner_continuity_reset_s=2.,owner_lost_timeout_s=20.,visualization_fps=0.).items()])
 clock=MonotonicRosClock(node)
 info=CameraInfo(width=200,height=100);info.header.frame_id='camera_optical'
 info.p=[100.,0.,100.,0.,0.,100.,50.,0.,0.,0.,1.,0.];node.on_info(info)
@@ -67,6 +67,8 @@ try:
     backend.detections=[];tracker.score=0.;step();lost_at=node.owner.lost_at
     while not node.owner.continuity_reset_done and time.monotonic()-lost_at<2.5:step()
     assert node.selection.searching and node.selection.owner_id=='alice' and node.selection.target_id is None
+    while time.monotonic()-lost_at<5.3:step()
+    assert node.owner.state=='LOST' and node.selection.owner_id=='alice', 'owner must survive the former 5s deadline'
     # Return across the image, outside the previous local tracker box.
     backend.detections=[Detection(9,(120,5,180,95),.9)]
     for _ in range(3):step('bob')
@@ -76,7 +78,9 @@ try:
         assert node.selection.target_id==((0,9) if i==2 else None)
     assert node.owner.state=='TRACKING' and node.owner.event=='returned'
     backend.detections=[];tracker.score=0.;step();lost_at=node.owner.lost_at
-    while node.owner.state!='UNCLAIMED' and time.monotonic()-lost_at<5.6:step()
+    while time.monotonic()-lost_at<19.7:step()
+    assert node.owner.state=='LOST' and node.selection.owner_id=='alice'
+    while node.owner.state!='UNCLAIMED' and time.monotonic()-lost_at<20.6:step()
     assert node.owner.state=='UNCLAIMED' and not node.selection.owner_id
     backend.detections=[Detection(10,(10,5,70,95),.9)]
     for _ in range(8):step('stranger')
@@ -86,6 +90,6 @@ try:
     assert node.release_target(Trigger.Request(),Trigger.Response()).success
     assert not node.selection.owner_id and not node.selection.searching
     assert node.count_publishers('/cmd_vel')==0
-    print('PASS demo recovery-only: explicit claim, ReID noise cannot interrupt following, cross-image same-owner return after 3 fresh frames/0.4s, stranger rejected, real 2/5s lifecycle, no auto-claim after expiry, release clears owner; no motion publisher')
+    print('PASS demo recovery-only: explicit claim, ReID noise cannot interrupt following, cross-image same-owner return after 3 fresh frames/0.4s, stranger rejected, return beyond former 5s deadline, real 2/20s lifecycle, no auto-claim after expiry, release clears owner; no motion publisher')
 finally:
     node.destroy_node();rclpy.shutdown()
