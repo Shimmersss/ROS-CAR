@@ -1,3 +1,8 @@
+## 2026-10-19：更新并推送 Demo 相对运动调用文档
+
+- 用户要求推送 demo 新调用接口文档。更新相对运动接口的验证状态、车端 overlay/私有通信环境加载、接口发现及运动关闭边界；保持既有调用字段、限速与逐请求授权说明。
+- 最小审查对照 demo_interfaces 定义、relative_motion 节点/配置与既有编译/ROS 验证记录，检查文档链接及 diff；本次仅文档，无运动调用、车端修改或 main 操作。不纳入工作区并行 ReID 未提交改动。
+
 ## 2026-10-19：默认开机入口切换到当前 demo
 
 - 用户明确授权切换默认开机程序。保留原 current 目标与服务/drop-in 备份，current 指向 ROSCAR-demo-20261016；既有 enabled/Linger 用户服务运行新增 run_demo_onboard.sh。固定运动关闭、IDLE/DISARMED、不自动授权，沿用 1.3 m、20 秒主人保留；保留拍照推理服务，不修改 main。

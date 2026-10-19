@@ -1,7 +1,7 @@
 # Demo：相对运动 ROS 接口（前进/后退 N 米、左转/右转 N 度）
 
 > 仅 `demo/showcase-20261016` 分支，面向展示，分支删除时一并删除。不改变主线的 `/chassis/cmd_vel`、`motion_guard` 或语音运动约定。
-> 状态（2026-10-16）：接口定义、纯 Python 核心与 ROS 节点已写好；纯 Python 单测 17 项通过。**colcon 编译、ROS 运行时、实车均未验证**，见 [Codex 任务清单](Codex任务清单.md) T1。
+> 状态（2026-10-19）：接口已通过 colcon 编译、17 项核心单测及合成 ROS 运行时回归；Jetson 独立 demo 目录编译通过。**相对运动的实车距离、角度与制动效果尚未验收**。当前开机 demo 默认运动关闭，服务调用不能绕过该开关。
 
 ## 1. 接口一览
 
@@ -34,6 +34,20 @@
 **TurnAngle.srv**：请求 `angle_deg`、`yaw_rate_rps`、`reverse`；响应 `success / status / message / turned_deg / travelled_m`。
 
 ## 3. 调用示例
+
+车端目录为 `/home/wheeltec/ROSCAR-demo-20261016`，`ROSCAR-current` 当前指向此目录。新终端先加载接口和私有 ROS 通信环境：
+
+```bash
+source /opt/ros/humble/setup.bash
+source /home/wheeltec/ROSCAR-demo-20261016/install/setup.bash
+set -a
+source /home/wheeltec/.config/roscar/robot.env
+set +a
+ros2 service type /demo/move_distance
+ros2 action info /demo/move_relative
+```
+
+接口由 demo 总入口启动，不要在同一 ROS 域重复启动相对运动节点或 guard。执行前应由现场人员确认并开启运动能力；下面的调用会请求实际运动，每次请求默认自动执行本次 EXTERNAL 授权流程，不能将接口探测与动作调用混为一谈。当前运动关闭时会拒绝运动。
 
 ```bash
 # 前进 0.5 m
@@ -74,3 +88,5 @@ ros2 service call /demo/motion_cancel std_srvs/srv/Trigger '{}'
 - 无雷达避障；转弯时车头会扫过前方约 0.4 m 半径区域，展示场地需清空。
 
 服务 `/demo/motion_cancel` 取消 action 时，业务结果为 `CANCELED`，ROS action 终态为 ABORTED；使用 action 原生 cancel 时终态为 CANCELED。服务请求占用执行槽直到停车清理完成，第二个动作被拒绝。
+
+验证来源：[车端部署与补录](车端部署与补录.md)、[跌倒暂停与静止延续验收](跌倒暂停与静止延续验收.md)。后者包含相对运动合成回归记录；合成回归不代表实车移动通过。
