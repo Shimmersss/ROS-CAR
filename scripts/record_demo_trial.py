@@ -35,7 +35,7 @@ def main():
     args.root.mkdir(parents=True, exist_ok=True)
     if shutil.disk_usage(args.root).free < 10*1024**3:
         parser.error('at least 10 GiB free space required')
-    topics = subprocess.check_output(['ros2', 'topic', 'list'], text=True, timeout=20).splitlines()
+    topics = subprocess.check_output(['ros2', 'topic', 'list', '--no-daemon', '--spin-time', '3'], text=True, timeout=20).splitlines()
     missing = set(REQUIRED)-set(topics)
     if missing:
         parser.error('missing required topics: '+', '.join(sorted(missing)))

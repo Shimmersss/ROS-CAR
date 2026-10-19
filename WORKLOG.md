@@ -1,3 +1,14 @@
+## 2026-10-19：车端 Demo 更新 Matcha 女声
+
+- 核实 demo 安装包仍是 MeloTTS，原因是之前远端合入 Matcha 后未重部署语音包。停 demo 后同步当前 offline_voice 并在 Jetson 独立编译，复用已有 Matcha/Vocos 模型，无模型下载；不修改原 current 或 main。
+- 初次单测因系统 Python 缺 sherpa_onnx 全跳过，复用正式语音 venv 依赖后隔离域 26 项通过。重启 demo 后参数确认 model_dir 为 matcha-icefall-zh-baker、vocoder 为 vocos-22khz-univ.onnx，启动日志明确加载 Matcha 中文女声。首次播报遇唯一队列 busy，等待后测试播报 success/completed；控制状态 IDLE/DISARMED，不自动恢复运动。日志有既有词典 shei2 提示，本次测试句正常完成。
+- 最小审查核对实际安装包、运行参数、唯一播报队列和运动状态；清理本次 offline_voice 构建输出，保留安装包及编译/测试证据。并提交此前现场录制环境修复与记录。
+
+## 2026-10-19：Demo 现场启动准备与录制通信修正
+
+- 用户授权切换 demo 跟随补录；停原服务，demo 独立运行，上限 0.2 m/s、距离 1.3 m、ReID 重新认领关闭；尚未授予运动权限。补齐共享 Foxglove 运行环境链接。原服务被外部再次启动造成一次串口争用，按用户明确指令停原服务后 demo 正常运行。
+- 录制预检因未加载车端 FastDDS 配置及 daemon 发现状态缺话题而退出，修正录制入口复用私有 robot.env，并用无 daemon 的有限发现；不写入私有配置内容。直接 ROS 检查已收到目标/控制状态与全部关键话题，随后录制已成功启动；首次跟随授权后立即 target_invalid 并 STOP，未记录该次授权过程。8 秒采样有 114 条深度拒绝、19 条等待新帧、15 条有效目标，仅作为诊断线索。
+
 ## 2026-10-19：Demo 关闭 ReID 重新认领
 
 - 按用户要求 demo 强制关闭 `REID_REACQUIRE_ENABLED`；修正共用 onboard 入口硬编码覆盖，改为可显式覆盖且通用默认仍 true。保留 VitTrack 连续性、ReID 观察输出及原主人超时，不改变速度、距离、暂停或运动授权。
