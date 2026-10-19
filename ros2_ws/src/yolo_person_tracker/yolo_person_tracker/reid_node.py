@@ -166,7 +166,10 @@ class ReIDNode(Node):
         fresh=(self.last_stamp is not None and 0<=self.get_clock().now().nanoseconds*1e-9-self.last_stamp<=self.cfg['max_age_s'])
         if not fresh:
             if self.was_valid:
-                self.generation+=1;self.manager.suspend()
+                # Output expiry withdraws published evidence, not a newer in-flight input.
+                # Each result still passes its own acquisition-age/generation check above.
+                # IdentityManager bounds association history by max_gap_s on the next input;
+                # clearing it here prevents fresh descriptors accumulating at low frame rates.
                 self.invalid('Stale appearance observations')
             if time.monotonic()-self.last_invalid>=.5:
                 self.invalid(self.error or ('ReID disabled' if not self.cfg['enabled'] else 'Waiting for fresh matching RGB/Pose'))
