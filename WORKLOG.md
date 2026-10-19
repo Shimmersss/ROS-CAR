@@ -1,7 +1,7 @@
 ## 2026-10-19：Demo 关闭 ReID 重新认领
 
 - 按用户要求 demo 强制关闭 `REID_REACQUIRE_ENABLED`；修正共用 onboard 入口硬编码覆盖，改为可显式覆盖且通用默认仍 true。保留 VitTrack 连续性、ReID 观察输出及原主人超时，不改变速度、距离、暂停或运动授权。
-- 入口测试覆盖默认关闭、外部 true 被 demo 覆盖及 onboard 尊重 false；shell 语法与 diff 检查通过。同步至车端独立 demo 目录，不切换当前旧服务或开启运动；仅推送 demo 分支。
+- 入口测试覆盖默认关闭、外部 true 被 demo 覆盖及 onboard 尊重 false；shell 语法与 diff 检查通过。尝试同步车端独立 demo 目录时 SSH 连续被远端关闭，车端更新未确认，待连接恢复后重试；不切换当前旧服务或开启运动，仅推送 demo 分支。
 
 ## 2026-10-18：Demo 分支同步最新 main
 
