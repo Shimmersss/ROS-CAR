@@ -3,6 +3,8 @@
 # Demo only: continuation requires fresh stationary odometry and a post-stop detection.
 /**:
   ros__parameters:
+    # Recording trial: bypass temporal depth jump/relocalization rejection only.
+    depth_gate_enabled: false
     owner_continuity_reset_s: 2.0
     pose_confidence: 0.5
     reid_lock_confirm_frames: 3
