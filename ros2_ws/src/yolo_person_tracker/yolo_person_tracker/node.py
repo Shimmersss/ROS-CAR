@@ -53,6 +53,7 @@ class TrackerNode(Node):
             'camera_info_topic': '/camera/color/camera_info',
             'depth_registered': False, 'sync_slop_s': .06, 'max_age_s': .5,
             'visualization_fps': 10.0, 'visualization_scale': 0.5,
+            'inference_completion_wakeup': False,
             'auto_lock_single': False,
             'owner_hold_on_fall': False,
             'owner_lost_timeout_s': 10.0, 'owner_continuity_reset_s': 0.0,
@@ -221,6 +222,14 @@ class TrackerNode(Node):
         if self.cfg['owner_hold_on_fall']:
             self.create_subscription(FallAlarm, 'fall_alarm', self.on_owner_fall, 10, callback_group=self.state_group)
         self.timer = self.create_timer(.05, self.tick, callback_group=self.state_group)
+        # The worker only wakes the serialized executor; it never publishes or
+        # mutates selection. The timer still handles timeouts and heartbeats.
+        self.inference_ready = (self.create_guard_condition(self.tick, callback_group=self.state_group)
+                                if self.cfg['inference_completion_wakeup'] else None)
+
+    def wake_inference_result(self, _future):
+        if self.inference_ready is not None and rclpy.ok(context=self.context):
+            self.inference_ready.trigger()
 
     @serialized
     def on_info(self, msg):
@@ -318,6 +327,8 @@ class TrackerNode(Node):
             self.pending_target = None if reset else self.selection.target_id
             self.pending_generation = self.selection_generation
             self.future = self.pool.submit(self.process_pair, color, depth, received_at, intrinsics, reset)
+            if self.inference_ready is not None:
+                self.future.add_done_callback(self.wake_inference_result)
         except (ValueError, TypeError, cv2.error, CvBridgeError) as exc:
             self.error = str(exc)
             self.snapshot = None

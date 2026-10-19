@@ -19,7 +19,7 @@ class HeightFallConfig:
     drop_min_m: float = .4          # baseline top minus current top
     transition_s: float = 2.        # last upright baseline to first low frame
     stable_s: float = .3            # upright evidence needed for a baseline
-    confirm_s: float = 1.           # sustained low before confirmation
+    confirm_s: float = 1.           # sustained low; explicit 0 confirms the observed rapid drop immediately
     recovery_s: float = 1.          # sustained upright to clear a confirmed fall (2 s missed repeat falls)
     max_gap_s: float = .5           # unobserved time that pauses (not clears) the timers
     min_points: int = 150
@@ -59,6 +59,8 @@ class HeightFallConfig:
 
     def __post_init__(self):
         for name, value in vars(self).items():
+            if name == 'confirm_s' and not isinstance(value, bool) and math.isfinite(value) and value >= 0:
+                continue
             if name == 'confirm_max_m' and isinstance(value, bool):
                 raise ValueError('height fall confirm_max_m must be numeric, not boolean')
             if name in ('lost_hold_s', 'sit_hold_s', 'side_edge_px', 'continue_s', 'confirm_max_m') and math.isfinite(value) and value >= 0:
@@ -341,6 +343,9 @@ class HeightFallTracker:
                 return 1, f'low again after a drop; top={top:.2f}m'
             return 1, f'sat up after a drop; held, top={top:.2f}m'
         if (baseline is not None and top <= cfg.low_max_m and baseline[1]-top >= cfg.drop_min_m and not side):
+            if cfg.confirm_s == 0:
+                state.update(fallen=True, pending=None, recovery=None, drop=None)
+                return 2, f'rapid drop; immediate confirmation; top {baseline[1]:.2f}->{top:.2f}m'
             state['pending'] = state['drop'] = stamp
             return 1, f'rapid drop to the floor; top {baseline[1]:.2f}->{top:.2f}m'
         return 0, f'top={top:.2f}m' + ('; static low, no observed drop' if top <= cfg.low_max_m else '')

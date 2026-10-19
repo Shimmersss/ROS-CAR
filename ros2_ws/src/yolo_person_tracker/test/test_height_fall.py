@@ -51,6 +51,21 @@ class BodyHeightTests(unittest.TestCase):
 
 
 class HeightFallTrackerTests(unittest.TestCase):
+    def test_explicit_immediate_confirmation_requires_a_measured_drop(self):
+        tracker = HeightFallTracker(HeightFallConfig(confirm_s=0.))
+        self.feed(tracker, [(1., 1.2), (1.2, 1.2), (1.4, 1.2)])
+        stage, reason = tracker.update('0:1', 1.6, .4)
+        self.assertEqual(stage, 2)
+        self.assertIn('immediate confirmation', reason)
+        self.assertEqual(tracker.update('0:1', 1.8, None)[0], 2)
+        static = HeightFallTracker(HeightFallConfig(confirm_s=0.))
+        self.assertEqual([p for p, _ in self.feed(static, [(1., .4), (1.5, .4), (2., .4)])], [0, 0, 0])
+        slow = HeightFallTracker(HeightFallConfig(confirm_s=0.))
+        self.feed(slow, [(1., 1.2), (1.2, 1.2), (1.4, 1.2)])
+        self.assertEqual(slow.update('0:1', 4., .4)[0], 0)
+        with self.assertRaises(ValueError):
+            HeightFallConfig(confirm_s=False)
+
     def feed(self, tracker, samples, ident='0:1', hint=False):
         return [tracker.update(ident, t, h, upright_hint=hint) for t, h in samples]
 
@@ -332,7 +347,7 @@ class HeightFallTrackerTests(unittest.TestCase):
         with self.assertRaises(ValueError): HeightFallConfig(continue_min_m=.6)
         with self.assertRaises(ValueError): HeightFallConfig(continue_s=-1.)
         with self.assertRaises(ValueError): HeightFallConfig(low_max_m=1.)
-        with self.assertRaises(ValueError): HeightFallConfig(confirm_s=0.)
+        with self.assertRaises(ValueError): HeightFallConfig(confirm_s=-.1)
         with self.assertRaises(ValueError): HeightFallConfig(top_percentile=120.)
 
 
