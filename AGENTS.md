@@ -123,7 +123,7 @@
 
 ## 固定机位开机入口
 
-- 正式板端入口 `/home/wheeltec/ROSCAR-current` 当前指向 `/home/wheeltec/ROSCAR-matcha-20261014-d5f2096`，切换前 current 保留备份。10-14 语音试运行通过用户服务 drop-in 强制运动、自动授权和自动续跟关闭，私有 env 原值保留；以下开机跟随配置描述不代表当前已恢复运动。验证及回退见 `docs/2026-10-14Matcha语音部署与验证.md`。用户服务从 current 启动，底盘使用该部署独立重编译的 overlay。串口显式上限可至 0.5 m/s、默认仍 0.2；跟随器/guard/串口三层同限，角速度仍 0.5。速度和增益配置不放宽感知龄期、运动宽限或急停。
+- 2026-10-19 用户授权默认开机切到 demo：`ROSCAR-current` 指向 `/home/wheeltec/ROSCAR-demo-20261016`，`roscar-robot.service` 通过 drop-in 运行 `scripts/run_demo_onboard.sh`，固定运动关闭、不自动授权，距离 1.3 m、主人丢失保留 20 秒。原 Matcha 部署及服务配置已备份，既有拍照推理服务保留；环境链接复用 `/home/wheeltec/ROSCAR/.venv-yolo`。启动器不清急停，进程故障不自动重启授权，现场跟随另行开启。入口、验证与回退见 `docs/demo/车端部署与补录.md`。
 
 - `scripts/run_robot_onboard.sh` / `deploy/systemd/roscar-robot.service` 是显式板端 C 入口，默认参数仍运动关闭。板端私有 env 按用户授权开机 FOLLOW 自动授权，并沿用 1.3 m、无避障；用户最新明确选择最高 0.5 m/s（私有 FOLLOW_MAX_LINEAR_MPS），距离/转向增益 1.0/1.6；三项确认仅表示本次临时授权，不作为正式标定验收。启动器不清 ESTOP，进程故障不自动重启授权。见 `docs/2026-10-13板端联调与开机跟随.md`。
 - 当前固定机位入口按用户最新确认重新开启 ReID 找回（REID_ENABLED / REID_REACQUIRE_ENABLED=true，锁定 false）：首次连续丢失 2 秒清轨迹/VitTrack，保留主人身份至同一次丢失 5 秒；期限内通过新鲜身份确认返回，5 秒到期清主人及该身份外观库并开放单人三帧新认领。通用默认仍十秒、连续性定时重置关闭；不改 0.6 秒运动宽限或非目标故障锁存。

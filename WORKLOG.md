@@ -1,3 +1,10 @@
+## 2026-10-19：默认开机入口切换到当前 demo
+
+- 用户明确授权切换默认开机程序。保留原 current 目标与服务/drop-in 备份，current 指向 ROSCAR-demo-20261016；既有 enabled/Linger 用户服务运行新增 run_demo_onboard.sh。固定运动关闭、IDLE/DISARMED、不自动授权，沿用 1.3 m、20 秒主人保留；保留拍照推理服务，不修改 main。
+- 同步最新 ReID 源码，在 Jetson 原生重编译 yolo_person_tracker，新增确认链/OwnerSelection 联合 ROS 回归通过；源与安装 reid_node.py SHA 一致。切换初次启动发现旧 C Python 链接经 current 指向 demo 后失效，已给 demo 补充指向既有 ROSCAR/.venv-yolo 的符号链接，复用环境，无新下载。
+- 重启服务验证两项 active；225 条控制状态、226 条 cmd_vel，全部零速度，motion_enabled=false、无故障，相机/ReID/最终速度各单发布者。证据车端 artifacts/deployment/demo-boot-verification.json 与 reid-boot-{build,test}.log；未执行断电重启或真人跟随验收。
+- 最小审查：shell 语法、diff 检查、车端编译/隔离 ROS 回归、实际服务与发布者检查；同步长期入口约定、部署和修复报告。
+
 ## 2026-10-19：ReID 输出过期误清身份确认链修复
 
 - 用户要求先分析修 ReID，停止跟随服务并收尾 owner20-follow-test 录像；该段启动未就绪，控制 1991 条全 DISARMED、2154 条速度全零。主人绑定一直为空。提取 14801 条元数据，定位 176 次旧 ReID 输出过期把当前关联/待确认计数清零并取消另一条仍新鲜的在途结果。
