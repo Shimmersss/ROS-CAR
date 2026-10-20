@@ -2108,3 +2108,13 @@
 - 按用户要求扩充 `docs/interfaces/Demo按需模式ROS接口.md` 为当前 demo 的完整调用文档：SSH/ROS 环境、模式及返回值、跟随/停车、流式前进后退与弧线转向、距离/角度动作、面诊原图、PCB/安全帽/舌苔、语音 service/action、取消、状态与故障、自启动与日志。注明对应运行实现 31d3693，强调面诊模型未接入、旧上传 404、任务时限不等于整个切换耗时、旧 target_id 不跨感知进程复用。
 - 旧通用接口手册顶部与 interfaces 索引引导到此最新文档，避免混用旧 `/chassis/cmd_vel` 直接输入与 demo 的 `/robot/cmd_vel`。未修改运行代码或参数。
 - 最小审查：19 个 service、2 个 action、4 个速度示例对照消息定义核对字段，Bash/Python 片段语法及相对文档链接检查通过，git diff --check 通过。未执行运动示例、未重启车端程序；只读确认核心 active、按需子模式 inactive。证据 `artifacts/demo-runtime-validation/document-call-review.log`。文档同步车端并推送 demo/showcase-20261016，main 不变。
+
+
+## 2026-10-20：恢复收音与核对开机自启动
+
+- 现场只读检查发现核心/底盘正常，但这次开机共享收音因 ALSA Device or resource busy 失败，采集线程退出后节点仍在线，实际 /voice/audio 连续 6 秒无帧。当前设备已无占用。按用户授权恢复：保持 IDLE/DISARMED，先重启核心恢复当前采集，再部署自动恢复修复；没有调用跟随、ROS 运动或录制。
+- offline_voice 新增单所有者 CaptureLoop：启动占用、短帧、录音子进程退出后关闭旧进程，按 1/2/4/5 秒重试；停止可打断等待，不会停止后另启录音。重连序号留出缺口，旧半句必须作废，不伪造 PCM/健康心跳，不清 KWS、ESTOP 或底盘故障锁存。ArecordCapture 新增可选读超时（共享采集启用 2 秒，其他调用默认兼容旧阻塞读取），关闭回收管道避免重复重试泄漏。
+- 完整纯 Python CI 通过；新增 8 项测试覆盖占用恢复、断流序号、短帧丢弃、停止/重试竞争，以及真实子进程管道的超时、拼接、退出和旧默认兼容。Jetson Humble 实际构建 xfyun_speech/offline_voice 通过。
+- 车端真人麦克风/ALSA 实测（不保存录音）：停在 IDLE 后暂时独占配置麦克风并启动服务，确认错误期间零音频帧，释放后 2.078 秒恢复，连续收到 75 帧；精确核对 audio_node 的唯一 arecord 子 PID 后仅终止此子进程，随后新 PID 自动接续，核心 PID 不变，序号缺口有效。/voice/say 返回 completed，播报期间收到 100 个真实音频帧。最终 1 音频发布者、1 录音进程、1 /cmd_vel、0 相机发布者，非零速度命令=0，IDLE/DISARMED，无锁存故障。
+- 自启动核对：roscar-robot.service enabled/active，Linger=yes，指向当前 demo，旧整车/旧拍照服务未启用；Restart=no 保留，避免进程故障自动恢复运动授权。验证了启动时麦克风占用及服务启动恢复，没有断电或整机重启，不宣称完成断电开机验收。
+- 最小审查核对单录音所有者、真实帧时效、序号失效、资源关闭和 shutdown/start 互斥；保留凭据与原始录制，未创建新环境或大文件。证据在本机及车端 artifacts/audio-recovery-20261020/，文档补充收音状态检查。仅 demo 分支，不改 main。

@@ -1,6 +1,9 @@
 """Small ALSA command wrappers with no shell interpolation."""
 
 import math
+import os
+import select
+import time
 import subprocess
 
 
@@ -14,7 +17,10 @@ def pcm_rms_s16le(data):
 
 
 class ArecordCapture:
-    def __init__(self, device, sample_rate, channels=1):
+    def __init__(self, device, sample_rate, channels=1, read_timeout_s=None):
+        if read_timeout_s is not None and (not math.isfinite(read_timeout_s) or read_timeout_s <= 0):
+            raise ValueError('invalid_capture_timeout')
+        self.read_timeout_s = read_timeout_s
         self._command = [
             'arecord', '-q', '-D', device, '-t', 'raw', '-f', 'S16_LE',
             '-r', str(sample_rate), '-c', str(channels),
@@ -29,27 +35,49 @@ class ArecordCapture:
         )
 
     def read(self, byte_count):
-        if self._process is None or self._process.stdout is None:
+        process = self._process
+        if process is None or process.stdout is None:
             raise RuntimeError('arecord is not running')
-        data = self._process.stdout.read(byte_count)
+        if self.read_timeout_s is None:
+            data = process.stdout.read(byte_count)
+        else:
+            if byte_count <= 0:
+                raise ValueError('invalid_audio_read_size')
+            deadline = time.monotonic()+self.read_timeout_s
+            chunks = bytearray()
+            while len(chunks) < byte_count:
+                remaining = deadline-time.monotonic()
+                if remaining <= 0 or not select.select([process.stdout], [], [], remaining)[0]:
+                    raise TimeoutError('arecord audio stalled')
+                chunk = os.read(process.stdout.fileno(), byte_count-len(chunks))
+                if not chunk:
+                    break
+                chunks.extend(chunk)
+            data = bytes(chunks)
         if data:
             return data
         detail = ''
-        if self._process.stderr is not None:
-            detail = self._process.stderr.read().decode('utf-8', errors='replace').strip()
+        if process.poll() is not None and process.stderr is not None:
+            detail = process.stderr.read().decode('utf-8', errors='replace').strip()
         raise RuntimeError(detail or 'arecord stopped before producing audio')
 
     def close(self):
-        if self._process is None:
+        process = self._process
+        if process is None:
             return
-        if self._process.poll() is None:
-            self._process.terminate()
-            try:
-                self._process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self._process.kill()
-                self._process.wait(timeout=2)
-        self._process = None
+        try:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=2)
+        finally:
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()
+            self._process = None
 
 
 class AplaySink:

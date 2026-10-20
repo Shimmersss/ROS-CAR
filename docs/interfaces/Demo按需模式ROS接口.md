@@ -1,6 +1,6 @@
 # Demo 按需模式 ROS 接口调用文档
 
-更新日期：2026-10-19。对应运行实现：`31d3693`，分支：`demo/showcase-20261016`。
+更新日期：2026-10-20。模式运行实现：`31d3693`（10-20 另修复共享收音自动恢复），分支：`demo/showcase-20261016`。
 
 仅适用于 `demo/showcase-20261016`，不替换 main 的通用 API。板端开机入口为 `scripts/run_demo_onboard.sh` → `run_demo_runtime.sh`。语音、文字播报、唯一底盘驱动、跟随控制器及唯一 motion_guard 常驻；相机、Pose、ReID、VitTrack 和检测执行器按需启动。不开录制。
 
@@ -202,6 +202,16 @@ ros2 action send_goal /voice/speak execution_mode_interfaces/action/SpeakText \
 ```
 
 此 action 返回 `status/detail`，反馈字段为 `phase`；completed 同样表示播放完成。跟随、主人阶段和跌倒提示使用现有唯一队列。当前 demo 语音急停配置沿用现场设置：口头急停转普通 STOP，显式 `/control/estop` 接口仍保留。
+
+收音恢复（2026-10-20）：麦克风启动占用、录音进程退出或连续 2 秒无音频时，采集器关闭旧进程并按 1、2、4、5 秒上限重试；不启动多个录音所有者、不发布伪造音频。重连时序号留出缺口，旧半句作废；不改变现有运动权限或清除急停/故障锁存。通用 KWS 的失效锁存也不会被本修复解除。
+
+判断收音是否恢复应检查真实数据，不能只看 service active 或 topic 存在：
+
+```bash
+ros2 topic hz /voice/audio
+```
+
+正常为约 25 帧/秒（16 kHz、单声道、每帧 1280 字节）；采集/播报的完成与 ASR 内容准确率分别验证。本轮实车短暂占用解除后约 2.1 秒恢复，单独结束录音子进程后也自动恢复，核心无需重启；播报期间音频持续采集。
 
 ## 7. 状态、停止与故障处理
 
